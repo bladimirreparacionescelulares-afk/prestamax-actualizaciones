@@ -6,11 +6,19 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.14 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.15 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.14
+## Versión 4.15
 
-Configuración organizada por categorías, con seguridad, espacios, bloqueo, PIN y copias en un solo acceso. Tickets de pagos y cobros con vista previa para impresoras térmicas ESC/POS por Bluetooth clásico (58 u 80 mm); pendiente comprobar un equipo físico. Tarjetas del formulario y calendario ajustables al contenido. En el espacio Negocio se ofrece únicamente Por cobrar.
+Primera etapa de correcciones de la revisión integral:
+
+- Pérdidas de capital pendientes de recuperar, separadas de atrasos, gastos y capital perdonado; recuperaciones vinculadas sin contar dos veces el cobro.
+- Historial de correcciones y anulaciones de cuentas simples y pagos fijos, con registro anterior y motivo. Consulta Seguridad y protección → Cambios y anulaciones.
+- Archivado de cuentas simples y pagos fijos, con conservación de pagos y deudas y filtro Archivados.
+- Tasas descritas con su base real e importes de gastos y estados de anulación correctos en la vista del negocio.
+- Copias .mpbackup con mayor capacidad para adjuntos, comprobación de integridad y cifrado según el acceso o contraseña. Las copias anteriores siguen leyéndose; las nuevas requieren 4.15 o posterior.
+
+Los tickets Bluetooth y la organización del formulario y de Configuración de la versión anterior continúan incluidos. La prueba con impresora física sigue pendiente.
 
 Incluye los espacios personales y de negocio cifrados y permisos locales de 4.13. Sus copias son manuales y los vencimientos se consultan al abrir cada espacio; los espacios cerrados no generan avisos de sistema. La sincronización entre teléfonos sigue pendiente.
 
