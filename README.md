@@ -4,6 +4,10 @@
 
 Este repositorio distribuye únicamente el APK, sus novedades, información de versión firmada y comprobantes de descarga. No contiene el código fuente de la aplicación, bases de datos, copias de clientes, licencias ni claves privadas. Los archivos de automatización solo validan y publican las descargas.
 
+## Aviso de seguridad pendiente · versión 4.12
+
+Google Play Protect ha bloqueado esta entrega en al menos un teléfono como potencialmente dañina. La causa no está identificada. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+
 ## Actualizar
 
 Conserva tu copia de seguridad habitual. Abre el APK y elige actualizar la instalación existente, sin desinstalar ni borrar datos. La versión 4.11 se instala inicialmente desde este enlace; a partir de ella, PrestaMax puede avisar de nuevas versiones y descargarlas desde la propia app. Android siempre solicita confirmar la instalación y, la primera vez, puede pedir autorizar esta fuente.
