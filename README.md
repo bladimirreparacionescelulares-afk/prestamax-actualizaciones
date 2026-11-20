@@ -6,22 +6,19 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.1 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.2 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.16.1
+## Versión 4.16.2
 
-Caja y cierre diario desde Inicio, en lugar del acceso duplicado «Clientes y préstamos». La pestaña Préstamos mantiene sus funciones.
+- Caja es opcional y viene desactivada por defecto, también si una instalación anterior no tenía guardada esta preferencia. Se muestra desde Configuración → Módulos → Caja. No reaparece el acceso duplicado «Clientes y préstamos».
+- Ocultar una Caja configurada conserva su historial y mantiene el registro de cobros, pagos, desembolsos y gastos vinculados. Ahorros mantiene su interruptor independiente.
+- El propietario puede elegir un logo de su espacio desde Configuración → Impresora Bluetooth → Cambiar logo. Si no se elige uno, los tickets pequeños imprimen el de PrestaMax. La vista previa y el envío ESC/POS usan la misma imagen en blanco y negro, centrada y sin recortar.
+- Cada actualización muestra sus novedades al abrir la aplicación, después del acceso correspondiente. No necesita conexión a internet. Se pueden consultar de nuevo desde Configuración → Información → Novedades de esta versión.
+- Las nuevas copias incluyen la preferencia de Caja y el logo del espacio y requieren 4.16.2 o posterior. Las copias anteriores siguen admitiéndose.
 
-- Apertura con el efectivo y dinero disponible en banco, por moneda y espacio. Banco es un registro manual sin conexión bancaria.
-- Cobros, pagos, desembolsos confirmados, gastos reales de préstamos y pagos fijos vinculados a Caja una sola vez. Las deudas anteriores por pagar no agregan dinero sin confirmación expresa.
-- Aportes, retiros, gastos de Caja y traspasos Efectivo/Banco con motivo y confirmación. Las pérdidas, condonaciones e intereses pendientes no mueven dinero.
-- Correcciones y anulaciones mediante diferencias, sin borrar el movimiento original ni modificar los cierres guardados. Los registros históricos que lo requieran se revisan antes de incluirse.
-- Los movimientos anteriores al momento exacto de la apertura se revisan antes de incluirse, también si ocurrieron ese mismo día. La revisión muestra la hora de apertura y la fecha de origen para evitar contar dinero dos veces.
-- Cierre con saldo esperado, importe contado o confirmado y explicación de diferencias. La diferencia no registra automáticamente una pérdida de préstamo.
-- Caja cifrada y reservada al propietario; los empleados y cobradores conservan sus permisos para registrar operaciones, sin ver los saldos del propietario. En Registros anteriores se configura un PIN específico de Caja.
-- Copias con Caja cifrada y verificación después de restaurar. Las nuevas copias requieren la versión 4.16 o posterior. Una copia sin Caja debe restaurarse en otro espacio si ya existe un historial de Caja que conservar.
+Caja conserva el efectivo y el banco separados por moneda y espacio, movimientos vinculados sin duplicación, aportes y retiros documentados, cierres que preservan su historial y revisión de movimientos anteriores a la apertura. Banco es un registro manual sin conexión bancaria. Las diferencias del cierre no registran automáticamente pérdidas de préstamos.
 
-Continúan incluidas las correcciones de pérdidas, recuperaciones, archivado e historial de cambios de la versión 4.15. No se añaden pérdidas automáticas. Los ahorros mantienen su registro independiente; un traslado de dinero hacia o desde Caja requiere registrar el retiro o aporte correspondiente.
+Continúan incluidas las correcciones de pérdidas, recuperaciones, archivado e historial de cambios de 4.15. Los ahorros mantienen su registro independiente; un traslado hacia o desde Caja requiere registrar el retiro o aporte correspondiente.
 
 Los tickets Bluetooth y la organización del formulario y de Configuración de la versión anterior continúan incluidos. La prueba con impresora física sigue pendiente.
 
