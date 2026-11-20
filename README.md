@@ -6,9 +6,9 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.1 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.16
+## Versión 4.16.1
 
 Caja y cierre diario desde Inicio, en lugar del acceso duplicado «Clientes y préstamos». La pestaña Préstamos mantiene sus funciones.
 
@@ -16,6 +16,7 @@ Caja y cierre diario desde Inicio, en lugar del acceso duplicado «Clientes y pr
 - Cobros, pagos, desembolsos confirmados, gastos reales de préstamos y pagos fijos vinculados a Caja una sola vez. Las deudas anteriores por pagar no agregan dinero sin confirmación expresa.
 - Aportes, retiros, gastos de Caja y traspasos Efectivo/Banco con motivo y confirmación. Las pérdidas, condonaciones e intereses pendientes no mueven dinero.
 - Correcciones y anulaciones mediante diferencias, sin borrar el movimiento original ni modificar los cierres guardados. Los registros históricos que lo requieran se revisan antes de incluirse.
+- Los movimientos anteriores al momento exacto de la apertura se revisan antes de incluirse, también si ocurrieron ese mismo día. La revisión muestra la hora de apertura y la fecha de origen para evitar contar dinero dos veces.
 - Cierre con saldo esperado, importe contado o confirmado y explicación de diferencias. La diferencia no registra automáticamente una pérdida de préstamo.
 - Caja cifrada y reservada al propietario; los empleados y cobradores conservan sus permisos para registrar operaciones, sin ver los saldos del propietario. En Registros anteriores se configura un PIN específico de Caja.
 - Copias con Caja cifrada y verificación después de restaurar. Las nuevas copias requieren la versión 4.16 o posterior. Una copia sin Caja debe restaurarse en otro espacio si ya existe un historial de Caja que conservar.
