@@ -6,17 +6,21 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.15 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.15
+## Versión 4.16
 
-Primera etapa de correcciones de la revisión integral:
+Caja y cierre diario desde Inicio, en lugar del acceso duplicado «Clientes y préstamos». La pestaña Préstamos mantiene sus funciones.
 
-- Pérdidas de capital pendientes de recuperar, separadas de atrasos, gastos y capital perdonado; recuperaciones vinculadas sin contar dos veces el cobro.
-- Historial de correcciones y anulaciones de cuentas simples y pagos fijos, con registro anterior y motivo. Consulta Seguridad y protección → Cambios y anulaciones.
-- Archivado de cuentas simples y pagos fijos, con conservación de pagos y deudas y filtro Archivados.
-- Tasas descritas con su base real e importes de gastos y estados de anulación correctos en la vista del negocio.
-- Copias .mpbackup con mayor capacidad para adjuntos, comprobación de integridad y cifrado según el acceso o contraseña. Las copias anteriores siguen leyéndose; las nuevas requieren 4.15 o posterior.
+- Apertura con el efectivo y dinero disponible en banco, por moneda y espacio. Banco es un registro manual sin conexión bancaria.
+- Cobros, pagos, desembolsos confirmados, gastos reales de préstamos y pagos fijos vinculados a Caja una sola vez. Las deudas anteriores por pagar no agregan dinero sin confirmación expresa.
+- Aportes, retiros, gastos de Caja y traspasos Efectivo/Banco con motivo y confirmación. Las pérdidas, condonaciones e intereses pendientes no mueven dinero.
+- Correcciones y anulaciones mediante diferencias, sin borrar el movimiento original ni modificar los cierres guardados. Los registros históricos que lo requieran se revisan antes de incluirse.
+- Cierre con saldo esperado, importe contado o confirmado y explicación de diferencias. La diferencia no registra automáticamente una pérdida de préstamo.
+- Caja cifrada y reservada al propietario; los empleados y cobradores conservan sus permisos para registrar operaciones, sin ver los saldos del propietario. En Registros anteriores se configura un PIN específico de Caja.
+- Copias con Caja cifrada y verificación después de restaurar. Las nuevas copias requieren la versión 4.16 o posterior. Una copia sin Caja debe restaurarse en otro espacio si ya existe un historial de Caja que conservar.
+
+Continúan incluidas las correcciones de pérdidas, recuperaciones, archivado e historial de cambios de la versión 4.15. No se añaden pérdidas automáticas. Los ahorros mantienen su registro independiente; un traslado de dinero hacia o desde Caja requiere registrar el retiro o aporte correspondiente.
 
 Los tickets Bluetooth y la organización del formulario y de Configuración de la versión anterior continúan incluidos. La prueba con impresora física sigue pendiente.
 
