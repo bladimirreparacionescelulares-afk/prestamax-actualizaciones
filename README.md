@@ -6,9 +6,18 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.3 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.16.3
+## Versión 4.17
+
+- Después de confirmar un desembolso por cobrar, se abre Contrato del préstamo. Completa el nombre del prestamista y revisa las condiciones y el calendario antes de firmar. Puedes retomarlo desde Documentos → Contrato y firmas en el préstamo.
+- Firmas separadas del cliente y del prestamista, con recuadro, limpiar y aceptación del documento. Las firmas conservan sus proporciones y se guardan en el espacio correcto. Son firmas dibujadas en el teléfono, no firmas digitales certificadas.
+- El contrato usa el capital, interés fijo o diario, base de tasa, fechas, cuotas, cargos iniciales y condiciones configuradas. Los importes variables se identifican como estimaciones. El calendario completo forma parte del PDF; el contenido extenso continúa en otras páginas.
+- El PDF con ambas firmas se conserva exactamente para futuras exportaciones. Cambiar el cliente o el préstamo no sobrescribe esa copia. Los cambios de fechas o condiciones ofrecen un nuevo acuerdo cuando ya existe un contrato; no repiten el desembolso ni los cobros.
+- Configuración → Impresión separa Impresora de tickets e Impresora de documentos. Los documentos se preparan en Carta o A4 y usan el sistema de impresión Android, con accesos a los servicios oficiales de Epson, Canon y HP. La compatibilidad depende del modelo y su conexión; no se incluyen controladores de computadora ni instalaciones automáticas.
+- Las nuevas copias incluyen los contratos y sus firmas y requieren PrestaMax 4.17 o posterior. Las copias anteriores siguen admitiéndose. Se conservan las preferencias de Caja y los logos.
+
+### Mejora conservada de 4.16.3
 
 - Movimientos incorpora Período → Hoy para ver los registros del día según la fecha y zona horaria del teléfono. Está disponible tanto en la lista general como dentro de cada persona u origen y se combina con la búsqueda y los filtros Por cobrar y Por pagar. Los períodos anteriores siguen disponibles.
 
@@ -18,7 +27,7 @@ Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como pote
 - Ocultar una Caja configurada conserva su historial y mantiene el registro de cobros, pagos, desembolsos y gastos vinculados. Ahorros mantiene su interruptor independiente.
 - El propietario puede elegir un logo de su espacio desde Configuración → Impresora Bluetooth → Cambiar logo. Si no se elige uno, los tickets pequeños imprimen el de PrestaMax. La vista previa y el envío ESC/POS usan la misma imagen en blanco y negro, centrada y sin recortar.
 - Cada actualización muestra sus novedades al abrir la aplicación, después del acceso correspondiente. No necesita conexión a internet. Se pueden consultar de nuevo desde Configuración → Información → Novedades de esta versión.
-- Las nuevas copias incluyen la preferencia de Caja y el logo del espacio y requieren 4.16.2 o posterior. Las copias anteriores siguen admitiéndose.
+- La preferencia de Caja y el logo del espacio se conservan en las copias de seguridad.
 
 Caja conserva el efectivo y el banco separados por moneda y espacio, movimientos vinculados sin duplicación, aportes y retiros documentados, cierres que preservan su historial y revisión de movimientos anteriores a la apertura. Banco es un registro manual sin conexión bancaria. Las diferencias del cierre no registran automáticamente pérdidas de préstamos.
 
