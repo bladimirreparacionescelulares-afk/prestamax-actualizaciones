@@ -6,9 +6,13 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 ## Aviso de seguridad pendiente
 
-Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.2 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
+Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.16.3 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
-## Versión 4.16.2
+## Versión 4.16.3
+
+- Movimientos incorpora Período → Hoy para ver los registros del día según la fecha y zona horaria del teléfono. Está disponible tanto en la lista general como dentro de cada persona u origen y se combina con la búsqueda y los filtros Por cobrar y Por pagar. Los períodos anteriores siguen disponibles.
+
+### Funciones conservadas de 4.16.2
 
 - Caja es opcional y viene desactivada por defecto, también si una instalación anterior no tenía guardada esta preferencia. Se muestra desde Configuración → Módulos → Caja. No reaparece el acceso duplicado «Clientes y préstamos».
 - Ocultar una Caja configurada conserva su historial y mantiene el registro de cobros, pagos, desembolsos y gastos vinculados. Ahorros mantiene su interruptor independiente.
