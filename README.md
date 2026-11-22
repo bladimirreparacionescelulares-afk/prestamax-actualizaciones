@@ -8,6 +8,14 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
+## Versión 4.20.2
+
+- Botón para recuperar el logo anterior al cambiarlo desde la bienvenida, el perfil o la configuración de tickets, sin crear otra imagen con IA.
+- El logo anterior se conserva en este teléfono y espacio, incluso al cerrar la app. El logo de PrestaMax se muestra a color en el perfil y la vista previa.
+- La impresión térmica conserva su versión en blanco y negro; los documentos ya emitidos mantienen su información original.
+
+La recuperación conserva el último logo personalizado reemplazado en ese teléfono y espacio; no consume otra generación de IA. Esta versión mantiene la clasificación de Gastos de 4.20.1.
+
 ## Versión 4.20.1
 
 - Gastos se organiza por apartados: Pagos fijos, Sueldos y comisiones, Otros gastos e Historial. La pantalla principal muestra un resumen compacto por mes y moneda, un solo acceso a Por clasificar y el botón Registrar gasto.
