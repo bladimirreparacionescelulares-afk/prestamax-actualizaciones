@@ -8,6 +8,18 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
+## Versión 4.20.1
+
+- Gastos se organiza por apartados: Pagos fijos, Sueldos y comisiones, Otros gastos e Historial. La pantalla principal muestra un resumen compacto por mes y moneda, un solo acceso a Por clasificar y el botón Registrar gasto.
+- El historial tiene filas compactas, búsqueda y filtros. Las explicaciones se consultan desde Información. Se señala cuando el resumen omite registros protegidos.
+- Incluye la primera etapa de Gastos de 4.20: registro manual, compromisos pendientes, pagos completos o parciales, anulaciones con motivo y enlace único con Caja cuando esté configurada. Sueldos y comisiones siguen siendo importes registrados manualmente.
+- Los pagos fijos y los gastos anteriores de Caja deben clasificarse como del negocio o personales. Los importes sin clasificar no se suman al negocio. Clasificar no crea otro pago ni otra salida de Caja.
+- El resumen de Gastos no es la utilidad neta. Los resultados de préstamos conservan sus cálculos y no descuentan gastos generales. Los vencimientos no registran pagos ni pérdidas automáticamente.
+- Se incluyen el perfil de prestamista o negocio con bienvenida opcional, el logo opcional para prestamistas independientes y las constancias de aportes de ahorro con fotos y PDF dentro de la app.
+- La versión conserva los controles de clientes, fechas de desembolso, contratos, firmas e impresión de las entregas anteriores. No se incorpora sincronización entre teléfonos ni cálculo automático de nómina o comisiones.
+
+Las nuevas copias que incluyen Gastos requieren PrestaMax 4.20 o posterior para restaurarse. La actualización conserva los datos de la instalación existente; no desinstales la app.
+
 ## Versión 4.17
 
 - Después de confirmar un desembolso por cobrar, se abre Contrato del préstamo. Completa el nombre del prestamista y revisa las condiciones y el calendario antes de firmar. Puedes retomarlo desde Documentos → Contrato y firmas en el préstamo.
