@@ -8,6 +8,12 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
+## Versión 4.20.4
+
+- Cobrar esta cuota vuelve a mostrarse solo cuando existe saldo actual pendiente. Si solo queda interés futuro, se oculta el botón y se conserva la etiqueta Interés por devengar.
+- Se mantienen los abonos parciales, los recibos independientes y la separación entre Por clasificar y Ver clasificados de la versión anterior.
+- Incluye la corrección de Gastos revisada en 4.20.3: Por clasificar abre solo pendientes y los retira al clasificarlos; Ver clasificados permite consultar o corregir decisiones anteriores. Al terminar muestra Todo clasificado. Clasificar conserva los pagos y no genera otro movimiento de Caja.
+
 ## Versión 4.20.2
 
 - Botón para recuperar el logo anterior al cambiarlo desde la bienvenida, el perfil o la configuración de tickets, sin crear otra imagen con IA.
