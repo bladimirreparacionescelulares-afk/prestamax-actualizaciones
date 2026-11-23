@@ -8,6 +8,17 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
+## Versión 4.20.11
+
+- «Cobrar esta cuota» aplica el dinero únicamente a los intereses devengados y al capital de la cuota elegida. La pantalla propone su saldo cobrable completo y permite abonos menores. Antes de guardar, muestra el destino, el desglose, el saldo y el estado resultantes.
+- Cuando se cubre todo el saldo cobrable y no queda interés futuro, la cuota aparece Pagada y se oculta el botón de cobrar. Un abono menor conserva el estado Parcial, su saldo y el botón. Se mantienen visibles los días de atraso; otras cuotas pueden mantener el préstamo atrasado.
+- «Registrar abono al préstamo» conserva la distribución general anterior entre intereses devengados, cargos y capital. Sus cuotas destinatarias se muestran antes de confirmar. Los cargos generales del préstamo se cobran por separado del cobro dirigido.
+- Si solo queda interés futuro por devengar, no se registra como deuda actual ni se habilita un cobro inexistente. Los pagos anteriores no se redistribuyen ni se registran de nuevo. Se conservan sus recibos, los contratos firmados y la protección con PIN. Los nuevos recibos identifican la cuota aplicada y su pendiente después del pago.
+- Incluye las mejoras de impresión revisadas en 4.20.5–4.20.10: elección de ticket térmico o PDF A4 en los comprobantes individuales compatibles, tickets compactos de 58 mm con impresión de 48 mm para la ID Printers ID-0103 y opción de 80 mm. Los documentos completos, reportes y cierres usan A4; los documentos que admiten Carta conservan esa elección.
+- Ahorros, Caja y Gastos tienen comprobantes individuales. La constancia adjunta en foto o PDF se distingue del comprobante generado por la app. Reimprimir no registra otro movimiento. Las pruebas de envío térmico se realizaron con un transporte simulado; queda pendiente la comprobación física del papel.
+
+Las nuevas copias de seguridad usan formato 21 y requieren PrestaMax 4.20.11 o posterior para restaurarse. Las copias anteriores siguen admitiéndose. Instala como actualización, sin desinstalar ni borrar los datos.
+
 ## Versión 4.20.4
 
 - Cobrar esta cuota vuelve a mostrarse solo cuando existe saldo actual pendiente. Si solo queda interés futuro, se oculta el botón y se conserva la etiqueta Interés por devengar.
