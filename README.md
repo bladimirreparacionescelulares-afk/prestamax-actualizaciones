@@ -8,6 +8,17 @@ Este repositorio distribuye únicamente el APK, sus novedades, información de v
 
 Google Play Protect bloqueó la versión 4.12 en al menos un teléfono como potencialmente dañina. La causa y el resultado de la revisión de Google siguen sin confirmarse. La versión 4.17 no supone una aprobación de Google. Las comprobaciones de firma e integridad no equivalen a una aprobación de Google. No desactives Play Protect ni fuerces la instalación mientras se revisa el aviso. Descargar este mismo APK desde GitHub no garantiza que desaparezca la advertencia.
 
+## Versión 4.20.15
+
+- Configuración se organiza por Trabajo diario, Seguridad y acceso, Datos y copias, Preferencias y Acerca de PrestaMax. Cada acceso muestra qué contiene o su estado. Google Drive queda únicamente en Copias de seguridad, separado de las copias manuales; el bloqueo de aplicación conserva solo sus propios ajustes.
+- Caja reúne su visibilidad y protección; Ahorros permanece en Módulos opcionales. Los clientes, espacios y el historial de cambios tienen sus propios accesos. Se conservan las preferencias guardadas y las acciones de exportar y restaurar.
+- El ticket de prueba usa frases naturales en español para comprobar tildes, ñ y signos. Mantiene importes ficticios, alineación, números y una marca de fin; no registra pagos ni movimientos de Caja.
+- Incluye la vista previa completa y ampliable de todos los tickets, con selección de papel e impresora y envío explícito. Se conservan los formatos de 58 mm con impresión de 48 mm y de 80 mm con impresión de 72 mm. El zoom de pantalla conserva el tamaño del ticket que se imprime.
+- La lista de PrestaMax oculta los teléfonos, audífonos y otros equipos identificados como ajenos a la impresión. «No aparece mi impresora» permite consultar aparte las térmicas clásicas sin identificar y se conserva la impresora seleccionada. La lista externa de emparejamiento de Android sigue bajo control del sistema.
+- Reportes reúne las cuentas simples y los préstamos actuales en gráficos, totales, detalle y exportaciones, sin duplicar movimientos de Caja. Los filtros de período se actualizan al cambiar de día. Se mantienen las monedas, Por cobrar y Por pagar, y las exclusiones por protección.
+
+Conserva las funciones de cobro dirigido de la 4.20.11, los recibos y los contratos anteriores. Base de datos 16 y copias de seguridad 21, sin nuevas migraciones. Instala sobre la versión existente, sin desinstalar ni borrar datos. Las pruebas térmicas usan transporte simulado; queda pendiente comprobar el papel en la impresora física.
+
 ## Versión 4.20.11
 
 - «Cobrar esta cuota» aplica el dinero únicamente a los intereses devengados y al capital de la cuota elegida. La pantalla propone su saldo cobrable completo y permite abonos menores. Antes de guardar, muestra el destino, el desglose, el saldo y el estado resultantes.
