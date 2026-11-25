@@ -121,5 +121,6 @@ compose.desktop {
 // Capturas de pantalla: ./gradlew :composeApp:desktopTest -Dscreenshots=/ruta/carpeta
 tasks.withType<Test>().configureEach {
     System.getProperty("screenshots")?.let { systemProperty("screenshots", it) }
-    outputs.upToDateWhen { System.getProperty("screenshots") == null }
+    listOf("phoneCode", "phonePort").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+    outputs.upToDateWhen { System.getProperty("screenshots") == null && System.getProperty("phoneCode") == null }
 }
