@@ -143,10 +143,10 @@ class AndroidPlatform(private val context: Context) : Platform {
 
     // ---------- PDF ----------
 
-    override fun writePdf(file: File, draw: (PdfCanvas) -> Unit) {
+    override fun writePdf(file: File, widthPt: Float, heightPt: Float, draw: (PdfCanvas) -> Unit) {
         file.parentFile?.mkdirs()
         val doc = PdfDocument()
-        val canvas = AndroidPdfCanvas(doc)
+        val canvas = AndroidPdfCanvas(doc, widthPt, heightPt)
         try {
             draw(canvas)
             canvas.finish()
@@ -193,9 +193,7 @@ class AndroidPlatform(private val context: Context) : Platform {
 }
 
 /** PDF con el PdfDocument de Android (A4 = 595 x 842 puntos). */
-private class AndroidPdfCanvas(private val doc: PdfDocument) : PdfCanvas {
-    override val pageWidth = 595f
-    override val pageHeight = 842f
+private class AndroidPdfCanvas(private val doc: PdfDocument, override val pageWidth: Float, override val pageHeight: Float) : PdfCanvas {
     private var pageNumber = 0
     private var page: PdfDocument.Page? = null
     private val canvas: Canvas get() = page!!.canvas
@@ -209,7 +207,7 @@ private class AndroidPdfCanvas(private val doc: PdfDocument) : PdfCanvas {
     override fun newPage() {
         page?.let { doc.finishPage(it) }
         pageNumber++
-        page = doc.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+        page = doc.startPage(PdfDocument.PageInfo.Builder(pageWidth.roundToInt(), pageHeight.roundToInt(), pageNumber).create())
     }
 
     fun finish() {

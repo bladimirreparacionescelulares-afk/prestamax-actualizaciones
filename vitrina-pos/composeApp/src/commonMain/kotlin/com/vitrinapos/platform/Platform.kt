@@ -37,8 +37,8 @@ interface Platform {
     suspend fun listPrinters(): List<PrinterDevice>
     suspend fun printRaw(printer: PrinterDevice, bytes: ByteArray)
 
-    /** Dibuja un PDF A4 (595 x 842 puntos). */
-    fun writePdf(file: File, draw: (PdfCanvas) -> Unit)
+    /** Dibuja un PDF. Por omisión, A4 (595 x 842 puntos). */
+    fun writePdf(file: File, widthPt: Float = 595f, heightPt: Float = 842f, draw: (PdfCanvas) -> Unit)
 
     fun shareFile(file: File, mime: String, title: String)
     fun shareText(text: String, title: String)

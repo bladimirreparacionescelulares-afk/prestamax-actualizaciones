@@ -115,10 +115,10 @@ class DesktopPlatform : Platform {
         service.createPrintJob().print(SimpleDoc(bytes, DocFlavor.BYTE_ARRAY.AUTOSENSE, null), null)
     }
 
-    override fun writePdf(file: File, draw: (PdfCanvas) -> Unit) {
+    override fun writePdf(file: File, widthPt: Float, heightPt: Float, draw: (PdfCanvas) -> Unit) {
         file.parentFile?.mkdirs()
         PDDocument().use { doc ->
-            val canvas = PdfBoxCanvas(doc)
+            val canvas = PdfBoxCanvas(doc, PDRectangle(widthPt, heightPt))
             try { draw(canvas) } finally { canvas.close() }
             doc.save(file)
         }
@@ -139,9 +139,9 @@ class DesktopPlatform : Platform {
 }
 
 /** PDF con PDFBox; convierte las coordenadas (PDFBox cuenta desde abajo). */
-private class PdfBoxCanvas(private val doc: PDDocument) : PdfCanvas {
-    override val pageWidth = PDRectangle.A4.width
-    override val pageHeight = PDRectangle.A4.height
+private class PdfBoxCanvas(private val doc: PDDocument, private val size: PDRectangle) : PdfCanvas {
+    override val pageWidth = size.width
+    override val pageHeight = size.height
     private val regular = PDType1Font(Standard14Fonts.FontName.HELVETICA)
     private val bold = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)
     private var stream: PDPageContentStream? = null
@@ -151,7 +151,7 @@ private class PdfBoxCanvas(private val doc: PDDocument) : PdfCanvas {
 
     override fun newPage() {
         stream?.close()
-        val page = PDPage(PDRectangle.A4)
+        val page = PDPage(size)
         doc.addPage(page)
         stream = PDPageContentStream(doc, page)
     }

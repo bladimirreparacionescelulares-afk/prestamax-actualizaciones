@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.MoveToInbox
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -139,8 +140,9 @@ fun CatalogScreen() {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ScreenHeader("Catálogo", subtitle = "${products.size} productos · ${Money.format(value, s.currencySymbol)} en inventario") {
+            ScreenHeader("Catálogo", subtitle = "${products.size} productos") {
                 SquareIconButton(if (grid) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView, "Cambiar vista") { grid = !grid }
+                SquareIconButton(Icons.Rounded.QrCode2, "Etiquetas") { app.open(Screen.Labels) }
                 SquareIconButton(Icons.Rounded.MoveToInbox, "Entrada de mercancía") { app.open(Screen.StockEntry()) }
             }
             SearchBox(query, { query = it }, "Buscar por nombre o código", Modifier.fillMaxWidth().padding(horizontal = 16.dp))
@@ -292,11 +294,15 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
             saved = true
             app.toast(if (id == null) "Producto guardado" else "Cambios guardados")
             if (another) app.replace(Screen.ProductForm(key = newId)) else app.back()
+            if (id == null && !another && app.settingsNow.labelAskOnSave) app.labelPrompt = newId
         }
     }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(if (id == null) "Nuevo producto" else "Editar producto", onBack = { app.back() }) {
+            if (id != null) IconButton(onClick = { app.openLabelsFor(listOf(com.vitrinapos.AppState.LabelItem(id, original?.suggestedCopies() ?: 1))) }) {
+                Icon(Icons.Rounded.QrCode2, "Etiquetas", tint = MaterialTheme.colorScheme.primary)
+            }
             if (id != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
             TextButton(onClick = { save(false) }) { Text("Guardar", fontWeight = FontWeight.Bold) }
         }
@@ -338,11 +344,11 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
 
             TextInput(name, { name = it }, "Nombre del producto *", error = nameError)
             TextInput(
-                code, { code = it }, "Código de barras o referencia", error = codeError,
+                code, { code = it }, "Código de barras o referencia", error = codeError, placeholder = "Vacío: se asigna uno para su etiqueta",
                 trailing = {
                     Row {
                         if (scanner != null) IconButton(onClick = scanner) { Icon(Icons.Rounded.QrCodeScanner, "Escanear", tint = MaterialTheme.colorScheme.primary) }
-                        IconButton(onClick = { code = generateCode(products) }) { Icon(Icons.Rounded.AutoAwesome, "Generar código", tint = MaterialTheme.colorScheme.primary) }
+                        IconButton(onClick = { code = com.vitrinapos.labels.Codes.newInternalEan { c -> products.any { it.code == c } } }) { Icon(Icons.Rounded.AutoAwesome, "Generar código", tint = MaterialTheme.colorScheme.primary) }
                     }
                 },
             )
@@ -464,17 +470,6 @@ private fun PhotoAction(icon: androidx.compose.ui.graphics.vector.ImageVector, l
     }
 }
 
-/** Código interno de 13 dígitos que empieza en 200 (rango reservado para uso interno de tiendas). */
-private fun generateCode(products: List<Product>): String {
-    val used = products.map { it.code }.toSet()
-    while (true) {
-        val body = "200" + (1..9).map { (0..9).random() }.joinToString("")
-        val sum = body.mapIndexed { i, ch -> (ch - '0') * if (i % 2 == 0) 1 else 3 }.sum()
-        val check = (10 - sum % 10) % 10
-        val code = body + check
-        if (code !in used) return code
-    }
-}
 
 @Composable
 private fun AdjustStockDialog(current: Double, onDismiss: () -> Unit, onSave: (Double, String) -> Unit) {

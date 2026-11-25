@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PointOfSale
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingCart
@@ -94,6 +95,7 @@ private val sideItems = listOf(
     NavItem(Screen.Suppliers, "Proveedores", Icons.Rounded.LocalShipping),
     NavItem(Screen.SalesHistory, "Ventas", Icons.AutoMirrored.Rounded.ReceiptLong),
     NavItem(Screen.Reports, "Reportes", Icons.Rounded.BarChart),
+    NavItem(Screen.Labels, "Etiquetas", Icons.Rounded.QrCode2),
     NavItem(Screen.Cash, "Caja", Icons.Rounded.PointOfSale),
     NavItem(Screen.Network, "Trabajo en red", Icons.Rounded.Lan),
     NavItem(Screen.Settings, "Configuración", Icons.Rounded.Settings),
@@ -150,6 +152,7 @@ private fun MainShell(app: AppState) {
             val sides = if (!wide && app.current.isTab()) WindowInsetsSides.Top + WindowInsetsSides.Horizontal
             else WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
             Row(Modifier.fillMaxSize().padding(pad).windowInsetsPadding(WindowInsets.safeDrawing.only(sides))) {
+                app.labelPrompt?.let { LabelPromptDialog(it) }
                 if (wide) SideBar(app)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     AnimatedContent(
@@ -189,6 +192,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.StockMoves -> StockMovesScreen()
         Screen.Network -> NetworkScreen()
         Screen.Users -> UsersScreen()
+        Screen.Labels -> LabelsScreen()
+        Screen.LabelDesigner -> LabelDesignerScreen()
     }
 }
 

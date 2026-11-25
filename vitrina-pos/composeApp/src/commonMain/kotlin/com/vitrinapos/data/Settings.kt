@@ -25,7 +25,31 @@ data class AppSettings(
     val pin: String = "",
     val lastBackupAt: Long = 0,
     val onboarded: Boolean = false,
+    // Etiquetas (propias de cada equipo, según su etiquetadora)
+    val labelTemplate: String = "PRICE_QR",
+    val labelW: Float = 50f,
+    val labelH: Float = 30f,
+    val labelShowName: Boolean = true,
+    val labelShowPrice: Boolean = true,
+    val labelShowCode: Boolean = true,
+    val labelShowStore: Boolean = true,
+    val labelOutput: String = "roll",
+    val labelSheet: Int = 0,
+    val labelAskOnSave: Boolean = true,
 ) {
+    val labelOptions: com.vitrinapos.labels.LabelOptions
+        get() = com.vitrinapos.labels.LabelOptions(
+            template = runCatching { com.vitrinapos.labels.LabelTemplate.valueOf(labelTemplate) }.getOrDefault(com.vitrinapos.labels.LabelTemplate.PRICE_QR),
+            widthMm = com.vitrinapos.labels.LabelLimits.clampW(labelW),
+            heightMm = com.vitrinapos.labels.LabelLimits.clampH(labelH),
+            showName = labelShowName, showPrice = labelShowPrice, showCode = labelShowCode, showStore = labelShowStore,
+        )
+
+    fun withLabelOptions(o: com.vitrinapos.labels.LabelOptions) = copy(
+        labelTemplate = o.template.name, labelW = o.widthMm, labelH = o.heightMm,
+        labelShowName = o.showName, labelShowPrice = o.showPrice, labelShowCode = o.showCode, labelShowStore = o.showStore,
+    )
+
     val ticketChars: Int get() = if (paperWidthMm <= 58) 32 else 48
 
     fun toMap(): Map<String, String> = mapOf(
@@ -52,11 +76,25 @@ data class AppSettings(
         "pin" to pin,
         "lastBackupAt" to lastBackupAt.toString(),
         "onboarded" to onboarded.toString(),
+        "labelTemplate" to labelTemplate,
+        "labelW" to labelW.toString(),
+        "labelH" to labelH.toString(),
+        "labelShowName" to labelShowName.toString(),
+        "labelShowPrice" to labelShowPrice.toString(),
+        "labelShowCode" to labelShowCode.toString(),
+        "labelShowStore" to labelShowStore.toString(),
+        "labelOutput" to labelOutput,
+        "labelSheet" to labelSheet.toString(),
+        "labelAskOnSave" to labelAskOnSave.toString(),
     )
 
     companion object {
         /** Ajustes propios de cada equipo: no se comparten por la red. */
-        val LOCAL_KEYS = setOf("printerId", "printerName", "paperWidthMm", "ticketAscii", "autoPrint", "openDrawer")
+        val LOCAL_KEYS = setOf(
+            "printerId", "printerName", "paperWidthMm", "ticketAscii", "autoPrint", "openDrawer",
+            "labelTemplate", "labelW", "labelH", "labelShowName", "labelShowPrice", "labelShowCode", "labelShowStore",
+            "labelOutput", "labelSheet", "labelAskOnSave",
+        )
 
         fun fromMap(m: Map<String, String>): AppSettings {
             val d = AppSettings()
@@ -87,6 +125,16 @@ data class AppSettings(
                 pin = s("pin", d.pin),
                 lastBackupAt = m["lastBackupAt"]?.toLongOrNull() ?: 0,
                 onboarded = b("onboarded", d.onboarded),
+                labelTemplate = s("labelTemplate", d.labelTemplate),
+                labelW = m["labelW"]?.toFloatOrNull() ?: d.labelW,
+                labelH = m["labelH"]?.toFloatOrNull() ?: d.labelH,
+                labelShowName = b("labelShowName", d.labelShowName),
+                labelShowPrice = b("labelShowPrice", d.labelShowPrice),
+                labelShowCode = b("labelShowCode", d.labelShowCode),
+                labelShowStore = b("labelShowStore", d.labelShowStore),
+                labelOutput = s("labelOutput", d.labelOutput),
+                labelSheet = i("labelSheet", d.labelSheet),
+                labelAskOnSave = b("labelAskOnSave", d.labelAskOnSave),
             )
         }
     }

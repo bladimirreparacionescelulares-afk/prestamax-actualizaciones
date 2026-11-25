@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.1.0"
-val appVersionCode = 2
+val appVersionName = "1.2.0"
+val appVersionCode = 3
 
 kotlin {
     androidTarget {
@@ -55,7 +55,10 @@ kotlin {
             implementation("org.apache.pdfbox:pdfbox:3.0.3")
         }
         val desktopTest by getting {
-            dependencies { implementation(compose.desktop.uiTestJUnit4) }
+            dependencies {
+                implementation(compose.desktop.uiTestJUnit4)
+                implementation("com.google.zxing:javase:3.5.3")
+            }
         }
     }
 }
@@ -121,6 +124,6 @@ compose.desktop {
 // Capturas de pantalla: ./gradlew :composeApp:desktopTest -Dscreenshots=/ruta/carpeta
 tasks.withType<Test>().configureEach {
     System.getProperty("screenshots")?.let { systemProperty("screenshots", it) }
-    listOf("phoneCode", "phonePort").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
+    listOf("phoneCode", "phonePort", "labeldebug").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
     outputs.upToDateWhen { System.getProperty("screenshots") == null && System.getProperty("phoneCode") == null }
 }

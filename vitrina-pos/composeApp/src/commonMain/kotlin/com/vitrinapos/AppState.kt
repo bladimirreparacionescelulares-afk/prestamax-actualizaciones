@@ -49,6 +49,8 @@ sealed interface Screen {
     data object StockMoves : Screen
     data object Network : Screen
     data object Users : Screen
+    data object Labels : Screen
+    data object LabelDesigner : Screen
 }
 
 val LocalAppState = staticCompositionLocalOf<AppState> { error("AppState no disponible") }
@@ -133,6 +135,21 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     fun clearCart() {
         cart.clear(); cartClient = null; cartDiscount = 0; cartQuoteId = null
+    }
+
+    // ---------- Etiquetas ----------
+
+    /** Productos y copias a imprimir en el diseñador de etiquetas. */
+    data class LabelItem(val productId: Long, val copies: Int)
+    val labelJob = mutableStateListOf<LabelItem>()
+
+    /** Producto recién creado: se pregunta si imprimir sus etiquetas. */
+    var labelPrompt by mutableStateOf<Long?>(null)
+
+    fun openLabelsFor(items: List<LabelItem>) {
+        labelJob.clear()
+        labelJob.addAll(items.filter { it.copies > 0 })
+        open(Screen.LabelDesigner)
     }
 
     // ---------- Mensajes ----------

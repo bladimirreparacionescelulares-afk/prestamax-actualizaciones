@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -120,6 +121,7 @@ fun MoreScreen() {
         add(MoreItem(Icons.AutoMirrored.Rounded.ReceiptLong, "Ventas", "Historial y anulaciones", Screen.SalesHistory))
         if (app.can(com.vitrinapos.data.Permission.REPORTS)) add(MoreItem(Icons.Rounded.BarChart, "Reportes", "Ventas y ganancias", Screen.Reports))
         add(MoreItem(Icons.Rounded.PointOfSale, "Caja", if (cash != null) "Abierta" else "Apertura y cierre", Screen.Cash))
+        add(MoreItem(Icons.Rounded.QrCode2, "Etiquetas", "QR y precio para tus productos", Screen.Labels))
         add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
         add(MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()))
         add(MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves))
@@ -399,7 +401,7 @@ fun SettingsScreen() {
             }
             TextButton(onClick = { confirmSamples = true }) { Text("Cargar productos de ejemplo") }
             }
-            Text("Vitrina POS 1.1 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
+            Text("Vitrina POS 1.2 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
         }
     }
 

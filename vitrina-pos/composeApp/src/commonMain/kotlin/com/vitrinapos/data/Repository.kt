@@ -252,7 +252,8 @@ class Repository(val platform: Platform) {
                     )
                     is Op.DeleteCategory -> { db.categoryQueries.clearFromProducts(op.id); db.categoryQueries.delete(op.id); JsonNull }
                     is Op.SaveProduct -> {
-                        val d = op.draft
+                        // Todo producto lleva código: si no lo escribieron, se le asigna uno para su etiqueta.
+                        val d = if (op.draft.code.isBlank()) op.draft.copy(code = newCode()) else op.draft
                         if (d.id == null) {
                             db.productQueries.insert(
                                 d.name.trim(), d.code.trim(), d.categoryId, d.supplierId, d.cost, d.price, d.initialStock, d.minStock,
@@ -270,6 +271,22 @@ class Repository(val platform: Platform) {
                         }
                     }
                     is Op.DeleteProduct -> { db.productQueries.deactivate(now, op.id); JsonNull }
+                    is Op.EnsureCodes -> {
+                        val out = LinkedHashMap<String, JsonElement>()
+                        for (id in op.ids) {
+                            val p = db.productQueries.selectById(id).executeAsOneOrNull() ?: continue
+                            val code = p.code.ifBlank {
+                                newCode().also {
+                                    db.productQueries.update(
+                                        p.name, it, p.categoryId, p.supplierId, p.cost, p.price, p.minStock, p.unit, p.taxable, p.trackStock,
+                                        p.imagePath, p.description, now, p.id,
+                                    )
+                                }
+                            }
+                            out[id.toString()] = JsonPrimitive(code)
+                        }
+                        JsonObject(out)
+                    }
                     is Op.AdjustStock -> {
                         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull()
                         if (p != null && op.newStock != p.stock) {
@@ -371,6 +388,8 @@ class Repository(val platform: Platform) {
         changeSignal.value = db.syncQueries.maxSeq().executeAsOne()
         return result
     }
+
+    private fun newCode(): String = com.vitrinapos.labels.Codes.newInternalEan { db.productQueries.selectByCode(it).executeAsOneOrNull() != null }
 
     /** Inserta la venta (dentro de una transacción). Devuelve su id. */
     private fun insertSale(op: Op.RecordSale, number: Long): Long {
@@ -551,6 +570,13 @@ class Repository(val platform: Platform) {
     suspend fun saveProduct(d: ProductDraft): Long = run(Op.SaveProduct(d, userName)).asId()
 
     suspend fun deleteProduct(id: Long) { run(Op.DeleteProduct(id)) }
+
+    /** Asegura que los productos tengan código (para su QR). Devuelve id → código. */
+    suspend fun ensureCodes(ids: List<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
+        val r = run(Op.EnsureCodes(ids))
+        return (r as? JsonObject)?.mapNotNull { (k, v) -> k.toLongOrNull()?.let { it to v.jsonPrimitive.content } }?.toMap() ?: emptyMap()
+    }
 
     suspend fun adjustStock(productId: Long, newStock: Double, note: String) { run(Op.AdjustStock(productId, newStock, note, userName)) }
 

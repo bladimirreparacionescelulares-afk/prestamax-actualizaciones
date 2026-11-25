@@ -66,6 +66,17 @@ class Screenshots {
         shoot(graph, File(outDir, "20-windows-vender.png"), 1366, 800, 1f) { app -> app.selectTab(Screen.Pos); addCart(app, repo) }
         shoot(graph, File(outDir, "21-windows-inicio.png"), 1366, 800, 1f) { it.selectTab(Screen.Home) }
 
+        // ---- Etiquetas ----
+        val ps = repo.products.value
+        val job = listOf(
+            AppState.LabelItem(ps.first { it.code == "AUD-210" }.id, 7),
+            AppState.LabelItem(ps.first { it.code == "CRG-020" }.id, 2),
+            AppState.LabelItem(ps.first { it.code == "PWB-100" }.id, 3),
+        )
+        shoot(graph, File(outDir, "18-etiquetas.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.labelJob.addAll(job); app.open(Screen.Labels) }
+        shoot(graph, File(outDir, "19-diseno-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.openLabelsFor(job) }
+        shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
+
         // ---- Trabajo en red y usuarios ----
         graph.becomeServer()
         runBlocking {

@@ -22,6 +22,10 @@ sealed class Op {
     @Serializable @SerialName("product")
     data class SaveProduct(val draft: ProductDraft, val user: String) : Op()
 
+    /** Asigna un código interno a los productos que no tienen. Devuelve {id: código}. */
+    @Serializable @SerialName("ensureCodes")
+    data class EnsureCodes(val ids: List<Long>) : Op()
+
     @Serializable @SerialName("productDel")
     data class DeleteProduct(val id: Long) : Op()
 

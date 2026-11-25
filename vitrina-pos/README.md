@@ -28,6 +28,17 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
 | **Caja** | Apertura con monto inicial y cierre con efectivo contado: muestra si cuadra, sobra o falta. |
 | **Configuración** | Datos del negocio y logo, moneda, impuesto (incluido o sumado), impresora, cotizaciones, trabajo en red, usuarios y respaldo. |
 
+### Etiquetas con QR
+
+- Cada producto lleva un código. Si no se escribe, la app asigna uno de 13 dígitos que empieza en 200 (rango interno de tiendas).
+- El QR guarda ese código: al escanearlo en Vender, el producto se agrega a la venta.
+- 4 plantillas: **Precio + QR**, **Código de barras** (EAN-13 o Code 128), **Mini** y **Exhibición** (con el nombre de la tienda).
+- Cualquier tamaño entre **20 × 10 mm y 80 × 60 mm**, con 50 × 30 y 40 × 30 listos. Si el código de barras no cabe legible, la plantilla usa QR.
+- Al crear un producto, la app pregunta si imprimir sus etiquetas (una por unidad en stock).
+- Salidas: PDF del tamaño exacto de la etiqueta (para el driver de la etiquetadora) u hojas adhesivas A4 o Carta (24, 21 o 65 por hoja A4, 30 por hoja Carta), con opción de empezar en cualquier etiqueta de una hoja usada.
+- Probado: todas las plantillas caben en todos los tamaños y el QR y las barras se leen al imprimir a 203 dpi.
+- La impresión directa en la etiquetadora (Bluetooth o USB, TSPL, ZPL y ESC/POS) llega en la versión 1.3.
+
 ### Trabajo en red (varios equipos)
 
 Varios celulares, tablets y computadoras trabajan con los mismos datos por Wi-Fi o cable de red, sin internet.
