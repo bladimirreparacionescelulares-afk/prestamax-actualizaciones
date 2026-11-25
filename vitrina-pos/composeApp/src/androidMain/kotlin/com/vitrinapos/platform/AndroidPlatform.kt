@@ -33,6 +33,23 @@ import kotlin.math.roundToInt
 
 class AndroidPlatform(private val context: Context) : Platform {
     override val isDesktop = false
+    override val platformName = "Android"
+    override val defaultDeviceName: String = listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+        .filter { !it.isNullOrBlank() }.joinToString(" ").replaceFirstChar { it.uppercase() }.ifBlank { "Celular" }
+
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+    override fun setNetworkActive(active: Boolean) {
+        runCatching {
+            if (active && multicastLock == null) {
+                val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                multicastLock = wifi.createMulticastLock("vitrina").apply { setReferenceCounted(false); acquire() }
+            } else if (!active) {
+                multicastLock?.release(); multicastLock = null
+            }
+        }
+    }
+
     override val io: CoroutineDispatcher = Dispatchers.IO
     override val dataDir: File = context.filesDir
     override val databaseFile: File get() = context.getDatabasePath(DB_NAME)

@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!-- Trabajo en red con otros equipos del local -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
@@ -22,6 +28,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="Vitrina POS"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security"
         android:theme="@style/Theme.Vitrina">
 
         <activity

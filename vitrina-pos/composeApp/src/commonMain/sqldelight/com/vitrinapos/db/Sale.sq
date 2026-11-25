@@ -14,7 +14,10 @@ CREATE TABLE sale (
   changeDue INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'OK',
   quoteId INTEGER,
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  deviceId TEXT NOT NULL DEFAULT '',
+  userId INTEGER,
+  userName TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX sale_created ON sale(createdAt);
@@ -49,8 +52,14 @@ nextNumber:
 SELECT COALESCE(MAX(number), 0) + 1 FROM sale;
 
 insert:
-INSERT INTO sale(number, clientId, clientName, gross, discount, tax, total, costTotal, taxIncluded, paymentMethod, received, changeDue, status, quoteId, createdAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?);
+INSERT INTO sale(number, clientId, clientName, gross, discount, tax, total, costTotal, taxIncluded, paymentMethod, received, changeDue, status, quoteId, createdAt, deviceId, userId, userName)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?, ?, ?);
+
+deleteProvisional:
+DELETE FROM sale WHERE id < 0;
+
+deleteProvisionalItems:
+DELETE FROM saleItem WHERE saleId < 0 OR id < 0;
 
 setStatus:
 UPDATE sale SET status = ? WHERE id = ?;

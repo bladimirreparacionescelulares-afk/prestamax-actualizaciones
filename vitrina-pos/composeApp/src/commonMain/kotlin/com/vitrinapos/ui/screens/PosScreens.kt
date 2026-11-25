@@ -350,7 +350,7 @@ fun TotalsBlock(t: Totals, symbol: String, taxName: String) {
 fun CheckoutScreen() {
     val app = LocalAppState.current
     val s = app.settings
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val clients by app.repo.clients.collectAsState()
     var method by remember { mutableStateOf(PaymentMethods.CASH) }
     var received by remember { mutableStateOf<Long?>(null) }

@@ -13,6 +13,14 @@ data class PrinterDevice(val id: String, val name: String, val detail: String = 
 /** Servicios que cambian entre Android y Windows. */
 interface Platform {
     val isDesktop: Boolean
+    /** "Android" o "Windows". */
+    val platformName: String
+    /** Nombre sugerido para este equipo en la red. */
+    val defaultDeviceName: String
+
+    /** Mantiene activa la recepción de mensajes de la red (necesario en Android para que lo encuentren). */
+    fun setNetworkActive(active: Boolean)
+
     val io: CoroutineDispatcher
     /** Carpeta privada de la app (base de datos, fotos, PDF). */
     val dataDir: File

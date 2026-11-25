@@ -13,7 +13,8 @@ CREATE TABLE quote (
   status TEXT NOT NULL DEFAULT 'BORRADOR',
   saleId INTEGER,
   createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  updatedAt INTEGER NOT NULL,
+  userName TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE quoteItem (
@@ -38,8 +39,8 @@ nextNumber:
 SELECT COALESCE(MAX(number), 0) + 1 FROM quote;
 
 insert:
-INSERT INTO quote(number, clientId, clientName, gross, discount, tax, total, taxIncluded, validDays, notes, status, saleId, createdAt, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
+INSERT INTO quote(number, clientId, clientName, gross, discount, tax, total, taxIncluded, validDays, notes, status, saleId, createdAt, updatedAt, userName)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
 
 update:
 UPDATE quote SET clientId = ?, clientName = ?, gross = ?, discount = ?, tax = ?, total = ?, taxIncluded = ?, validDays = ?, notes = ?, status = ?, updatedAt = ?

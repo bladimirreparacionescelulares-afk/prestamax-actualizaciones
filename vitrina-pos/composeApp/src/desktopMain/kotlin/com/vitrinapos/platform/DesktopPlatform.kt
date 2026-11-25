@@ -34,6 +34,11 @@ import kotlin.math.roundToInt
 
 class DesktopPlatform : Platform {
     override val isDesktop = true
+    override val platformName: String = if (System.getProperty("os.name").orEmpty().startsWith("Windows")) "Windows" else System.getProperty("os.name").orEmpty().ifBlank { "PC" }
+    override val defaultDeviceName: String = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotBlank() } ?: "PC"
+
+    override fun setNetworkActive(active: Boolean) {}
+
     override val io: CoroutineDispatcher = Dispatchers.IO
 
     override val dataDir: File = run {
@@ -49,7 +54,12 @@ class DesktopPlatform : Platform {
     override val databaseFile: File get() = File(dataDir, "vitrina.db")
 
     override fun createDriver(): SqlDriver =
-        JdbcSqliteDriver("jdbc:sqlite:${databaseFile.absolutePath}", Properties(), VitrinaDb.Schema)
+        JdbcSqliteDriver(
+            "jdbc:sqlite:${databaseFile.absolutePath}",
+            // Varios equipos pueden escribir a la vez: se espera en vez de fallar.
+            Properties().apply { put("busy_timeout", "8000"); put("journal_mode", "WAL") },
+            VitrinaDb.Schema,
+        )
 
     override fun decodeImage(file: File, maxSide: Int): ImageBitmap? = runCatching {
         val img = ImageIO.read(file) ?: return null

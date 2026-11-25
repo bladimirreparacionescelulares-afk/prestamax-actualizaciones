@@ -1,0 +1,71 @@
+-- Versión 1 -> 2: trabajo en red y usuarios.
+ALTER TABLE sale ADD COLUMN deviceId TEXT NOT NULL DEFAULT '';
+ALTER TABLE sale ADD COLUMN userId INTEGER;
+ALTER TABLE sale ADD COLUMN userName TEXT NOT NULL DEFAULT '';
+ALTER TABLE quote ADD COLUMN userName TEXT NOT NULL DEFAULT '';
+ALTER TABLE stockMove ADD COLUMN userName TEXT NOT NULL DEFAULT '';
+ALTER TABLE cashSession ADD COLUMN deviceId TEXT NOT NULL DEFAULT '';
+ALTER TABLE cashSession ADD COLUMN userName TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE appUser (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  pinHash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  createdAt INTEGER NOT NULL
+);
+
+-- Datos propios de cada equipo (no se comparten por la red).
+CREATE TABLE meta (
+  key TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL
+);
+
+-- Registro de cambios: el equipo principal lo usa para avisar a los demás.
+CREATE TABLE changeLog (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl TEXT NOT NULL,
+  rowKey TEXT NOT NULL
+);
+
+-- Ventas hechas sin conexión, pendientes de enviar al principal.
+CREATE TABLE outbox (
+  opId TEXT NOT NULL PRIMARY KEY,
+  payload TEXT NOT NULL,
+  provisionalSaleId INTEGER,
+  createdAt INTEGER NOT NULL
+);
+
+-- Operaciones ya aplicadas en el principal (evita duplicar una venta reenviada).
+CREATE TABLE appliedOp (
+  opId TEXT NOT NULL PRIMARY KEY,
+  result TEXT NOT NULL,
+  createdAt INTEGER NOT NULL
+);
+
+-- Equipos unidos a este principal.
+CREATE TABLE device (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  keyHex TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  lastSeen INTEGER NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0
+);
+
+
+-- Todo lo que ya existía queda listo para enviarse a los equipos conectados.
+INSERT INTO changeLog(tbl, rowKey) SELECT 'setting', key FROM setting;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'category', id FROM category;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'product', id FROM product;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'client', id FROM client;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'supplier', id FROM supplier;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'sale', id FROM sale;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'saleItem', id FROM saleItem;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'quote', id FROM quote;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'quoteItem', id FROM quoteItem;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'stockMove', id FROM stockMove;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'cashSession', id FROM cashSession;
+INSERT INTO changeLog(tbl, rowKey) SELECT 'appUser', id FROM appUser;

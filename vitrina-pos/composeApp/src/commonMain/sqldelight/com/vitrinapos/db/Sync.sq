@@ -1,0 +1,90 @@
+-- Datos propios de cada equipo (no se comparten por la red).
+CREATE TABLE meta (
+  key TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL
+);
+
+-- Registro de cambios: el equipo principal lo usa para avisar a los demás.
+CREATE TABLE changeLog (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl TEXT NOT NULL,
+  rowKey TEXT NOT NULL
+);
+
+-- Ventas hechas sin conexión, pendientes de enviar al principal.
+CREATE TABLE outbox (
+  opId TEXT NOT NULL PRIMARY KEY,
+  payload TEXT NOT NULL,
+  provisionalSaleId INTEGER,
+  createdAt INTEGER NOT NULL
+);
+
+-- Operaciones ya aplicadas en el principal (evita duplicar una venta reenviada).
+CREATE TABLE appliedOp (
+  opId TEXT NOT NULL PRIMARY KEY,
+  result TEXT NOT NULL,
+  createdAt INTEGER NOT NULL
+);
+
+-- Equipos unidos a este principal.
+CREATE TABLE device (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  keyHex TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  lastSeen INTEGER NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0
+);
+
+
+metaAll:
+SELECT * FROM meta;
+
+metaPut:
+INSERT OR REPLACE INTO meta(key, content) VALUES (?, ?);
+
+maxSeq:
+SELECT COALESCE(MAX(seq), 0) FROM changeLog;
+
+changesSince:
+SELECT tbl, rowKey, MAX(seq) AS seq FROM changeLog WHERE seq > ? GROUP BY tbl, rowKey ORDER BY MAX(seq) LIMIT ?;
+
+clearChangeLog:
+DELETE FROM changeLog;
+
+outboxAll:
+SELECT * FROM outbox ORDER BY createdAt;
+
+outboxAdd:
+INSERT INTO outbox(opId, payload, provisionalSaleId, createdAt) VALUES (?, ?, ?, ?);
+
+outboxRemove:
+DELETE FROM outbox WHERE opId = ?;
+
+outboxCount:
+SELECT COUNT(*) FROM outbox;
+
+appliedGet:
+SELECT result FROM appliedOp WHERE opId = ?;
+
+appliedPut:
+INSERT OR REPLACE INTO appliedOp(opId, result, createdAt) VALUES (?, ?, ?);
+
+deviceAll:
+SELECT * FROM device ORDER BY revoked, lastSeen DESC;
+
+deviceGet:
+SELECT * FROM device WHERE id = ?;
+
+deviceAdd:
+INSERT OR REPLACE INTO device(id, name, platform, keyHex, createdAt, lastSeen, revoked) VALUES (?, ?, ?, ?, ?, ?, 0);
+
+deviceSeen:
+UPDATE device SET lastSeen = ? WHERE id = ?;
+
+deviceRevoke:
+UPDATE device SET revoked = 1 WHERE id = ?;
+
+deviceDelete:
+DELETE FROM device WHERE id = ?;

@@ -8,6 +8,7 @@ import com.vitrinapos.data.AppGraph
 import com.vitrinapos.data.CartLine
 import com.vitrinapos.data.PaymentMethods
 import com.vitrinapos.data.QuoteStatus
+import com.vitrinapos.data.ProductDraft
 import com.vitrinapos.data.Repository
 import com.vitrinapos.data.SampleData
 import com.vitrinapos.data.Time
@@ -119,7 +120,7 @@ class Screenshots {
             ImageIO.write(drawProduct(kind), "png", tmp)
             val name = repo.importImage(tmp)
             repo.saveProduct(
-                Repository.ProductDraft(p.id, p.name, p.code, p.categoryId, p.supplierId, p.cost, p.price, 0.0, p.minStock, p.unit,
+                ProductDraft(p.id, p.name, p.code, p.categoryId, p.supplierId, p.cost, p.price, 0.0, p.minStock, p.unit,
                     p.taxable == 1L, p.trackStock == 1L, name, p.description),
             )
         }
@@ -128,7 +129,7 @@ class Screenshots {
         val clients = repo.db.clientQueries.selectAll().executeAsList()
         // Ventas de ayer (insertadas con fecha anterior)
         val yesterday = Time.addDays(Time.startOfDay(), -1) + 10 * 3_600_000L
-        repo.db.saleQueries.insert(1, null, "Consumidor final", 1450000, 0, 221186, 1450000, 800000, 1, PaymentMethods.CASH, 1450000, 0, null, yesterday)
+        repo.db.saleQueries.insert(1, null, "Consumidor final", 1450000, 0, 221186, 1450000, 800000, 1, PaymentMethods.CASH, 1450000, 0, null, yesterday, repo.deviceId, null, "")
         repo.recordSale(listOf(line("FND-054", 2.0), line("MIC-054", 2.0)), clients[0], 0, PaymentMethods.CARD, 0, null)
         repo.recordSale(listOf(line("PWB-100"), line("CBL-002")), null, 0, PaymentMethods.TRANSFER, 0, null)
         repo.recordSale(listOf(line("AUD-305"), line("CRG-110", 2.0)), clients[1], 0, PaymentMethods.CASH, 250000, null)

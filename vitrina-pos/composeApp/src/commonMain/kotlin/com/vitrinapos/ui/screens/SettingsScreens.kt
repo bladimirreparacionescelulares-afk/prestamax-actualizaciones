@@ -156,7 +156,7 @@ fun MoreScreen() {
 @Composable
 fun SettingsScreen() {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val saved = app.settings
     var d by remember { mutableStateOf(saved) }
     var taxText by remember { mutableStateOf(saved.taxRate.toString().removeSuffix(".0")) }

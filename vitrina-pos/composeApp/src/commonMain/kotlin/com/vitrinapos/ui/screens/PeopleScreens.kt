@@ -129,7 +129,7 @@ fun PersonRow(name: String, sub: String, trailing: String? = null, square: Boole
 @Composable
 fun ClientFormScreen(id: Long?) {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -324,7 +324,7 @@ fun SuppliersScreen() {
 @Composable
 fun SupplierFormScreen(id: Long?) {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     var name by remember { mutableStateOf("") }
     var contact by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }

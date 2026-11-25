@@ -56,7 +56,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun WelcomeScreen() {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val s = app.settingsNow
     var name by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf(s.currencySymbol) }

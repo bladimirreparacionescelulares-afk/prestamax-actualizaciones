@@ -567,3 +567,16 @@ fun BoxScope.CountBadge(count: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun Modifier.outlined(shape: Shape = RoundedCornerShape(16.dp)) = this.border(1.dp, AppTheme.extra.line, shape)
+
+/**
+ * Corrutinas de pantalla: si una acción falla (por ejemplo, sin conexión con el equipo principal)
+ * se muestra el motivo en vez de cerrar la app.
+ */
+@Composable
+fun rememberSafeScope(): kotlinx.coroutines.CoroutineScope {
+    val app = LocalAppState.current
+    val handler = remember(app) {
+        kotlinx.coroutines.CoroutineExceptionHandler { _, e -> app.toast(e.message ?: "Ocurrió un error") }
+    }
+    return androidx.compose.runtime.rememberCoroutineScope { handler }
+}

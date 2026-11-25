@@ -24,7 +24,7 @@ object SampleData {
             P("Cable USB-C a USB-C 1 m", "CBL-002", "Cables", 12000, 30000, 18.0, 5.0, sup1),
         ).forEach { p ->
             repo.saveProduct(
-                Repository.ProductDraft(
+                ProductDraft(
                     id = null, name = p.name, code = p.code, categoryId = cats[p.cat], supplierId = p.sup,
                     cost = p.cost, price = p.price, initialStock = p.stock, minStock = p.min, unit = "und",
                     taxable = true, trackStock = true, imagePath = null, description = "",

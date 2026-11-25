@@ -161,7 +161,7 @@ private val validOptions = listOf(7, 15, 30, 60, 90)
 fun QuoteEditorScreen(id: Long?, presetClientId: Long?) {
     val app = LocalAppState.current
     val s = app.settings
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val clients by app.repo.clients.collectAsState()
     val products by app.repo.products.collectAsState()
 

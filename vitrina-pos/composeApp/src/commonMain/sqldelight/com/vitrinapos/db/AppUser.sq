@@ -1,0 +1,26 @@
+CREATE TABLE appUser (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  pinHash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  createdAt INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM appUser ORDER BY active DESC, name COLLATE NOCASE;
+
+selectById:
+SELECT * FROM appUser WHERE id = ?;
+
+insert:
+INSERT INTO appUser(name, pinHash, role, active, createdAt) VALUES (?, ?, ?, ?, ?);
+
+update:
+UPDATE appUser SET name = ?, role = ?, active = ? WHERE id = ?;
+
+setPin:
+UPDATE appUser SET pinHash = ? WHERE id = ?;
+
+lastId:
+SELECT last_insert_rowid();

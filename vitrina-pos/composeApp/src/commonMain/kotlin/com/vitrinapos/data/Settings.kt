@@ -55,6 +55,9 @@ data class AppSettings(
     )
 
     companion object {
+        /** Ajustes propios de cada equipo: no se comparten por la red. */
+        val LOCAL_KEYS = setOf("printerId", "printerName", "paperWidthMm", "ticketAscii", "autoPrint", "openDrawer")
+
         fun fromMap(m: Map<String, String>): AppSettings {
             val d = AppSettings()
             fun s(k: String, def: String) = m[k] ?: def

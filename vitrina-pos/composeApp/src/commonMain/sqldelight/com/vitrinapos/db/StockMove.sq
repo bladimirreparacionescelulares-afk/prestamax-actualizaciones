@@ -4,13 +4,17 @@ CREATE TABLE stockMove (
   type TEXT NOT NULL,
   qty REAL NOT NULL,
   note TEXT NOT NULL DEFAULT '',
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  userName TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX stockMove_product ON stockMove(productId);
 
 insert:
-INSERT INTO stockMove(productId, type, qty, note, createdAt) VALUES (?, ?, ?, ?, ?);
+INSERT INTO stockMove(productId, type, qty, note, createdAt, userName) VALUES (?, ?, ?, ?, ?, ?);
+
+deleteProvisional:
+DELETE FROM stockMove WHERE id < 0;
 
 selectRecent:
 SELECT stockMove.*, product.name AS productName FROM stockMove

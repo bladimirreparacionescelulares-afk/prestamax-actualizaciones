@@ -5,17 +5,25 @@ CREATE TABLE cashSession (
   closedAt INTEGER,
   expectedAmount INTEGER,
   countedAmount INTEGER,
-  notes TEXT NOT NULL DEFAULT ''
+  notes TEXT NOT NULL DEFAULT '',
+  deviceId TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT ''
 );
 
 selectOpen:
-SELECT * FROM cashSession WHERE closedAt IS NULL ORDER BY openedAt DESC LIMIT 1;
+SELECT * FROM cashSession WHERE closedAt IS NULL AND deviceId = ? ORDER BY openedAt DESC LIMIT 1;
+
+selectById:
+SELECT * FROM cashSession WHERE id = ?;
 
 selectRecent:
-SELECT * FROM cashSession ORDER BY openedAt DESC LIMIT 30;
+SELECT * FROM cashSession WHERE deviceId = ? ORDER BY openedAt DESC LIMIT 30;
 
 open:
-INSERT INTO cashSession(openedAt, openingAmount) VALUES (?, ?);
+INSERT INTO cashSession(openedAt, openingAmount, deviceId, userName) VALUES (?, ?, ?, ?);
 
 close:
 UPDATE cashSession SET closedAt = ?, expectedAmount = ?, countedAmount = ?, notes = ? WHERE id = ?;
+
+claimOrphans:
+UPDATE cashSession SET deviceId = ? WHERE deviceId = '';

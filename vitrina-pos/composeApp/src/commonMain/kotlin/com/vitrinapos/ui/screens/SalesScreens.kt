@@ -125,7 +125,7 @@ fun SalesHistoryScreen() {
 fun SaleDetailScreen(id: Long) {
     val app = LocalAppState.current
     val s = app.settings
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     var refresh by remember { mutableIntStateOf(0) }
     val data by produceState<Pair<Sale, List<SaleItem>>?>(null, id, refresh) {
         val sale = app.repo.saleById(id)
@@ -348,7 +348,7 @@ private fun DayBars(data: List<Pair<Long, Long>>) {
 fun CashScreen() {
     val app = LocalAppState.current
     val s = app.settings
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val open by app.repo.openCash.collectAsState()
     val recent by app.repo.recentSales.collectAsState()
     var amount by remember { mutableStateOf<Long?>(null) }

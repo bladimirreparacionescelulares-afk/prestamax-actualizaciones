@@ -79,6 +79,7 @@ import com.vitrinapos.Screen
 import com.vitrinapos.data.EntryLine
 import com.vitrinapos.data.Money
 import com.vitrinapos.data.MoveType
+import com.vitrinapos.data.ProductDraft
 import com.vitrinapos.data.Repository
 import com.vitrinapos.data.Time
 import com.vitrinapos.data.fmtQty
@@ -213,7 +214,7 @@ private val units = listOf("und", "kg", "lb", "m", "caja", "par", "paquete", "se
 fun ProductFormScreen(id: Long?, presetCode: String?) {
     val app = LocalAppState.current
     val s = app.settings
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val categories by app.repo.categories.collectAsState()
     val suppliers by app.repo.suppliers.collectAsState()
     val products by app.repo.products.collectAsState()
@@ -280,7 +281,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
         if (name.isBlank() || price == null || duplicate) return
         scope.launch {
             val newId = app.repo.saveProduct(
-                Repository.ProductDraft(
+                ProductDraft(
                     id = id, name = name, code = code, categoryId = categoryId, supplierId = supplierId,
                     cost = cost ?: 0, price = price ?: 0, initialStock = if (id == null) stock ?: 0.0 else 0.0,
                     minStock = minStock ?: 0.0, unit = unit, taxable = taxable, trackStock = trackStock,
@@ -512,7 +513,7 @@ fun MoveRow(type: String, qty: Double, note: String, at: Long, productName: Stri
 @Composable
 fun CategoriesScreen() {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val categories by app.repo.categories.collectAsState()
     val products by app.repo.products.collectAsState()
     var editing by remember { mutableStateOf<Category?>(null) }
@@ -587,7 +588,7 @@ private data class EntryDraft(val product: Product, val qty: Double?, val cost: 
 @Composable
 fun StockEntryScreen(supplierId: Long?) {
     val app = LocalAppState.current
-    val scope = rememberCoroutineScope()
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val suppliers by app.repo.suppliers.collectAsState()
     val products by app.repo.products.collectAsState()
     var supplier by remember { mutableStateOf(suppliers.firstOrNull { it.id == supplierId }) }
