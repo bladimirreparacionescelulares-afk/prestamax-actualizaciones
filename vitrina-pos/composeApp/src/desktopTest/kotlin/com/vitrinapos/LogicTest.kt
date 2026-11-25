@@ -117,3 +117,15 @@ class LogicTest {
         dir.deleteRecursively()
     }
 }
+
+class TicketTest {
+    @Test
+    fun bigTotalFallsBackWhenTooLong() {
+        val t = Ticket(32)
+        t.pair("TOTAL", "$123,456.00", Ticket.Style.Big)
+        assertEquals(Ticket.Style.Bold, t.lines.last().style)
+        assertTrue(t.lines.last().text.startsWith("TOTAL"))
+        t.pair("TOTAL", "$950.00", Ticket.Style.Big)
+        assertEquals(Ticket.Style.Big, t.lines.last().style)
+    }
+}

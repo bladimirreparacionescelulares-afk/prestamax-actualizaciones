@@ -42,6 +42,8 @@ class Ticket(val width: Int) {
 
     /** Texto a la izquierda y a la derecha en la misma línea. */
     fun pair(left: String, right: String, style: Style = Style.Normal) {
+        // Si no cabe en letra grande, se imprime en negrita de tamaño normal.
+        if (style == Style.Big && left.length + right.length + 1 > width / 2) return pair(left, right, Style.Bold)
         val w = if (style == Style.Big) width / 2 else width
         val space = w - right.length - 1
         val l = if (left.length > space) left.take(space.coerceAtLeast(0)) else left
