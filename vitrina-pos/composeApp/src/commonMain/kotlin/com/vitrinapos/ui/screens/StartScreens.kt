@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +56,7 @@ import kotlinx.coroutines.launch
 
 /** Primera vez que se abre la app: datos básicos del negocio. */
 @Composable
-fun WelcomeScreen() {
+fun WelcomeScreen(onConnect: () -> Unit = {}) {
     val app = LocalAppState.current
     val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val s = app.settingsNow
@@ -131,6 +133,9 @@ fun WelcomeScreen() {
             OutlinedButton(onClick = { finish(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(16.dp)) {
                 Text("Empezar con productos de ejemplo")
             }
+            TextButton(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
+                Text("¿Ya tienes Vitrina POS en otro equipo? Conectarme a él")
+            }
         }
     }
 }
@@ -181,6 +186,101 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Entrada con usuario y PIN cuando hay usuarios configurados. */
+@Composable
+fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
+    val app = LocalAppState.current
+    var selected by remember { mutableStateOf(if (users.size == 1) users.first() else null) }
+    val chosen = selected
+    if (chosen == null) {
+        Column(
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Spacer(Modifier.height(24.dp))
+            Text(app.settings.businessName, style = MaterialTheme.typography.headlineSmall)
+            Text("¿Quién va a usar la app?", color = AppTheme.extra.muted)
+            Column(Modifier.widthIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                users.forEach { u ->
+                    AppCard(Modifier.fillMaxWidth(), onClick = { selected = u }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            com.vitrinapos.ui.components.Avatar(u.name, 46.dp)
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(u.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                                Text(com.vitrinapos.data.Roles.label(u.role), color = AppTheme.extra.muted, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        PinPad(
+            title = chosen.name,
+            subtitle = "Escribe tu PIN",
+            check = { app.repo.checkPin(chosen, it) },
+            onSuccess = { app.repo.currentUser.value = chosen },
+            onBack = if (users.size > 1) ({ selected = null }) else null,
+        )
+    }
+}
+
+/** Teclado de PIN: comprueba a partir de 4 números y entra en cuanto coincide (hasta 8). */
+@Composable
+fun PinPad(title: String, subtitle: String, check: (String) -> Boolean, onSuccess: () -> Unit, onBack: (() -> Unit)? = null) {
+    var entered by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    fun press(d: String) {
+        if (entered.length >= 8) return
+        entered += d
+        error = false
+        if (entered.length >= 4 && check(entered)) { onSuccess(); return }
+        if (entered.length == 8) { error = true; entered = "" }
+    }
+    Column(
+        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        com.vitrinapos.ui.components.Avatar(title, 64.dp)
+        Spacer(Modifier.height(12.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(4.dp))
+        Text(if (error) "PIN incorrecto, intenta de nuevo" else subtitle, color = if (error) MaterialTheme.colorScheme.error else AppTheme.extra.muted)
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            repeat(maxOf(4, entered.length)) { i ->
+                Box(Modifier.size(14.dp).clip(CircleShape).background(if (i < entered.length) MaterialTheme.colorScheme.primary else AppTheme.extra.line))
+            }
+        }
+        Spacer(Modifier.height(26.dp))
+        val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "<")
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            keys.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { k ->
+                        Box(
+                            Modifier.size(74.dp).clip(CircleShape)
+                                .background(if (k.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer)
+                                .clickable(enabled = k.isNotEmpty()) { if (k == "<") entered = entered.dropLast(1) else press(k) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (k == "<") Icon(Icons.AutoMirrored.Rounded.Backspace, "Borrar")
+                            else Text(k, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+        if (onBack != null) {
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = onBack) { Text("Cambiar de usuario") }
         }
     }
 }

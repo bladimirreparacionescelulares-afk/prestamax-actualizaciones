@@ -47,6 +47,8 @@ sealed interface Screen {
     data class StockEntry(val supplierId: Long? = null) : Screen
     data object Cash : Screen
     data object StockMoves : Screen
+    data object Network : Screen
+    data object Users : Screen
 }
 
 val LocalAppState = staticCompositionLocalOf<AppState> { error("AppState no disponible") }
@@ -59,6 +61,25 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         @Composable get() = repo.settings.collectAsState().value
 
     val settingsNow: AppSettings get() = repo.settings.value
+
+    // ---------- Usuario actual y permisos ----------
+
+    val user: com.vitrinapos.db.AppUser?
+        @Composable get() = repo.currentUser.collectAsState().value
+
+    /** Sin usuarios configurados todo está permitido; con usuarios, según el rol de quien entró. */
+    fun can(p: com.vitrinapos.data.Permission): Boolean {
+        if (repo.users.value.none { it.active == 1L }) return true
+        val u = repo.currentUser.value ?: return false
+        return com.vitrinapos.data.can(u.role, p)
+    }
+
+    fun logout() {
+        clearCart()
+        stack.clear()
+        tab = Screen.Home
+        repo.currentUser.value = null
+    }
 
     // ---------- Navegación ----------
 

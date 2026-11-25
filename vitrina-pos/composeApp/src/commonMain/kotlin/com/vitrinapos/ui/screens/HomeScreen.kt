@@ -49,6 +49,7 @@ import com.vitrinapos.Screen
 import com.vitrinapos.data.Money
 import com.vitrinapos.data.SaleStatus
 import com.vitrinapos.data.Time
+import com.vitrinapos.data.label
 import com.vitrinapos.db.Sale
 import com.vitrinapos.ui.components.AppCard
 import com.vitrinapos.ui.components.Divider
@@ -86,18 +87,21 @@ fun HomeScreen() {
     val low = products.filter { it.trackStock == 1L && it.stock <= it.minStock }.sortedBy { it.stock }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(s.businessName, subtitle = Time.greeting()) {
+        val me = app.user
+        ScreenHeader(s.businessName, subtitle = Time.greeting() + (me?.let { ", ${it.name.substringBefore(' ')}" } ?: "")) {
+            NetworkPill { app.open(if (app.can(com.vitrinapos.data.Permission.SETTINGS)) Screen.Network else Screen.More) }
             SquareIconButton(Icons.Rounded.Settings, "Configuración") { app.open(Screen.Settings) }
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            OfflineBanner()
             // Resumen del día
             Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
                     .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF0A5E4E))))
-                    .clickable { app.open(Screen.Reports) }
+                    .clickable(enabled = app.can(com.vitrinapos.data.Permission.REPORTS)) { app.open(Screen.Reports) }
                     .padding(18.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -115,7 +119,8 @@ fun HomeScreen() {
                     Text(Money.format(todayStats.total, s.currencySymbol), color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         HeroStat("Ventas", todayStats.count.toString(), Modifier.weight(1f))
-                        HeroStat("Ganancia", Money.format(todayStats.profit, s.currencySymbol), Modifier.weight(1f))
+                        if (app.can(com.vitrinapos.data.Permission.REPORTS)) HeroStat("Ganancia", Money.format(todayStats.profit, s.currencySymbol), Modifier.weight(1f))
+                        else HeroStat("Ticket promedio", Money.format(if (todayStats.count == 0) 0 else todayStats.total / todayStats.count, s.currencySymbol), Modifier.weight(1f))
                     }
                 }
             }
@@ -125,7 +130,8 @@ fun HomeScreen() {
                 QuickAction(Icons.Rounded.AddBox, "Nuevo producto", Modifier.weight(1f)) { app.open(Screen.ProductForm()) }
                 QuickAction(Icons.Rounded.Description, "Cotización", Modifier.weight(1f)) { app.open(Screen.QuoteEditor()) }
                 QuickAction(Icons.Rounded.LocalShipping, "Proveedores", Modifier.weight(1f)) { app.open(Screen.Suppliers) }
-                QuickAction(Icons.Rounded.BarChart, "Reportes", Modifier.weight(1f)) { app.open(Screen.Reports) }
+                if (app.can(com.vitrinapos.data.Permission.REPORTS)) QuickAction(Icons.Rounded.BarChart, "Reportes", Modifier.weight(1f)) { app.open(Screen.Reports) }
+                else QuickAction(Icons.Rounded.PointOfSale, "Caja", Modifier.weight(1f)) { app.open(Screen.Cash) }
             }
 
             // Caja
@@ -226,8 +232,8 @@ fun SaleRow(sale: Sale, onClick: () -> Unit) {
     val voided = sale.status == SaleStatus.VOID
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Venta #${sale.number} · ${sale.paymentMethod}", fontWeight = FontWeight.SemiBold)
-            Text("${Time.relativeDay(sale.createdAt)} ${Time.time(sale.createdAt)} · ${sale.clientName}", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.muted, maxLines = 1)
+            Text("${sale.label} · ${sale.paymentMethod}", fontWeight = FontWeight.SemiBold)
+            Text("${Time.relativeDay(sale.createdAt)} ${Time.time(sale.createdAt)} · ${sale.clientName}" + (if (sale.userName.isNotBlank()) " · ${sale.userName}" else ""), style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.muted, maxLines = 1)
         }
         if (voided) {
             Pill("Anulada", AppTheme.extra.danger, AppTheme.extra.dangerSoft)

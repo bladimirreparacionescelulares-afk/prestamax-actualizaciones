@@ -26,7 +26,30 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
 | **Ventas** | Historial por día, detalle con vista previa del ticket, reimpresión, compartir como texto y anulación (devuelve el stock). |
 | **Reportes** | Vendido, ganancia, ticket promedio, ventas por día, por forma de pago, más vendidos y valor del inventario. |
 | **Caja** | Apertura con monto inicial y cierre con efectivo contado: muestra si cuadra, sobra o falta. |
-| **Configuración** | Datos del negocio y logo, moneda, impuesto (incluido o sumado), impresora, cotizaciones, PIN y respaldo. |
+| **Configuración** | Datos del negocio y logo, moneda, impuesto (incluido o sumado), impresora, cotizaciones, trabajo en red, usuarios y respaldo. |
+
+### Trabajo en red (varios equipos)
+
+Varios celulares, tablets y computadoras trabajan con los mismos datos por Wi-Fi o cable de red, sin internet.
+
+- Un equipo es el **principal** (lo ideal es la PC de la caja): guarda la base de datos, las fotos y los respaldos.
+- Los demás se **conectan** escaneando el QR del principal o escribiendo su código de 6 números. La app busca sola los principales de la red.
+- Lo que se hace en un equipo aparece en los demás en uno o dos segundos.
+- Si un equipo conectado pierde la red, **sigue vendiendo**: las ventas quedan como pendientes (P1, P2…) y se envían solas al volver la conexión. El principal les asigna el número final.
+- Desde el principal se ve qué equipos están conectados y se les puede quitar el acceso.
+- Todo lo que viaja por la red va cifrado (AES-256-GCM) con una llave propia de cada equipo.
+- Cada equipo usa su propia impresora y su propia caja.
+- En Windows, la primera vez aparece el aviso del Firewall: hay que elegir "Permitir acceso" en redes privadas. Usa el puerto TCP 8740 y UDP 8741.
+
+### Usuarios con PIN
+
+Cada persona entra con su nombre y PIN, y queda registrado quién vendió, quién anuló y quién ajustó stock.
+
+| Rol | Puede |
+|---|---|
+| Administrador | Todo: configuración, usuarios, trabajo en red, anular ventas, reportes y ganancias. |
+| Vendedor | Vender, cotizar, clientes y catálogo. No anula ventas, no borra registros ni ve ganancias. |
+| Técnico | Como vendedor, y además las órdenes del taller (próxima fase). |
 
 ### Impresión de tickets
 
@@ -57,7 +80,7 @@ cd vitrina-pos
 # Instalador de Windows (.msi); hay que ejecutarlo en Windows
 ./gradlew :composeApp:packageMsi
 
-# Pruebas (dinero, impuestos, ventas, stock, PDF y respaldo)
+# Pruebas (dinero, impuestos, ventas, stock, PDF, respaldo y trabajo en red con dos equipos)
 ./gradlew :composeApp:desktopTest
 
 # Capturas de pantalla con datos de ejemplo
@@ -75,6 +98,7 @@ composeApp/src/
   commonMain/            Código compartido (Android y Windows)
     sqldelight/          Tablas y consultas de la base de datos local
     kotlin/.../data      Repositorio, dinero e impuestos, fechas, respaldo, datos de ejemplo
+    kotlin/.../net       Trabajo en red: servidor del principal, cliente, cifrado y búsqueda de equipos
     kotlin/.../print     Ticket ESC/POS para 58 y 80 mm
     kotlin/.../pdf       Cotización A4
     kotlin/.../ui        Tema, componentes y pantallas

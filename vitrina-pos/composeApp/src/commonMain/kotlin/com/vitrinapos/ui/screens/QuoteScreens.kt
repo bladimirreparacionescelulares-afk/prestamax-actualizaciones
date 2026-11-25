@@ -218,7 +218,7 @@ fun QuoteEditorScreen(id: Long?, presetClientId: Long?) {
             subtitle = (number?.let { QuotePdf.quoteCode(it) } ?: "Nueva") + " · " + QuoteStatus.label(status),
             onBack = { app.back() },
         ) {
-            if (quoteId != null) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
+            if (quoteId != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
             if (!sold) TextButton(onClick = { action { persist(); app.toast("Cotización guardada") } }, enabled = lines.isNotEmpty()) { Text("Guardar", fontWeight = FontWeight.Bold) }
         }
         Column(

@@ -297,7 +297,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(if (id == null) "Nuevo producto" else "Editar producto", onBack = { app.back() }) {
-            if (id != null) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
+            if (id != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.error) }
             TextButton(onClick = { save(false) }) { Text("Guardar", fontWeight = FontWeight.Bold) }
         }
         if (!loaded) return@Column
@@ -388,7 +388,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                     } else {
                         Column(
                             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-                                .clickable { adjust = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                                .clickable(enabled = app.can(com.vitrinapos.data.Permission.ADJUST_STOCK)) { adjust = true }.padding(horizontal = 14.dp, vertical = 8.dp),
                         ) {
                             Text("Stock actual", fontSize = 12.sp, color = AppTheme.extra.muted)
                             Text("${(original?.stock ?: 0.0).fmtQty()} $unit · Ajustar", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)

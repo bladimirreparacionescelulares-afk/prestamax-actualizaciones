@@ -25,6 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Badge
+import androidx.compose.material.icons.rounded.Lan
+import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -101,19 +104,31 @@ fun MoreScreen() {
     val suppliers by app.repo.suppliers.collectAsState()
     val categories by app.repo.categories.collectAsState()
     val cash by app.repo.openCash.collectAsState()
-    val items = listOf(
-        MoreItem(Icons.Rounded.Description, "Cotizaciones", "${quotes.count { it.status != QuoteStatus.SOLD }} pendientes", Screen.Quotes),
-        MoreItem(Icons.Rounded.LocalShipping, "Proveedores", "${suppliers.size} registrados", Screen.Suppliers),
-        MoreItem(Icons.AutoMirrored.Rounded.ReceiptLong, "Ventas", "Historial y anulaciones", Screen.SalesHistory),
-        MoreItem(Icons.Rounded.BarChart, "Reportes", "Ventas y ganancias", Screen.Reports),
-        MoreItem(Icons.Rounded.PointOfSale, "Caja", if (cash != null) "Abierta" else "Apertura y cierre", Screen.Cash),
-        MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories),
-        MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()),
-        MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves),
-        MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings),
-        MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings),
-        MoreItem(Icons.Rounded.Settings, "Configuración", "Negocio, impuestos, PIN", Screen.Settings),
-    )
+    val admin = app.can(com.vitrinapos.data.Permission.SETTINGS)
+    val role by app.repo.meta.collectAsState()
+    val netText = when (role["role"]) {
+        com.vitrinapos.data.NetRole.SERVER -> "Equipo principal"
+        com.vitrinapos.data.NetRole.CLIENT -> "Conectado"
+        else -> "Este equipo trabaja solo"
+    }
+    val clients by app.repo.clients.collectAsState()
+    val users by app.repo.users.collectAsState()
+    val items = buildList {
+        add(MoreItem(Icons.Rounded.Description, "Cotizaciones", "${quotes.count { it.status != QuoteStatus.SOLD }} pendientes", Screen.Quotes))
+        add(MoreItem(Icons.Rounded.People, "Clientes", "${clients.size} registrados", Screen.Clients))
+        add(MoreItem(Icons.Rounded.LocalShipping, "Proveedores", "${suppliers.size} registrados", Screen.Suppliers))
+        add(MoreItem(Icons.AutoMirrored.Rounded.ReceiptLong, "Ventas", "Historial y anulaciones", Screen.SalesHistory))
+        if (app.can(com.vitrinapos.data.Permission.REPORTS)) add(MoreItem(Icons.Rounded.BarChart, "Reportes", "Ventas y ganancias", Screen.Reports))
+        add(MoreItem(Icons.Rounded.PointOfSale, "Caja", if (cash != null) "Abierta" else "Apertura y cierre", Screen.Cash))
+        add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
+        add(MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()))
+        add(MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves))
+        add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
+        if (admin) add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
+        if (admin) add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))
+        if (admin && app.graph.client == null) add(MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings))
+        add(MoreItem(Icons.Rounded.Settings, "Configuración", if (admin) "Negocio, impuestos" else "Impresora de este equipo", Screen.Settings))
+    }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Más")
         LazyVerticalGrid(
@@ -122,8 +137,22 @@ fun MoreScreen() {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            val me = app.repo.currentUser.value
+            if (me != null) item(span = { GridItemSpan(maxLineSpan) }) {
+                AppCard(onClick = { app.logout() }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(me.name, 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(me.name, fontWeight = FontWeight.SemiBold)
+                            Text(com.vitrinapos.data.Roles.label(me.role), fontSize = 12.sp, color = AppTheme.extra.muted)
+                        }
+                        Text("Cambiar de usuario", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                }
+            }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                AppCard(onClick = { app.open(Screen.Settings) }) {
+                AppCard(onClick = { if (admin) app.open(Screen.Settings) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (s.logoPath != null) ProductImage(s.logoPath, s.businessName, Modifier.size(48.dp), RoundedCornerShape(14.dp))
                         else Avatar(s.businessName, 48.dp, square = true)
@@ -133,7 +162,7 @@ fun MoreScreen() {
                             Text(listOf(s.phone, s.address).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Toca para completar los datos del negocio" },
                                 fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text("Editar", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        if (admin) Text("Editar", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -173,6 +202,7 @@ fun SettingsScreen() {
             if (name != null) d = d.copy(logoPath = name)
         }
     }
+    val admin = app.can(com.vitrinapos.data.Permission.SETTINGS)
     val dirty = d != saved || taxText != saved.taxRate.toString().removeSuffix(".0")
 
     fun save() {
@@ -206,6 +236,7 @@ fun SettingsScreen() {
                 .widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (admin) {
             // ---- Negocio ----
             SectionTitle("Negocio")
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -245,6 +276,7 @@ fun SettingsScreen() {
                 d = d.copy(pricesIncludeTax = it)
             }
 
+            }
             // ---- Impresora ----
             SectionTitle("Impresora de tickets")
             AppCard {
@@ -298,18 +330,41 @@ fun SettingsScreen() {
             SwitchRow("Imprimir sin acentos", "Actívalo si tu impresora muestra símbolos raros en á, é, ñ", d.ticketAscii) { d = d.copy(ticketAscii = it) }
             TextInput(d.ticketFooter, { d = d.copy(ticketFooter = it) }, "Mensaje al final del ticket", singleLine = false)
 
+            if (admin) {
             // ---- Cotizaciones ----
             SectionTitle("Cotizaciones")
             TextInput(d.quoteValidDays.toString(), { d = d.copy(quoteValidDays = it.filter(Char::isDigit).toIntOrNull() ?: 0) }, "Días de validez", keyboard = KeyboardType.Number)
             TextInput(d.quoteTerms, { d = d.copy(quoteTerms = it) }, "Condiciones", singleLine = false, minLines = 3)
+            }
 
             if (dirty) {
                 Button(onClick = ::save, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) { Text("Guardar cambios", fontWeight = FontWeight.Bold) }
             }
 
-            // ---- Seguridad ----
-            SectionTitle("Seguridad")
-            AppCard(onClick = { pinDialog = true }) {
+            // ---- Equipos y usuarios ----
+            if (admin) {
+            SectionTitle("Equipos y usuarios")
+            AppCard(onClick = { app.open(Screen.Network) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Lan, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Trabajo en red", fontWeight = FontWeight.SemiBold)
+                        Text("Usar los mismos datos en varios celulares y computadoras", fontSize = 12.sp, color = AppTheme.extra.muted)
+                    }
+                }
+            }
+            AppCard(onClick = { app.open(Screen.Users) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Badge, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Usuarios y PIN", fontWeight = FontWeight.SemiBold)
+                        Text("Saber quién vendió, anuló o cambió algo", fontSize = 12.sp, color = AppTheme.extra.muted)
+                    }
+                }
+            }
+            if (app.repo.users.collectAsState().value.isEmpty()) AppCard(onClick = { pinDialog = true }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(10.dp))
@@ -323,7 +378,8 @@ fun SettingsScreen() {
 
             // ---- Respaldo ----
             SectionTitle("Respaldo de datos")
-            AppCard {
+            if (app.graph.client != null) Text("Este equipo está conectado a un principal: los respaldos se hacen en el equipo principal, que guarda los datos de todos.", color = AppTheme.extra.muted, fontSize = 13.sp)
+            else AppCard {
                 Text("Tus datos viven solo en este equipo. Haz un respaldo seguido y guárdalo fuera (USB, correo, Drive).", color = AppTheme.extra.muted, fontSize = 13.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(if (saved.lastBackupAt > 0) "Último respaldo: ${Time.dateTime(saved.lastBackupAt)}" else "Todavía no has hecho un respaldo", fontWeight = FontWeight.SemiBold)
@@ -342,7 +398,8 @@ fun SettingsScreen() {
                 }
             }
             TextButton(onClick = { confirmSamples = true }) { Text("Cargar productos de ejemplo") }
-            Text("Vitrina POS 1.0 · datos guardados en este equipo", fontSize = 12.sp, color = AppTheme.extra.muted)
+            }
+            Text("Vitrina POS 1.1 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
         }
     }
 

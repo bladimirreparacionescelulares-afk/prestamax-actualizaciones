@@ -126,9 +126,11 @@ class Ticket(val width: Int) {
             val wide = s.ticketChars >= 48
             header(t, s)
             t.separator()
-            t.pair("Venta #${sale.number.toString().padStart(4, '0')}", Time.dateTime(sale.createdAt))
+            t.pair(if (sale.number < 0) "Venta P${-sale.number}" else "Venta #${sale.number.toString().padStart(4, '0')}", Time.dateTime(sale.createdAt))
             t.left("Cliente: ${sale.clientName}")
-            if (s.sellerName.isNotBlank()) t.left("Atendió: ${s.sellerName}")
+            val seller = sale.userName.ifBlank { s.sellerName }
+            if (seller.isNotBlank()) t.left("Atendió: $seller")
+            if (sale.number < 0) t.center("Venta sin conexión: el número final se asigna al sincronizar")
             if (reprint) t.center("*** COPIA ***", Ticket.Style.Bold)
             if (sale.status != "OK") t.center("*** VENTA ANULADA ***", Ticket.Style.Bold)
             t.separator()

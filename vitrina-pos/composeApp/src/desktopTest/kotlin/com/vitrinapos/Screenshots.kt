@@ -66,6 +66,36 @@ class Screenshots {
         shoot(graph, File(outDir, "20-windows-vender.png"), 1366, 800, 1f) { app -> app.selectTab(Screen.Pos); addCart(app, repo) }
         shoot(graph, File(outDir, "21-windows-inicio.png"), 1366, 800, 1f) { it.selectTab(Screen.Home) }
 
+        // ---- Trabajo en red y usuarios ----
+        graph.becomeServer()
+        runBlocking {
+            graph.repo.saveUser(null, "Bladimir", "1234", com.vitrinapos.data.Roles.ADMIN, true)
+            graph.repo.saveUser(null, "Pedro", "5678", com.vitrinapos.data.Roles.SELLER, true)
+            graph.repo.saveUser(null, "Luis", "2468", com.vitrinapos.data.Roles.TECH, true)
+        }
+        val admin = graph.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Bladimir" }
+        // Un segundo equipo conectado al principal
+        System.setProperty("vitrina.dataDir", Files.createTempDirectory("vitrina-shots-2").toString())
+        val other = AppGraph(DesktopPlatform())
+        other.setDeviceName("Celular de Pedro")
+        runBlocking { other.connectTo("127.0.0.1", com.vitrinapos.net.SYNC_PORT, graph.server!!.pairCode.value.code) }
+        Thread.sleep(1500)
+        shoot(graph, File(outDir, "13-red-principal.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Network) }
+        shoot(graph, File(outDir, "14-usuarios.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Users) }
+        shoot(graph, File(outDir, "15-entrar.png"), 412, 900, 2f) { it.repo.currentUser.value = null }
+        val pedro = other.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Pedro" }
+        shoot(other, File(outDir, "16-conectado.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
+        // Sin red: la venta queda pendiente
+        graph.server!!.stop()
+        runBlocking {
+            other.repo.currentUser.value = pedro
+            val p = other.repo.products.value.first { it.code == "FND-054" }
+            other.repo.recordSale(listOf(CartLine.of(p)), null, 0, PaymentMethods.CASH, 30000, null)
+        }
+        shoot(other, File(outDir, "17-conectado-sin-red.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
+        other.becomeSolo(); other.repo.close()
+        graph.becomeSolo()
+
         // PDF de la cotización
         runBlocking {
             val q = repo.quoteById(quoteId)!!

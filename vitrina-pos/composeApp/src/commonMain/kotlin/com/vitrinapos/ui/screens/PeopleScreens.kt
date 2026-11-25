@@ -154,7 +154,7 @@ fun ClientFormScreen(id: Long?) {
             app.back()
         }
     }
-    FormScaffold(if (id == null) "Nuevo cliente" else "Editar cliente", onSave = ::save, onDelete = if (id != null) ({ confirmDelete = true }) else null) {
+    FormScaffold(if (id == null) "Nuevo cliente" else "Editar cliente", onSave = ::save, onDelete = if (id != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) ({ confirmDelete = true }) else null) {
         TextInput(name, { name = it }, "Nombre *", error = if (showErrors && name.isBlank()) "Escribe el nombre" else null)
         TextInput(phone, { phone = it }, "Teléfono", keyboard = KeyboardType.Phone)
         TextInput(docId, { docId = it }, "Cédula o RNC")
@@ -345,7 +345,7 @@ fun SupplierFormScreen(id: Long?) {
         if (name.isBlank()) return
         scope.launch { app.repo.saveSupplier(id, name, contact, phone, email, docId, address, notes); app.toast("Proveedor guardado"); app.back() }
     }
-    FormScaffold(if (id == null) "Nuevo proveedor" else "Editar proveedor", onSave = ::save, onDelete = if (id != null) ({ confirmDelete = true }) else null) {
+    FormScaffold(if (id == null) "Nuevo proveedor" else "Editar proveedor", onSave = ::save, onDelete = if (id != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) ({ confirmDelete = true }) else null) {
         TextInput(name, { name = it }, "Nombre de la empresa *", error = if (showErrors && name.isBlank()) "Escribe el nombre" else null)
         TextInput(contact, { contact = it }, "Persona de contacto")
         TextInput(phone, { phone = it }, "Teléfono", keyboard = KeyboardType.Phone)

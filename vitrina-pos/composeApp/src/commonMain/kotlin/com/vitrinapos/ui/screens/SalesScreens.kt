@@ -64,6 +64,7 @@ import com.vitrinapos.data.Money
 import com.vitrinapos.data.PaymentMethods
 import com.vitrinapos.data.SaleStatus
 import com.vitrinapos.data.Time
+import com.vitrinapos.data.label
 import com.vitrinapos.data.fmtQty
 import com.vitrinapos.db.CashSession
 import com.vitrinapos.db.Sale
@@ -141,7 +142,7 @@ fun SaleDetailScreen(id: Long) {
     val voided = sale.status == SaleStatus.VOID
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Venta #${sale.number}", subtitle = Time.dateTime(sale.createdAt), onBack = { app.back() })
+        ScreenHeader(sale.label, subtitle = Time.dateTime(sale.createdAt) + (if (sale.userName.isNotBlank()) " · ${sale.userName}" else ""), onBack = { app.back() })
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp)
                 .widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
@@ -189,11 +190,11 @@ fun SaleDetailScreen(id: Long) {
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(6.dp)); Text("Imprimir")
                     }
-                    OutlinedButton(onClick = { app.platform.shareText(ticket.preview(), "Venta #${sale.number}") },
+                    OutlinedButton(onClick = { app.platform.shareText(ticket.preview(), sale.label) },
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Share, null); Spacer(Modifier.width(6.dp)); Text("Compartir")
                     }
-                    if (!voided) OutlinedButton(onClick = { confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    if (!voided && app.can(com.vitrinapos.data.Permission.VOID_SALES)) OutlinedButton(onClick = { confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
                         Text("Anular", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -206,7 +207,7 @@ fun SaleDetailScreen(id: Long) {
         }
     }
     if (confirmVoid) {
-        ConfirmDialog("Anular venta #${sale.number}", "La venta quedará anulada y los productos vuelven al inventario.", "Anular venta",
+        ConfirmDialog("Anular ${sale.label.lowercase()}", "La venta quedará anulada y los productos vuelven al inventario.", "Anular venta",
             onConfirm = { scope.launch { app.repo.voidSale(id); refresh++; app.toast("Venta anulada") } },
             onDismiss = { confirmVoid = false }, destructive = true)
     }

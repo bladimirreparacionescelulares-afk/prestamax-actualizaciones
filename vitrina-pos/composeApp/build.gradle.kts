@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.0.0"
-val appVersionCode = 1
+val appVersionName = "1.1.0"
+val appVersionCode = 2
 
 kotlin {
     androidTarget {
@@ -34,6 +34,8 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
             implementation("app.cash.sqldelight:coroutines-extensions:2.0.2")
+            // Códigos QR y de barras (Java puro: funciona en Android y en Windows)
+            implementation("com.google.zxing:core:3.5.3")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

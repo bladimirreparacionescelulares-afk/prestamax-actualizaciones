@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
@@ -50,6 +51,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +95,7 @@ private val sideItems = listOf(
     NavItem(Screen.SalesHistory, "Ventas", Icons.AutoMirrored.Rounded.ReceiptLong),
     NavItem(Screen.Reports, "Reportes", Icons.Rounded.BarChart),
     NavItem(Screen.Cash, "Caja", Icons.Rounded.PointOfSale),
+    NavItem(Screen.Network, "Trabajo en red", Icons.Rounded.Lan),
     NavItem(Screen.Settings, "Configuración", Icons.Rounded.Settings),
 )
 
@@ -106,11 +110,22 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
     VitrinaTheme {
         CompositionLocalProvider(LocalAppState provides app) {
             val settings = app.settings
+            val users by app.repo.users.collectAsState()
+            val current = app.user
             var unlocked by remember { mutableStateOf(false) }
+            var connecting by remember { mutableStateOf(false) }
+            val activeUsers = users.filter { it.active == 1L }
+            // Si cambian los datos del usuario (rol, activo) se usan los nuevos; si lo desactivan, sale.
+            LaunchedEffect(users) {
+                val u = app.repo.currentUser.value ?: return@LaunchedEffect
+                app.repo.currentUser.value = activeUsers.firstOrNull { it.id == u.id }
+            }
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 when {
-                    !settings.onboarded -> WelcomeScreen()
-                    settings.pin.isNotBlank() && !unlocked -> LockScreen(settings.pin) { unlocked = true }
+                    connecting -> NetworkScreen(onClose = { connecting = false })
+                    !settings.onboarded -> WelcomeScreen(onConnect = { connecting = true })
+                    activeUsers.isNotEmpty() && current == null -> LoginScreen(activeUsers)
+                    activeUsers.isEmpty() && settings.pin.isNotBlank() && !unlocked -> LockScreen(settings.pin) { unlocked = true }
                     else -> MainShell(app)
                 }
             }
@@ -172,6 +187,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         is Screen.StockEntry -> StockEntryScreen(screen.supplierId)
         Screen.Cash -> CashScreen()
         Screen.StockMoves -> StockMovesScreen()
+        Screen.Network -> NetworkScreen()
+        Screen.Users -> UsersScreen()
     }
 }
 
@@ -238,7 +255,13 @@ private fun SideBar(app: AppState) {
                     Text(s.businessName, style = MaterialTheme.typography.bodySmall, color = ex.muted, maxLines = 1)
                 }
             }
-            sideItems.forEach { item ->
+            sideItems.filter { item ->
+                when (item.screen) {
+                    Screen.Reports -> app.can(com.vitrinapos.data.Permission.REPORTS)
+                    Screen.Network -> app.can(com.vitrinapos.data.Permission.SETTINGS)
+                    else -> true
+                }
+            }.forEach { item ->
                 val selected = app.tab == item.screen
                 val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else ex.muted
                 Row(
