@@ -1,0 +1,21 @@
+CREATE TABLE cashSession (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  openedAt INTEGER NOT NULL,
+  openingAmount INTEGER NOT NULL,
+  closedAt INTEGER,
+  expectedAmount INTEGER,
+  countedAmount INTEGER,
+  notes TEXT NOT NULL DEFAULT ''
+);
+
+selectOpen:
+SELECT * FROM cashSession WHERE closedAt IS NULL ORDER BY openedAt DESC LIMIT 1;
+
+selectRecent:
+SELECT * FROM cashSession ORDER BY openedAt DESC LIMIT 30;
+
+open:
+INSERT INTO cashSession(openedAt, openingAmount) VALUES (?, ?);
+
+close:
+UPDATE cashSession SET closedAt = ?, expectedAmount = ?, countedAmount = ?, notes = ? WHERE id = ?;

@@ -1,0 +1,151 @@
+package com.vitrinapos
+
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.vitrinapos.data.AppGraph
+import com.vitrinapos.data.AppSettings
+import com.vitrinapos.data.CartLine
+import com.vitrinapos.data.Repository
+import com.vitrinapos.data.fmtQty
+import com.vitrinapos.db.Client
+import com.vitrinapos.db.Product
+import com.vitrinapos.platform.Platform
+import com.vitrinapos.platform.PrinterDevice
+import com.vitrinapos.print.Ticket
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+sealed interface Screen {
+    // Pestañas principales
+    data object Home : Screen
+    data object Catalog : Screen
+    data object Pos : Screen
+    data object Clients : Screen
+    data object More : Screen
+
+    // Pantallas secundarias
+    data class ProductForm(val id: Long? = null, val presetCode: String? = null, val key: Long = 0) : Screen
+    data object Checkout : Screen
+    data class SaleDetail(val id: Long) : Screen
+    data object SalesHistory : Screen
+    data class ClientForm(val id: Long? = null) : Screen
+    data class ClientDetail(val id: Long) : Screen
+    data object Suppliers : Screen
+    data class SupplierForm(val id: Long? = null) : Screen
+    data object Quotes : Screen
+    data class QuoteEditor(val id: Long? = null, val clientId: Long? = null) : Screen
+    data object Settings : Screen
+    data object Reports : Screen
+    data object Categories : Screen
+    data class StockEntry(val supplierId: Long? = null) : Screen
+    data object Cash : Screen
+    data object StockMoves : Screen
+}
+
+val LocalAppState = staticCompositionLocalOf<AppState> { error("AppState no disponible") }
+
+class AppState(val graph: AppGraph, val scope: CoroutineScope) {
+    val platform: Platform get() = graph.platform
+    val repo: Repository get() = graph.repo
+
+    val settings: AppSettings
+        @Composable get() = repo.settings.collectAsState().value
+
+    val settingsNow: AppSettings get() = repo.settings.value
+
+    // ---------- Navegación ----------
+
+    var tab by mutableStateOf<Screen>(Screen.Home)
+        private set
+    val stack = mutableStateListOf<Screen>()
+    val current: Screen get() = stack.lastOrNull() ?: tab
+
+    fun open(s: Screen) { stack.add(s) }
+
+    fun back(): Boolean {
+        if (stack.isNotEmpty()) { stack.removeAt(stack.lastIndex); return true }
+        if (tab != Screen.Home) { tab = Screen.Home; return true }
+        return false
+    }
+
+    fun selectTab(t: Screen) { stack.clear(); tab = t }
+
+    /** Filtro inicial del catálogo cuando se llega desde otra pantalla (por ejemplo "low" = stock bajo). */
+    var catalogPreset by mutableStateOf<String?>(null)
+
+    /** Reemplaza la pantalla actual (por ejemplo, de cobro a detalle de venta). */
+    fun replace(s: Screen) {
+        if (stack.isNotEmpty()) stack[stack.lastIndex] = s else stack.add(s)
+    }
+
+    // ---------- Carrito ----------
+
+    val cart = mutableStateListOf<CartLine>()
+    var cartClient by mutableStateOf<Client?>(null)
+    var cartDiscount by mutableStateOf(0L)
+    var cartQuoteId by mutableStateOf<Long?>(null)
+
+    val cartCount: Double get() = cart.sumOf { it.qty }
+
+    fun qtyInCart(productId: Long): Double = cart.filter { it.productId == productId }.sumOf { it.qty }
+
+    fun addToCart(p: Product, qty: Double = 1.0) {
+        val i = cart.indexOfFirst { it.productId == p.id && it.price == p.price }
+        val newQty = (if (i >= 0) cart[i].qty else 0.0) + qty
+        if (i >= 0) cart[i] = cart[i].copy(qty = newQty) else cart.add(CartLine.of(p, qty))
+        if (p.trackStock == 1L && newQty > p.stock) {
+            toast(if (p.stock <= 0) "${p.name}: sin stock" else "${p.name}: solo quedan ${p.stock.fmtQty()}")
+        }
+    }
+
+    fun setLineQty(index: Int, qty: Double) {
+        if (index !in cart.indices) return
+        if (qty <= 0) cart.removeAt(index) else cart[index] = cart[index].copy(qty = qty)
+    }
+
+    fun clearCart() {
+        cart.clear(); cartClient = null; cartDiscount = 0; cartQuoteId = null
+    }
+
+    // ---------- Mensajes ----------
+
+    val snackbar = SnackbarHostState()
+
+    fun toast(msg: String) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(msg)
+        }
+    }
+
+    // ---------- Impresión ----------
+
+    /** Lo asigna la interfaz: en Android pide permiso de Bluetooth antes de imprimir. */
+    var requestPrinterPermission: (onGranted: () -> Unit) -> Unit = { it() }
+
+    fun print(ticket: Ticket, settings: AppSettings = settingsNow, onNoPrinter: (() -> Unit)? = null) {
+        val s = settings
+        if (s.printerId.isBlank()) {
+            toast("Elige una impresora en Configuración")
+            onNoPrinter?.invoke()
+            return
+        }
+        requestPrinterPermission {
+            scope.launch {
+                val result = runCatching {
+                    withContext(platform.io) {
+                        platform.printRaw(PrinterDevice(s.printerId, s.printerName), ticket.escPos(s.ticketAscii, s.openDrawer))
+                    }
+                }
+                toast(result.fold({ "Ticket enviado a ${s.printerName.ifBlank { "la impresora" }}" }, { "No se pudo imprimir: ${it.message ?: "revisa la impresora"}" }))
+            }
+        }
+    }
+}

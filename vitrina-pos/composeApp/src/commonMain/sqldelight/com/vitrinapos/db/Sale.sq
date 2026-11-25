@@ -1,0 +1,69 @@
+CREATE TABLE sale (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  clientId INTEGER,
+  clientName TEXT NOT NULL,
+  gross INTEGER NOT NULL,
+  discount INTEGER NOT NULL,
+  tax INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  costTotal INTEGER NOT NULL,
+  taxIncluded INTEGER NOT NULL,
+  paymentMethod TEXT NOT NULL,
+  received INTEGER NOT NULL,
+  changeDue INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'OK',
+  quoteId INTEGER,
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX sale_created ON sale(createdAt);
+
+CREATE TABLE saleItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  saleId INTEGER NOT NULL,
+  productId INTEGER,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  qty REAL NOT NULL,
+  price INTEGER NOT NULL,
+  cost INTEGER NOT NULL,
+  taxable INTEGER NOT NULL
+);
+
+CREATE INDEX saleItem_sale ON saleItem(saleId);
+
+selectRecent:
+SELECT * FROM sale ORDER BY createdAt DESC LIMIT ?;
+
+selectBetween:
+SELECT * FROM sale WHERE createdAt >= ? AND createdAt < ? ORDER BY createdAt DESC;
+
+selectById:
+SELECT * FROM sale WHERE id = ?;
+
+selectByClient:
+SELECT * FROM sale WHERE clientId = ? ORDER BY createdAt DESC;
+
+nextNumber:
+SELECT COALESCE(MAX(number), 0) + 1 FROM sale;
+
+insert:
+INSERT INTO sale(number, clientId, clientName, gross, discount, tax, total, costTotal, taxIncluded, paymentMethod, received, changeDue, status, quoteId, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?);
+
+setStatus:
+UPDATE sale SET status = ? WHERE id = ?;
+
+lastId:
+SELECT last_insert_rowid();
+
+insertItem:
+INSERT INTO saleItem(saleId, productId, name, code, qty, price, cost, taxable) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+itemsBySale:
+SELECT * FROM saleItem WHERE saleId = ? ORDER BY id;
+
+itemsBetween:
+SELECT saleItem.* FROM saleItem JOIN sale ON sale.id = saleItem.saleId
+WHERE sale.status = 'OK' AND sale.createdAt >= ? AND sale.createdAt < ?;

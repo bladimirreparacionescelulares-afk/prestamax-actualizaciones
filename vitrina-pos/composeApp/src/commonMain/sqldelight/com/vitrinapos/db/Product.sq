@@ -1,0 +1,56 @@
+CREATE TABLE product (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL DEFAULT '',
+  categoryId INTEGER,
+  supplierId INTEGER,
+  cost INTEGER NOT NULL DEFAULT 0,
+  price INTEGER NOT NULL DEFAULT 0,
+  stock REAL NOT NULL DEFAULT 0,
+  minStock REAL NOT NULL DEFAULT 0,
+  unit TEXT NOT NULL DEFAULT 'und',
+  taxable INTEGER NOT NULL DEFAULT 1,
+  trackStock INTEGER NOT NULL DEFAULT 1,
+  imagePath TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX product_code ON product(code);
+
+selectActive:
+SELECT * FROM product WHERE active = 1 ORDER BY name COLLATE NOCASE;
+
+selectById:
+SELECT * FROM product WHERE id = ?;
+
+selectByCode:
+SELECT * FROM product WHERE code = ? AND active = 1 AND code != '' LIMIT 1;
+
+insert:
+INSERT INTO product(name, code, categoryId, supplierId, cost, price, stock, minStock, unit, taxable, trackStock, imagePath, description, active, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?);
+
+update:
+UPDATE product SET name = ?, code = ?, categoryId = ?, supplierId = ?, cost = ?, price = ?, minStock = ?, unit = ?, taxable = ?, trackStock = ?, imagePath = ?, description = ?, updatedAt = ?
+WHERE id = ?;
+
+addStock:
+UPDATE product SET stock = stock + ?, updatedAt = ? WHERE id = ?;
+
+setStock:
+UPDATE product SET stock = ?, updatedAt = ? WHERE id = ?;
+
+setCost:
+UPDATE product SET cost = ?, updatedAt = ? WHERE id = ?;
+
+deactivate:
+UPDATE product SET active = 0, updatedAt = ? WHERE id = ?;
+
+countWithCategory:
+SELECT categoryId, COUNT(*) FROM product WHERE active = 1 GROUP BY categoryId;
+
+lastId:
+SELECT last_insert_rowid();

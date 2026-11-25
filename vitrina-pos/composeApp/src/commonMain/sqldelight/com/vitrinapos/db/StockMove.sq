@@ -1,0 +1,21 @@
+CREATE TABLE stockMove (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  productId INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  qty REAL NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX stockMove_product ON stockMove(productId);
+
+insert:
+INSERT INTO stockMove(productId, type, qty, note, createdAt) VALUES (?, ?, ?, ?, ?);
+
+selectRecent:
+SELECT stockMove.*, product.name AS productName FROM stockMove
+JOIN product ON product.id = stockMove.productId
+ORDER BY stockMove.createdAt DESC LIMIT ?;
+
+selectByProduct:
+SELECT * FROM stockMove WHERE productId = ? ORDER BY createdAt DESC LIMIT 50;

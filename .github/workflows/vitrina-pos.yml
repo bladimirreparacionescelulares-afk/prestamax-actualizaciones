@@ -1,0 +1,62 @@
+name: Vitrina POS · compilar APK y Windows
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "vitrina-pos/**"
+      - ".github/workflows/vitrina-pos.yml"
+permissions:
+  contents: read
+concurrency:
+  group: vitrina-pos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    name: APK de Android y pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: vitrina-pos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Pruebas
+        run: ./gradlew :composeApp:desktopTest --no-daemon
+      - name: Compilar APK
+        run: ./gradlew :composeApp:assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitrinaPOS-android
+          path: vitrina-pos/composeApp/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  windows:
+    name: Instalador de Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: vitrina-pos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Crear instalador .msi
+        run: ./gradlew :composeApp:packageMsi --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitrinaPOS-windows
+          path: vitrina-pos/composeApp/build/compose/binaries/main/msi/*.msi
+          if-no-files-found: error

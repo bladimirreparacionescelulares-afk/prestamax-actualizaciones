@@ -1,0 +1,23 @@
+CREATE TABLE category (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  color INTEGER NOT NULL DEFAULT 0
+);
+
+selectAll:
+SELECT * FROM category ORDER BY name COLLATE NOCASE;
+
+insert:
+INSERT INTO category(name, color) VALUES (?, ?);
+
+update:
+UPDATE category SET name = ?, color = ? WHERE id = ?;
+
+delete:
+DELETE FROM category WHERE id = ?;
+
+clearFromProducts:
+UPDATE product SET categoryId = NULL WHERE categoryId = ?;
+
+lastId:
+SELECT last_insert_rowid();

@@ -1,0 +1,64 @@
+CREATE TABLE quote (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  clientId INTEGER,
+  clientName TEXT NOT NULL,
+  gross INTEGER NOT NULL,
+  discount INTEGER NOT NULL,
+  tax INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  taxIncluded INTEGER NOT NULL,
+  validDays INTEGER NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'BORRADOR',
+  saleId INTEGER,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+
+CREATE TABLE quoteItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quoteId INTEGER NOT NULL,
+  productId INTEGER,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  qty REAL NOT NULL,
+  price INTEGER NOT NULL,
+  taxable INTEGER NOT NULL,
+  imagePath TEXT
+);
+
+selectAll:
+SELECT * FROM quote ORDER BY createdAt DESC;
+
+selectById:
+SELECT * FROM quote WHERE id = ?;
+
+nextNumber:
+SELECT COALESCE(MAX(number), 0) + 1 FROM quote;
+
+insert:
+INSERT INTO quote(number, clientId, clientName, gross, discount, tax, total, taxIncluded, validDays, notes, status, saleId, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
+
+update:
+UPDATE quote SET clientId = ?, clientName = ?, gross = ?, discount = ?, tax = ?, total = ?, taxIncluded = ?, validDays = ?, notes = ?, status = ?, updatedAt = ?
+WHERE id = ?;
+
+setStatus:
+UPDATE quote SET status = ?, saleId = ?, updatedAt = ? WHERE id = ?;
+
+delete:
+DELETE FROM quote WHERE id = ?;
+
+lastId:
+SELECT last_insert_rowid();
+
+insertItem:
+INSERT INTO quoteItem(quoteId, productId, name, code, qty, price, taxable, imagePath) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+itemsByQuote:
+SELECT * FROM quoteItem WHERE quoteId = ? ORDER BY id;
+
+deleteItems:
+DELETE FROM quoteItem WHERE quoteId = ?;
