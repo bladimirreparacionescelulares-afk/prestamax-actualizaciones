@@ -31,7 +31,7 @@ object RowCodec {
         t(
             "product", "id" to L, "name" to S, "code" to S, "categoryId" to L, "supplierId" to L, "cost" to L, "price" to L,
             "stock" to D, "minStock" to D, "unit" to S, "taxable" to L, "trackStock" to L, "imagePath" to S, "description" to S,
-            "active" to L, "createdAt" to L, "updatedAt" to L,
+            "active" to L, "createdAt" to L, "updatedAt" to L, "isService" to L,
         ),
         t("client", "id" to L, "name" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
         t("supplier", "id" to L, "name" to S, "contact" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
@@ -51,7 +51,7 @@ object RowCodec {
             "cashSession", "id" to L, "openedAt" to L, "openingAmount" to L, "closedAt" to L, "expectedAmount" to L, "countedAmount" to L,
             "notes" to S, "deviceId" to S, "userName" to S,
         ),
-        t("appUser", "id" to L, "name" to S, "pinHash" to S, "role" to S, "active" to L, "createdAt" to L),
+        t("appUser", "id" to L, "name" to S, "pinHash" to S, "role" to S, "active" to L, "createdAt" to L, "permissions" to S),
         t(
             "repairOrder", "id" to L, "number" to L, "clientId" to L, "clientName" to S, "clientPhone" to S, "clientEmail" to S,
             "deviceType" to S, "brand" to S, "model" to S, "serial" to S, "color" to S, "unlockType" to S, "unlockCode" to S,

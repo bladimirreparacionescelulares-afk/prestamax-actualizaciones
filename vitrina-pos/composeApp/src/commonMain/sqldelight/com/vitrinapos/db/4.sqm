@@ -1,0 +1,3 @@
+-- Versión 4 -> 5: productos de tipo servicio y permisos por usuario.
+ALTER TABLE product ADD COLUMN isService INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE appUser ADD COLUMN permissions TEXT NOT NULL DEFAULT '';

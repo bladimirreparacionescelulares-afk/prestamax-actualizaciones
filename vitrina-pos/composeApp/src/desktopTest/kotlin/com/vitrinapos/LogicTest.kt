@@ -129,3 +129,25 @@ class TicketTest {
         assertEquals(Ticket.Style.Big, t.lines.last().style)
     }
 }
+
+class PermissionsTest {
+    @Test
+    fun rolesYPermisosPorUsuario() {
+        val perms = com.vitrinapos.data.Permissions
+        // El administrador siempre tiene todo, aunque tenga algo guardado.
+        assertEquals(com.vitrinapos.data.Permission.entries.toSet(), perms.effective(com.vitrinapos.data.Roles.ADMIN, "SELL"))
+        // El vendedor trae lo suyo y no anula, ni configura, ni ve reportes.
+        val seller = perms.effective(com.vitrinapos.data.Roles.SELLER, "")
+        assertTrue(com.vitrinapos.data.Permission.SELL in seller && com.vitrinapos.data.Permission.CASH in seller)
+        assertTrue(com.vitrinapos.data.Permission.VOID_SALES !in seller && com.vitrinapos.data.Permission.SETTINGS !in seller && com.vitrinapos.data.Permission.REPORTS !in seller && com.vitrinapos.data.Permission.WORKSHOP !in seller)
+        // El técnico además trabaja el taller.
+        assertTrue(com.vitrinapos.data.Permission.WORKSHOP in perms.effective(com.vitrinapos.data.Roles.TECH, ""))
+        // Personalizado: solo lo que el administrador encendió; "NONE" = nada.
+        assertEquals(setOf(com.vitrinapos.data.Permission.WORKSHOP, com.vitrinapos.data.Permission.REPORTS), perms.effective(com.vitrinapos.data.Roles.SELLER, perms.encode(setOf(com.vitrinapos.data.Permission.REPORTS, com.vitrinapos.data.Permission.WORKSHOP))))
+        assertTrue(perms.effective(com.vitrinapos.data.Roles.SELLER, "NONE").isEmpty())
+        // Cada pantalla pide su permiso.
+        assertEquals(listOf(com.vitrinapos.data.Permission.SELL), requiredPermission(Screen.Pos))
+        assertTrue(requiredPermission(Screen.Home).isEmpty())
+        assertTrue(com.vitrinapos.data.Permission.SELL in requiredPermission(Screen.SaleDetail(1)))
+    }
+}

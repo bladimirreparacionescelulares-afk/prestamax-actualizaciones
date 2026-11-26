@@ -131,6 +131,9 @@ sealed class Op {
         val userName: String,
     ) : Op()
 
+    @Serializable @SerialName("userPermissions")
+    data class SetUserPermissions(val id: Long, val permissions: String) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 
@@ -150,15 +153,51 @@ object Roles {
 
     fun description(r: String) = when (r) {
         ADMIN -> "Todo: configuración, usuarios, anular ventas, reportes y equipos de la red."
-        SELLER -> "Vende, cotiza y atiende clientes. No anula ventas ni cambia la configuración."
+        SELLER -> "Vende, cotiza, atiende clientes y abre la caja. No anula ventas ni cambia la configuración."
         TECH -> "Como vendedor, y además trabaja las órdenes del taller."
         else -> ""
     }
 }
 
-enum class Permission { VOID_SALES, SETTINGS, USERS, REPORTS, DELETE_RECORDS, ADJUST_STOCK, CASH_HISTORY }
-
-fun can(role: String?, p: Permission): Boolean = when (role) {
-    null, Roles.ADMIN -> true // sin usuarios configurados, todo está permitido
-    else -> false
+/** Lo que cada usuario puede ver y hacer. El administrador lo ajusta por usuario en Usuarios. */
+enum class Permission(val title: String, val detail: String) {
+    SELL("Vender y cobrar", "Pantalla Vender, cobro y escáner"),
+    CATALOG_EDIT("Crear y editar productos", "Agregar productos, precios, fotos y categorías"),
+    ADJUST_STOCK("Inventario", "Ajustar existencias, entradas de mercancía y movimientos"),
+    CLIENTS("Clientes", "Ver y registrar clientes"),
+    SUPPLIERS("Proveedores", "Ver y registrar proveedores"),
+    QUOTES("Cotizaciones", "Crear y enviar cotizaciones"),
+    SALES_HISTORY("Historial de ventas", "Ver las ventas anteriores"),
+    VOID_SALES("Anular ventas", "Anular ventas y emitir notas de crédito"),
+    CASH("Caja", "Abrir y cerrar la caja"),
+    REPORTS("Reportes y ganancias", "Ver reportes, ganancias y costos"),
+    WORKSHOP("Taller", "Recibir equipos y cambiar su estado"),
+    WORKSHOP_DELIVER("Entregar equipos", "Cobrar y entregar equipos del taller"),
+    LABELS("Etiquetas", "Imprimir etiquetas de productos"),
+    DELETE_RECORDS("Borrar registros", "Borrar productos, clientes, proveedores y cotizaciones"),
+    FISCAL("Facturación electrónica", "Certificado, secuencias y comprobantes e-CF"),
+    SETTINGS("Configuración del negocio", "Datos del negocio, impuestos, ticket, respaldo y estados del taller"),
+    NETWORK("Trabajo en red", "Unir equipos y quitarles el acceso"),
+    USERS("Usuarios y permisos", "Crear usuarios y cambiar lo que pueden hacer"),
 }
+
+object Permissions {
+    private val seller = setOf(Permission.SELL, Permission.CLIENTS, Permission.QUOTES, Permission.SALES_HISTORY, Permission.CASH, Permission.LABELS)
+
+    /** Lo que trae cada rol de entrada. */
+    fun defaults(role: String?): Set<Permission> = when (role) {
+        null, Roles.ADMIN -> Permission.entries.toSet()
+        Roles.TECH -> seller + Permission.WORKSHOP + Permission.WORKSHOP_DELIVER
+        else -> seller
+    }
+
+    /** Permisos guardados del usuario ("" = los de su rol). El administrador siempre lo tiene todo. */
+    fun effective(role: String?, stored: String): Set<Permission> {
+        if (role == null || role == Roles.ADMIN || stored.isBlank()) return defaults(role)
+        return stored.split(',').mapNotNull { n -> Permission.entries.firstOrNull { it.name == n.trim() } }.toSet()
+    }
+
+    fun encode(set: Set<Permission>) = Permission.entries.filter { it in set }.joinToString(",") { it.name }
+}
+
+fun can(role: String?, p: Permission, stored: String = ""): Boolean = p in Permissions.effective(role, stored)

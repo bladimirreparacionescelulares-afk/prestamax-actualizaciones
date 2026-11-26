@@ -1,5 +1,7 @@
 package com.vitrinapos
 
+import com.vitrinapos.data.Permission
+
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -39,6 +41,7 @@ sealed interface Screen {
     data object FiscalDgii : Screen
     data object FiscalSequences : Screen
     data object FiscalDocs : Screen
+    data class UserDetail(val id: Long) : Screen
     data class RepairDetail(val id: Long) : Screen
 
     // Pantallas secundarias
@@ -85,8 +88,17 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
     /** Sin usuarios configurados todo está permitido; con usuarios, según el rol de quien entró. */
     fun can(p: com.vitrinapos.data.Permission): Boolean {
         if (repo.users.value.none { it.active == 1L }) return true
-        val u = repo.currentUser.value ?: return false
-        return com.vitrinapos.data.can(u.role, p)
+        val cur = repo.currentUser.value ?: return false
+        // Se usa la copia más reciente del usuario: si el administrador le cambia los permisos, aplican al momento.
+        val u = repo.users.value.firstOrNull { it.id == cur.id } ?: cur
+        if (u.active == 0L) return false
+        return com.vitrinapos.data.can(u.role, p, u.permissions)
+    }
+
+    /** Si el usuario que entró puede abrir esta pantalla. */
+    fun allows(screen: Screen): Boolean {
+        val needed = requiredPermission(screen)
+        return needed.isEmpty() || needed.any { can(it) }
     }
 
     fun logout() {
@@ -144,6 +156,14 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
     fun setLineQty(index: Int, qty: Double) {
         if (index !in cart.indices) return
         if (qty <= 0) cart.removeAt(index) else cart[index] = cart[index].copy(qty = qty)
+    }
+
+    /** Quita una unidad del producto en el carrito (y la línea si llega a cero). */
+    fun removeOne(productId: Long) {
+        val i = cart.indexOfLast { it.productId == productId }
+        if (i < 0) return
+        val l = cart[i]
+        if (l.qty > 1) cart[i] = l.copy(qty = l.qty - 1) else cart.removeAt(i)
     }
 
     fun clearCart() {
@@ -225,5 +245,30 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
             sendToPrinter(device, com.vitrinapos.labels.LabelEncoder.encode(cfg, options, maps))
             onProgress(minOf((i + 1) * 6, labels.size), labels.size)
         }
+    }
+}
+
+/** Permisos que abren cada pantalla (basta con uno). Vacío = cualquiera puede entrar. */
+fun requiredPermission(screen: Screen): List<com.vitrinapos.data.Permission> {
+    return when (screen) {
+        Screen.Pos, Screen.Checkout, is Screen.Scanner -> listOf(Permission.SELL)
+        is Screen.ProductForm, Screen.Categories -> listOf(Permission.CATALOG_EDIT)
+        is Screen.StockEntry, Screen.StockMoves -> listOf(Permission.ADJUST_STOCK)
+        Screen.Clients, is Screen.ClientForm, is Screen.ClientDetail -> listOf(Permission.CLIENTS)
+        Screen.Suppliers, is Screen.SupplierForm -> listOf(Permission.SUPPLIERS)
+        Screen.Quotes, is Screen.QuoteEditor -> listOf(Permission.QUOTES)
+        Screen.SalesHistory -> listOf(Permission.SALES_HISTORY)
+        is Screen.SaleDetail -> listOf(Permission.SALES_HISTORY, Permission.SELL)
+        Screen.Reports -> listOf(Permission.REPORTS)
+        Screen.Cash -> listOf(Permission.CASH)
+        Screen.Taller, is Screen.RepairReceive, is Screen.RepairDetail -> listOf(Permission.WORKSHOP, Permission.WORKSHOP_DELIVER)
+        is Screen.RepairDeliver -> listOf(Permission.WORKSHOP_DELIVER)
+        Screen.RepairStatuses -> listOf(Permission.SETTINGS)
+        Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> listOf(Permission.LABELS)
+        Screen.Network -> listOf(Permission.NETWORK)
+        Screen.Users, is Screen.UserDetail -> listOf(Permission.USERS)
+        Screen.Fiscal, Screen.FiscalEmitter, Screen.FiscalCert, Screen.FiscalDgii, Screen.FiscalSequences -> listOf(Permission.FISCAL)
+        Screen.FiscalDocs -> listOf(Permission.FISCAL, Permission.SALES_HISTORY)
+        else -> emptyList()
     }
 }

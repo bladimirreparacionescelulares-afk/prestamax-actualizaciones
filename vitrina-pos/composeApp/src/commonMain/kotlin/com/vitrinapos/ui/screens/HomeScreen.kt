@@ -91,7 +91,7 @@ fun HomeScreen() {
     Column(Modifier.fillMaxSize()) {
         val me = app.user
         ScreenHeader(s.businessName, subtitle = Time.greeting() + (me?.let { ", ${it.name.substringBefore(' ')}" } ?: "")) {
-            NetworkPill { app.open(if (app.can(com.vitrinapos.data.Permission.SETTINGS)) Screen.Network else Screen.More) }
+            NetworkPill { app.open(if (app.can(com.vitrinapos.data.Permission.NETWORK)) Screen.Network else Screen.More) }
             SquareIconButton(Icons.Rounded.Settings, "Configuración") { app.open(Screen.Settings) }
         }
         Column(
@@ -99,8 +99,8 @@ fun HomeScreen() {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             OfflineBanner()
-            // Resumen del día
-            Box(
+            // Resumen del día (solo para quien puede ver ventas o reportes)
+            if (app.can(com.vitrinapos.data.Permission.SALES_HISTORY) || app.can(com.vitrinapos.data.Permission.REPORTS)) Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
                     .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF0A5E4E))))
                     .clickable(enabled = app.can(com.vitrinapos.data.Permission.REPORTS)) { app.open(Screen.Reports) }
@@ -128,16 +128,21 @@ fun HomeScreen() {
             }
 
             // Accesos rápidos
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuickAction(Icons.Rounded.AddBox, "Nuevo producto", Modifier.weight(1f)) { app.open(Screen.ProductForm()) }
-                QuickAction(Icons.Rounded.Description, "Cotización", Modifier.weight(1f)) { app.open(Screen.QuoteEditor()) }
-                QuickAction(Icons.Rounded.Build, "Recibir equipo", Modifier.weight(1f)) { app.open(Screen.RepairReceive()) }
-                if (app.can(com.vitrinapos.data.Permission.REPORTS)) QuickAction(Icons.Rounded.BarChart, "Reportes", Modifier.weight(1f)) { app.open(Screen.Reports) }
-                else QuickAction(Icons.Rounded.PointOfSale, "Caja", Modifier.weight(1f)) { app.open(Screen.Cash) }
+            // Accesos según los permisos del usuario.
+            val quick = listOf(
+                Triple(Icons.Rounded.AddBox, "Nuevo producto", Screen.ProductForm()),
+                Triple(Icons.Rounded.Description, "Cotización", Screen.QuoteEditor()),
+                Triple(Icons.Rounded.Build, "Recibir equipo", Screen.RepairReceive()),
+                Triple(Icons.Rounded.BarChart, "Reportes", Screen.Reports),
+                Triple(Icons.Rounded.PointOfSale, "Caja", Screen.Cash),
+            ).filter { app.allows(it.third) }.take(4)
+            if (quick.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                quick.forEach { (icon, label, screen) -> QuickAction(icon, label, Modifier.weight(1f)) { app.open(screen) } }
+                repeat(4 - quick.size) { Spacer(Modifier.weight(1f)) }
             }
 
             // Caja
-            AppCard(onClick = { app.open(Screen.Cash) }) {
+            if (app.can(com.vitrinapos.data.Permission.CASH)) AppCard(onClick = { app.open(Screen.Cash) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.PointOfSale, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
@@ -158,7 +163,7 @@ fun HomeScreen() {
             val repairs by app.repo.repairs.collectAsState()
             val pendingRepairs = repairs.filter { com.vitrinapos.data.RepairStatus.isPending(it.status) }
             val readyRepairs = repairs.filter { com.vitrinapos.data.RepairStatus.isReady(it.status) }
-            if (pendingRepairs.isNotEmpty() || readyRepairs.isNotEmpty()) {
+            if ((pendingRepairs.isNotEmpty() || readyRepairs.isNotEmpty()) && app.allows(Screen.Taller)) {
                 val lateRepairs = pendingRepairs.count { it.daysLate() > 0 }
                 AppCard(onClick = { app.selectTab(Screen.Taller) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -208,8 +213,10 @@ fun HomeScreen() {
                 }
             }
 
-            SectionTitle("Últimas ventas", action = "Historial") { app.open(Screen.SalesHistory) }
-            if (recent.isEmpty()) {
+            val seeSales = app.can(com.vitrinapos.data.Permission.SALES_HISTORY)
+            if (seeSales) SectionTitle("Últimas ventas", action = "Historial") { app.open(Screen.SalesHistory) }
+            if (!seeSales) {
+            } else if (recent.isEmpty()) {
                 Text("Todavía no hay ventas. Toca Vender para hacer la primera.", color = AppTheme.extra.muted, style = MaterialTheme.typography.bodyMedium)
             } else {
                 AppCard(padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {

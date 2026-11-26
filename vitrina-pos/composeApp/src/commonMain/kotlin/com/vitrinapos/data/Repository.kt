@@ -55,13 +55,14 @@ data class CartLine(
     val taxable: Boolean,
     val imagePath: String?,
     val trackStock: Boolean,
+    val service: Boolean = false,
 ) {
     val amount: Long get() = LineInput(qty, price, taxable).amount
 
     companion object {
         fun of(p: Product, qty: Double = 1.0) = CartLine(
             productId = p.id, name = p.name, code = p.code, qty = qty, price = p.price, cost = p.cost,
-            taxable = p.taxable == 1L, imagePath = p.imagePath, trackStock = p.trackStock == 1L,
+            taxable = p.taxable == 1L, imagePath = p.imagePath, trackStock = p.trackStock == 1L, service = p.isService == 1L,
         )
     }
 }
@@ -82,6 +83,8 @@ data class ProductDraft(
     val trackStock: Boolean,
     val imagePath: String?,
     val description: String,
+    /** Servicio (mano de obra, instalación…): no lleva existencias y en el e-CF va como servicio. */
+    val isService: Boolean = false,
 )
 
 @Serializable
@@ -271,6 +274,7 @@ class Repository(val platform: Platform) {
                                 d.unit.ifBlank { "und" }, if (d.taxable) 1 else 0, if (d.trackStock) 1 else 0, d.imagePath, d.description.trim(), now, now,
                             )
                             val id = db.productQueries.lastId().executeAsOne()
+                            db.productQueries.setService(if (d.isService) 1 else 0, id)
                             if (d.initialStock != 0.0) db.stockMoveQueries.insert(id, MoveType.INITIAL, d.initialStock, "", now, op.user)
                             JsonPrimitive(id)
                         } else {
@@ -278,6 +282,7 @@ class Repository(val platform: Platform) {
                                 d.name.trim(), d.code.trim(), d.categoryId, d.supplierId, d.cost, d.price, d.minStock,
                                 d.unit.ifBlank { "und" }, if (d.taxable) 1 else 0, if (d.trackStock) 1 else 0, d.imagePath, d.description.trim(), now, d.id,
                             )
+                            db.productQueries.setService(if (d.isService) 1 else 0, d.id)
                             JsonPrimitive(d.id)
                         }
                     }
@@ -419,6 +424,7 @@ class Repository(val platform: Platform) {
                         db.fiscalQueries.deleteSequence(op.id)
                         JsonNull
                     }
+                    is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
                             db.appUserQueries.insert(op.name.trim(), op.pinHash ?: "", op.role, if (op.active) 1 else 0, now)
@@ -720,7 +726,10 @@ class Repository(val platform: Platform) {
         return (r as? JsonObject)?.mapNotNull { (k, v) -> k.toLongOrNull()?.let { it to v.jsonPrimitive.content } }?.toMap() ?: emptyMap()
     }
 
-    suspend fun adjustStock(productId: Long, newStock: Double, note: String) { run(Op.AdjustStock(productId, newStock, note, userName)) }
+    suspend fun adjustStock(productId: Long, newStock: Double, note: String) {
+        require(note.isNotBlank()) { "Escribe el motivo del ajuste" }
+        run(Op.AdjustStock(productId, newStock, note.trim(), userName))
+    }
 
     suspend fun registerEntry(lines: List<EntryLine>, supplierName: String?, note: String) { run(Op.RegisterEntry(lines, supplierName, note, userName)) }
 
@@ -793,6 +802,11 @@ class Repository(val platform: Platform) {
     suspend fun saveFiscalRange(type: Int, fromNo: Long, toNo: Long, expiresAt: Long?) { run(Op.SaveFiscalRange(type, fromNo, toNo, expiresAt)) }
 
     suspend fun deleteFiscalRange(id: Long) { run(Op.DeleteFiscalRange(id)) }
+
+    /** Guarda los permisos de un usuario ("" vuelve a los de su rol). */
+    suspend fun setUserPermissions(id: Long, permissions: Set<Permission>?) {
+        run(Op.SetUserPermissions(id, permissions?.let { Permissions.encode(it).ifEmpty { "NONE" } } ?: ""))
+    }
 
     /** Una caja pide números al principal para poder facturar sin conexión. */
     suspend fun reserveFiscalBlock(type: Int) { run(Op.ReserveFiscalBlock(type, deviceId, settings.value.fiscalBlockSize)) }

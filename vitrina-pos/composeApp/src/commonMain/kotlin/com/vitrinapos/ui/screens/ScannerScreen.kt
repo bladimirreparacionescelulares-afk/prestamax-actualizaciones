@@ -145,7 +145,7 @@ fun ScannerScreen(mode: String) {
                             Text("Código no encontrado", fontWeight = FontWeight.Bold, color = AppTheme.extra.danger)
                             Text(u, fontSize = 13.sp, color = AppTheme.extra.danger, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        OutlinedButton(onClick = { app.open(Screen.ProductForm(presetCode = u)) }, shape = RoundedCornerShape(12.dp)) { Text("Crear") }
+                        if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) OutlinedButton(onClick = { app.open(Screen.ProductForm(presetCode = u)) }, shape = RoundedCornerShape(12.dp)) { Text("Crear") }
                     }
                     p != null -> Row(verticalAlignment = Alignment.CenterVertically) {
                         ProductImage(p.imagePath, p.name, Modifier.size(56.dp), textSize = 16)

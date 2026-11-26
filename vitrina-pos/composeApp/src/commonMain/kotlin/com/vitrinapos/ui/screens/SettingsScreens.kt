@@ -120,19 +120,20 @@ fun MoreScreen() {
         add(MoreItem(Icons.Rounded.People, "Clientes", "${clients.size} registrados", Screen.Clients))
         add(MoreItem(Icons.Rounded.LocalShipping, "Proveedores", "${suppliers.size} registrados", Screen.Suppliers))
         add(MoreItem(Icons.AutoMirrored.Rounded.ReceiptLong, "Ventas", "Historial y anulaciones", Screen.SalesHistory))
-        if (app.can(com.vitrinapos.data.Permission.REPORTS)) add(MoreItem(Icons.Rounded.BarChart, "Reportes", "Ventas y ganancias", Screen.Reports))
+        add(MoreItem(Icons.Rounded.BarChart, "Reportes", "Ventas y ganancias", Screen.Reports))
         add(MoreItem(Icons.Rounded.PointOfSale, "Caja", if (cash != null) "Abierta" else "Apertura y cierre", Screen.Cash))
         add(MoreItem(Icons.Rounded.QrCode2, "Etiquetas", "QR y precio para tus productos", Screen.Labels))
         add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
         add(MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()))
         add(MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves))
-        if (admin || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", if (admin) Screen.Fiscal else Screen.FiscalDocs))
+        val fiscalScreen = if (app.allows(Screen.Fiscal)) Screen.Fiscal else Screen.FiscalDocs
+        if (fiscalScreen == Screen.Fiscal || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", fiscalScreen))
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
-        if (admin) add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
-        if (admin) add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))
+        add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
+        add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))
         if (admin && app.graph.client == null) add(MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings))
         add(MoreItem(Icons.Rounded.Settings, "Configuración", if (admin) "Negocio, impuestos" else "Impresora de este equipo", Screen.Settings))
-    }
+    }.filter { app.allows(it.screen) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Más")
         LazyVerticalGrid(

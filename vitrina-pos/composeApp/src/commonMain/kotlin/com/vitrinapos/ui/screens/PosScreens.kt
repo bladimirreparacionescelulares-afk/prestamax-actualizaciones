@@ -33,6 +33,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Print
@@ -45,6 +47,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -121,7 +124,7 @@ fun PosScreen(wide: Boolean) {
             scope.launch { app.openRepairByCode(code) }
         } else if (!app.addByCode(code, products)) {
             app.toast("No hay producto con el código $code")
-            app.open(Screen.ProductForm(presetCode = code))
+            if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) app.open(Screen.ProductForm(presetCode = code))
         }
     }
     val list = products.filter { (category == null || it.categoryId == category) && it.matches(query) }
@@ -155,9 +158,9 @@ fun PosScreen(wide: Boolean) {
                     products.isEmpty() -> EmptyState(
                         Icons.Rounded.ShoppingCart, "Aún no hay productos",
                         "Registra tus productos con foto y precio para empezar a vender.",
-                    ) { Button(onClick = { app.open(Screen.ProductForm()) }) { Text("Nuevo producto") } }
+                    ) { if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) Button(onClick = { app.open(Screen.ProductForm()) }) { Text("Nuevo producto") } }
                     list.isEmpty() -> EmptyState(Icons.Rounded.SearchOff, "Sin resultados", "No hay productos que coincidan con \"$query\".") {
-                        OutlinedButton(onClick = { app.open(Screen.ProductForm(presetCode = query.takeIf { q -> q.none { it == ' ' } })) }) { Text("Crear producto") }
+                        if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) OutlinedButton(onClick = { app.open(Screen.ProductForm(presetCode = query.takeIf { q -> q.none { it == ' ' } })) }) { Text("Crear producto") }
                     }
                     else -> LazyVerticalGrid(
                         columns = GridCells.Adaptive(if (wide) 170.dp else 150.dp),
@@ -166,7 +169,11 @@ fun PosScreen(wide: Boolean) {
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(list, key = { it.id }) { p ->
-                            ProductTile(p, app.qtyInCart(p.id), onAdd = { app.addToCart(p) }, onEdit = { app.open(Screen.ProductForm(p.id)) })
+                            ProductTile(
+                                p, app.qtyInCart(p.id), onAdd = { app.addToCart(p) },
+                                onEdit = { if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) app.open(Screen.ProductForm(p.id)) },
+                                onRemove = { app.removeOne(p.id) },
+                            )
                         }
                     }
                 }
@@ -200,7 +207,7 @@ fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Unit) {
+fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Unit, onRemove: (() -> Unit)? = null) {
     val app = LocalAppState.current
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -220,6 +227,14 @@ fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Uni
                     Text(Money.format(p.price, app.settings.currencySymbol), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
                     if (p.code.isNotBlank()) Text(p.code, fontSize = 11.sp, color = AppTheme.extra.muted, maxLines = 1)
                 }
+                // Si ya está en el carrito, se puede quitar uno sin ir al cobro.
+                if (inCart > 0 && onRemove != null) {
+                    Box(
+                        Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onRemove),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Rounded.Remove, "Quitar uno", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp)) }
+                    Spacer(Modifier.width(6.dp))
+                }
                 Box(
                     Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.primary).clickable(onClick = onAdd),
                     contentAlignment = Alignment.Center,
@@ -232,6 +247,11 @@ fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Uni
 @Composable
 private fun CartBar(app: AppState, modifier: Modifier) {
     val totals = app.repo.totalsFor(app.cart, app.cartDiscount, app.settings)
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear) com.vitrinapos.ui.components.ConfirmDialog(
+        "Vaciar el carrito", "Se quitan los ${app.cartCount.fmtQty()} artículos de esta venta.", "Vaciar",
+        onConfirm = { app.clearCart() }, onDismiss = { confirmClear = false }, destructive = true,
+    )
     Surface(
         onClick = { app.open(Screen.Checkout) },
         shape = RoundedCornerShape(20.dp),
@@ -239,7 +259,10 @@ private fun CartBar(app: AppState, modifier: Modifier) {
         shadowElevation = 10.dp,
         modifier = modifier.fillMaxWidth(),
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { confirmClear = true }) {
+                Icon(Icons.Rounded.DeleteOutline, "Vaciar carrito", tint = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.8f))
+            }
             Column(Modifier.weight(1f)) {
                 Text("${app.cartCount.fmtQty()} artículos", color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.7f), fontSize = 12.sp)
                 Text(Money.format(totals.total, app.settings.currencySymbol), color = MaterialTheme.colorScheme.inverseOnSurface, fontWeight = FontWeight.Bold, fontSize = 19.sp)

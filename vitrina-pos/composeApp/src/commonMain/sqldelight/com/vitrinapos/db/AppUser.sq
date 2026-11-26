@@ -4,7 +4,8 @@ CREATE TABLE appUser (
   pinHash TEXT NOT NULL,
   role TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  permissions TEXT NOT NULL DEFAULT ''
 );
 
 selectAll:
@@ -24,3 +25,6 @@ UPDATE appUser SET pinHash = ? WHERE id = ?;
 
 lastId:
 SELECT last_insert_rowid();
+
+setPermissions:
+UPDATE appUser SET permissions = ? WHERE id = ?;

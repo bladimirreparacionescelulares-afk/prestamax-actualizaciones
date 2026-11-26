@@ -196,7 +196,7 @@ class Fiscal(private val repo: Repository) {
 
     // ---------------- Emisión ----------------
 
-    private fun lineOf(l: CartLine) = EcfLine(l.name, l.code, l.qty, l.price, l.taxable, service = l.productId == null)
+    private fun lineOf(l: CartLine) = EcfLine(l.name, l.code, l.qty, l.price, l.taxable, service = l.service || l.productId == null)
 
     private fun buyerFor(choice: FiscalChoice?, clientId: Long?): EcfBuyer {
         val c = clientId?.let { db.clientQueries.selectById(it).executeAsOneOrNull() }
@@ -225,7 +225,10 @@ class Fiscal(private val repo: Repository) {
     fun issueCreditNote(sale: Sale, items: List<SaleItem>, original: EcfDoc, reason: String, now: Long): EcfIssued {
         val s = settings
         val (encf, _) = takeNumber(EcfType.NOTA_CREDITO, now)
-        val lines = items.map { EcfLine(it.name, it.code, it.qty, it.price, it.taxable == 1L, service = it.productId == null) }
+        val lines = items.map { item ->
+            val isService = item.productId == null || item.productId.let { db.productQueries.selectById(it).executeAsOneOrNull()?.isService == 1L }
+            EcfLine(item.name, item.code, item.qty, item.price, item.taxable == 1L, service = isService)
+        }
         val draft = EcfDraft(
             type = EcfType.NOTA_CREDITO, encf = encf, emitter = emitter(s), buyer = EcfBuyer(original.buyerRnc, original.buyerName),
             lines = Ecf.spreadDiscount(lines, sale.discount), pricesIncludeTax = sale.taxIncluded == 1L, taxRate = s.taxRate,

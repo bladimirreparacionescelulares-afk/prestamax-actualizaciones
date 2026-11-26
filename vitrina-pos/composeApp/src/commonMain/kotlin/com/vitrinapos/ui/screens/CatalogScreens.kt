@@ -54,6 +54,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -177,7 +180,7 @@ fun CatalogScreen() {
                 }
             }
         }
-        ExtendedFloatingActionButton(
+        if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) ExtendedFloatingActionButton(
             onClick = { app.open(Screen.ProductForm()) },
             containerColor = AppTheme.extra.cta,
             contentColor = AppTheme.extra.onCta,
@@ -234,6 +237,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
     var unit by remember { mutableStateOf("und") }
     var taxable by remember { mutableStateOf(true) }
     var trackStock by remember { mutableStateOf(true) }
+    var isService by remember { mutableStateOf(false) }
     var imagePath by remember { mutableStateOf<String?>(null) }
     var description by remember { mutableStateOf("") }
     var showErrors by remember { mutableStateOf(false) }
@@ -250,7 +254,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 original = p
                 name = p.name; code = p.code; categoryId = p.categoryId; supplierId = p.supplierId
                 cost = p.cost; price = p.price; stock = p.stock; minStock = p.minStock; unit = p.unit
-                taxable = p.taxable == 1L; trackStock = p.trackStock == 1L; imagePath = p.imagePath; description = p.description
+                taxable = p.taxable == 1L; trackStock = p.trackStock == 1L; isService = p.isService == 1L; imagePath = p.imagePath; description = p.description
             }
             moves = app.repo.movesByProduct(id)
             loaded = true
@@ -286,20 +290,23 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 ProductDraft(
                     id = id, name = name, code = code, categoryId = categoryId, supplierId = supplierId,
                     cost = cost ?: 0, price = price ?: 0, initialStock = if (id == null) stock ?: 0.0 else 0.0,
-                    minStock = minStock ?: 0.0, unit = unit, taxable = taxable, trackStock = trackStock,
-                    imagePath = imagePath, description = description,
+                    minStock = minStock ?: 0.0, unit = unit, taxable = taxable, trackStock = trackStock && !isService,
+                    imagePath = imagePath, description = description, isService = isService,
                 ),
             )
             if (original?.imagePath != null && original?.imagePath != imagePath) app.repo.deleteImage(original?.imagePath)
             saved = true
-            app.toast(if (id == null) "Producto guardado" else "Cambios guardados")
+            app.toast(if (id == null) (if (isService) "Servicio guardado" else "Producto guardado") else "Cambios guardados")
             if (another) app.replace(Screen.ProductForm(key = newId)) else app.back()
             if (id == null && !another && app.settingsNow.labelAskOnSave) app.labelPrompt = newId
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(if (id == null) "Nuevo producto" else "Editar producto", onBack = { app.back() }) {
+        ScreenHeader(
+            when { id == null && isService -> "Nuevo servicio"; id == null -> "Nuevo producto"; isService -> "Editar servicio"; else -> "Editar producto" },
+            onBack = { app.back() },
+        ) {
             if (id != null) IconButton(onClick = { app.openLabelsFor(listOf(com.vitrinapos.AppState.LabelItem(id, original?.suggestedCopies() ?: 1))) }) {
                 Icon(Icons.Rounded.QrCode2, "Etiquetas", tint = MaterialTheme.colorScheme.primary)
             }
@@ -312,6 +319,16 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 .widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Producto o servicio
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = !isService, onClick = { isService = false; if (unit == "servicio") unit = "und" }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Producto") }
+                SegmentedButton(selected = isService, onClick = { isService = true; trackStock = false; if (unit == "und") unit = "servicio" }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Servicio") }
+            }
+            Text(
+                if (isService) "Mano de obra, instalación, reparación o cualquier trabajo. No lleva existencias y en la factura electrónica sale como servicio."
+                else "Un artículo físico que se vende y se cuenta en el inventario.",
+                fontSize = 12.sp, color = AppTheme.extra.muted,
+            )
             // Foto
             if (imagePath != null) {
                 Box(Modifier.fillMaxWidth().height(220.dp)) {
@@ -342,7 +359,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 }
             }
 
-            TextInput(name, { name = it }, "Nombre del producto *", error = nameError)
+            TextInput(name, { name = it }, if (isService) "Nombre del servicio *" else "Nombre del producto *", error = nameError)
             TextInput(
                 code, { code = it }, "Código de barras o referencia", error = codeError, placeholder = "Vacío: se asigna uno para su etiqueta",
                 trailing = {
@@ -377,17 +394,17 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 DropdownField("Proveedor", suppliers.firstOrNull { it.id == supplierId }, suppliers, { it.name }, { supplierId = it?.id }, Modifier.weight(1f))
             }
 
-            SectionTitle("Inventario")
-            AppCard(onClick = { trackStock = !trackStock }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
+            if (!isService) SectionTitle("Inventario")
+            if (!isService) AppCard(onClick = { trackStock = !trackStock }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Controlar existencias", fontWeight = FontWeight.SemiBold)
-                        Text("Desactívalo para servicios o productos sin conteo", fontSize = 12.sp, color = AppTheme.extra.muted)
+                        Text("Desactívalo para productos que no cuentas uno por uno", fontSize = 12.sp, color = AppTheme.extra.muted)
                     }
                     Switch(trackStock, { trackStock = it })
                 }
             }
-            if (trackStock) {
+            if (trackStock && !isService) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (id == null) {
                         QtyInput(stock, { stock = it }, "Stock inicial", Modifier.weight(1f))
@@ -431,7 +448,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                     OutlinedButton(onClick = { save(true) }, modifier = Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(16.dp)) { Text("Guardar y otro") }
                 }
                 Button(onClick = { save(false) }, modifier = Modifier.weight(1f).height(54.dp), shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Rounded.Check, null); Spacer(Modifier.width(6.dp)); Text("Guardar producto", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Rounded.Check, null); Spacer(Modifier.width(6.dp)); Text(if (isService) "Guardar servicio" else "Guardar producto", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -475,6 +492,7 @@ private fun PhotoAction(icon: androidx.compose.ui.graphics.vector.ImageVector, l
 private fun AdjustStockDialog(current: Double, onDismiss: () -> Unit, onSave: (Double, String) -> Unit) {
     var qty by remember { mutableStateOf<Double?>(current) }
     var note by remember { mutableStateOf("") }
+    var tried by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ajustar stock") },
@@ -482,10 +500,12 @@ private fun AdjustStockDialog(current: Double, onDismiss: () -> Unit, onSave: (D
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Stock actual: ${current.fmtQty()}. Escribe la cantidad real que tienes.", color = AppTheme.extra.muted)
                 QtyInput(qty, { qty = it }, "Cantidad real")
-                TextInput(note, { note = it }, "Motivo (conteo, daño, regalo…)")
+                TextInput(note, { note = it }, "Motivo * (conteo, daño, regalo…)", error = if (tried && note.isBlank()) "Escribe el motivo del ajuste" else null)
             }
         },
-        confirmButton = { TextButton(onClick = { qty?.let { onSave(it, note) } }, enabled = qty != null) { Text("Guardar") } },
+        confirmButton = {
+            TextButton(onClick = { tried = true; if (note.isNotBlank()) qty?.let { onSave(it, note.trim()) } }, enabled = qty != null) { Text("Guardar") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

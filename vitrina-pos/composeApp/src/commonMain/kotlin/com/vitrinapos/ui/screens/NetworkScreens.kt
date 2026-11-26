@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vitrinapos.LocalAppState
+import com.vitrinapos.Screen
 import com.vitrinapos.data.NetRole
 import com.vitrinapos.data.Roles
 import com.vitrinapos.data.Time
@@ -474,13 +475,16 @@ fun UsersScreen() {
                 }
             }
             users.forEach { u ->
-                AppCard(onClick = { editing = u }) {
+                AppCard(onClick = { app.open(Screen.UserDetail(u.id)) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Avatar(u.name, 44.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(u.name + if (current?.id == u.id) " (tú)" else "", fontWeight = FontWeight.SemiBold)
-                            Text(Roles.label(u.role), fontSize = 13.sp, color = AppTheme.extra.muted)
+                            Text(
+                                Roles.label(u.role) + if (u.role != Roles.ADMIN && u.permissions.isNotBlank()) " · permisos personalizados" else "",
+                                fontSize = 13.sp, color = AppTheme.extra.muted,
+                            )
                         }
                         if (u.active == 0L) Pill("Inactivo", AppTheme.extra.muted, MaterialTheme.colorScheme.surfaceContainer)
                     }
@@ -492,6 +496,7 @@ fun UsersScreen() {
             if (current != null) {
                 OutlinedButton(onClick = { app.logout() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Cambiar de usuario") }
             }
+            Text("Toca un usuario para cambiar sus datos y encender o apagar lo que puede ver y hacer.", fontSize = 13.sp, color = AppTheme.extra.muted)
             SectionTitle("Qué puede hacer cada rol")
             Roles.all.forEach { r ->
                 Column(Modifier.padding(vertical = 2.dp)) {
@@ -507,7 +512,7 @@ fun UsersScreen() {
 }
 
 @Composable
-private fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppUser>, onDismiss: () -> Unit) {
+internal fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppUser>, onDismiss: () -> Unit) {
     val app = LocalAppState.current
     val scope = rememberSafeScope()
     var name by remember { mutableStateOf(existing?.name ?: "") }
@@ -567,4 +572,76 @@ private fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppUs
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+/** Ficha del usuario: sus datos y lo que puede ver y hacer, con un interruptor por módulo. */
+@Composable
+fun UserDetailScreen(id: Long) {
+    val app = LocalAppState.current
+    val scope = rememberSafeScope()
+    val users by app.repo.users.collectAsState()
+    val u = users.firstOrNull { it.id == id }
+    var editing by remember { mutableStateOf(false) }
+    if (u == null) { Column { ScreenHeader("Usuario", onBack = { app.back() }) }; return }
+    val admin = u.role == Roles.ADMIN
+    val granted = com.vitrinapos.data.Permissions.effective(u.role, u.permissions)
+    val custom = !admin && u.permissions.isNotBlank()
+
+    fun set(p: com.vitrinapos.data.Permission, on: Boolean) = scope.launch {
+        val next = if (on) granted + p else granted - p
+        runCatching { app.repo.setUserPermissions(u.id, next) }.onFailure { app.toast(it.message ?: "No se pudo guardar") }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(u.name, subtitle = Roles.label(u.role) + if (u.active == 0L) " · inactivo" else "", onBack = { app.back() })
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp)
+                .widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AppCard(onClick = { editing = true }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(u.name, 44.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(u.name, fontWeight = FontWeight.SemiBold)
+                        Text("${Roles.label(u.role)} · ${if (u.active == 1L) "activo" else "inactivo"}", fontSize = 13.sp, color = AppTheme.extra.muted)
+                    }
+                    Text("Editar", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Text("Nombre, rol, PIN y si está activo.", fontSize = 12.sp, color = AppTheme.extra.muted)
+            SectionTitle("Qué puede ver y hacer")
+            if (admin) {
+                AppCard(color = MaterialTheme.colorScheme.primaryContainer) {
+                    Text("Los administradores tienen acceso a todo.", fontWeight = FontWeight.SemiBold)
+                    Text("Para limitar a esta persona, cámbiale el rol a Vendedor o Técnico y luego apaga lo que no deba usar.", fontSize = 13.sp)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (custom) "Permisos personalizados" else "Permisos del rol ${Roles.label(u.role)}",
+                        fontSize = 13.sp, color = AppTheme.extra.muted, modifier = Modifier.weight(1f),
+                    )
+                    if (custom) TextButton(onClick = { scope.launch { app.repo.setUserPermissions(u.id, null); app.toast("Permisos del rol restablecidos") } }) {
+                        Text("Volver a los del rol")
+                    }
+                }
+                AppCard(padding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
+                    com.vitrinapos.data.Permission.entries.forEachIndexed { i, p ->
+                        if (i > 0) Divider()
+                        Row(Modifier.fillMaxWidth().clickable { set(p, p !in granted) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(p.title, fontWeight = FontWeight.SemiBold)
+                                Text(p.detail, fontSize = 12.sp, color = AppTheme.extra.muted)
+                            }
+                            Switch(p in granted, { on -> set(p, on) })
+                        }
+                    }
+                }
+                Text("Los cambios se aplican al momento, también en los otros equipos conectados.", fontSize = 12.sp, color = AppTheme.extra.muted)
+            }
+        }
+    }
+    if (editing) UserDialog(u, firstUser = false, users = users, onDismiss = { editing = false })
 }

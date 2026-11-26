@@ -15,7 +15,8 @@ CREATE TABLE product (
   description TEXT NOT NULL DEFAULT '',
   active INTEGER NOT NULL DEFAULT 1,
   createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  updatedAt INTEGER NOT NULL,
+  isService INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX product_code ON product(code);
@@ -54,3 +55,6 @@ SELECT categoryId, COUNT(*) FROM product WHERE active = 1 GROUP BY categoryId;
 
 lastId:
 SELECT last_insert_rowid();
+
+setService:
+UPDATE product SET isService = ? WHERE id = ?;

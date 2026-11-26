@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -170,6 +171,8 @@ private fun MainShell(app: AppState) {
 
 @Composable
 fun ScreenContent(screen: Screen, wide: Boolean) {
+    val app = LocalAppState.current
+    if (!app.allows(screen)) { NoAccessScreen(); return }
     when (screen) {
         Screen.Home -> HomeScreen()
         Screen.Catalog -> CatalogScreen()
@@ -186,6 +189,7 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.FiscalDgii -> FiscalDgiiScreen()
         Screen.FiscalSequences -> FiscalSequencesScreen()
         Screen.FiscalDocs -> FiscalDocsScreen()
+        is Screen.UserDetail -> UserDetailScreen(screen.id)
         is Screen.RepairDetail -> RepairDetailScreen(screen.id)
         is Screen.ProductForm -> ProductFormScreen(screen.id, screen.presetCode)
         Screen.Checkout -> CheckoutScreen()
@@ -220,32 +224,34 @@ private fun BottomBar(app: AppState) {
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            bottomItems.forEach { item ->
+            bottomItems.filter { app.allows(it.screen) }.forEach { item ->
                 val selected = app.tab == item.screen && app.stack.isEmpty()
                 val isSell = item.screen == Screen.Pos
                 Column(
-                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(14.dp)).clickable { app.selectTab(item.screen) },
+                    Modifier.weight(1f).fillMaxHeight().then(if (isSell) Modifier else Modifier.clip(RoundedCornerShape(14.dp))).clickable { app.selectTab(item.screen) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
                     if (isSell) {
                         val bg = if (selected) ex.cta else MaterialTheme.colorScheme.primary
-                        Box(
-                            Modifier.offset(y = (-8).dp).size(46.dp).shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = bg, spotColor = bg)
-                                .clip(RoundedCornerShape(16.dp)).background(bg),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(item.icon, item.label, tint = Color.White, modifier = Modifier.size(26.dp))
+                        // El contador va fuera del botón para que no lo corte su borde redondeado.
+                        Box(Modifier.size(52.dp, 46.dp)) {
+                            Box(
+                                Modifier.align(Alignment.BottomCenter).size(44.dp).shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = bg, spotColor = bg)
+                                    .clip(RoundedCornerShape(16.dp)).background(bg),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(item.icon, item.label, tint = Color.White, modifier = Modifier.size(26.dp)) }
                             val count = app.cart.size
                             if (count > 0) {
                                 Box(
-                                    Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(20.dp).clip(RoundedCornerShape(10.dp))
+                                    Modifier.align(Alignment.TopEnd).size(18.dp).clip(RoundedCornerShape(9.dp))
                                         .background(if (selected) MaterialTheme.colorScheme.primary else ex.cta),
                                     contentAlignment = Alignment.Center,
                                 ) { Text(count.toString(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
-                        Text(item.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (selected) ex.cta else ex.muted, modifier = Modifier.offset(y = (-4).dp))
+                        Spacer(Modifier.height(2.dp))
+                        Text(item.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (selected) ex.cta else ex.muted)
                     } else {
                         val color = if (selected) MaterialTheme.colorScheme.primary else ex.muted
                         Box(
@@ -275,13 +281,7 @@ private fun SideBar(app: AppState) {
                     Text(s.businessName, style = MaterialTheme.typography.bodySmall, color = ex.muted, maxLines = 1)
                 }
             }
-            sideItems.filter { item ->
-                when (item.screen) {
-                    Screen.Reports -> app.can(com.vitrinapos.data.Permission.REPORTS)
-                    Screen.Network -> app.can(com.vitrinapos.data.Permission.SETTINGS)
-                    else -> true
-                }
-            }.forEach { item ->
+            sideItems.filter { app.allows(it.screen) }.forEach { item ->
                 val selected = app.tab == item.screen
                 val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else ex.muted
                 Row(
@@ -301,5 +301,20 @@ private fun SideBar(app: AppState) {
                 }
             }
         }
+    }
+}
+
+/** Pantalla para cuando el usuario no tiene permiso. */
+@Composable
+private fun NoAccessScreen() {
+    val app = LocalAppState.current
+    Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(Icons.Rounded.Lock, null, tint = AppTheme.extra.muted, modifier = Modifier.size(48.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("No tienes acceso a esta sección", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(6.dp))
+        Text("Pídele al administrador que te dé el permiso en Más → Usuarios.", color = AppTheme.extra.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+        androidx.compose.material3.OutlinedButton(onClick = { if (app.stack.isNotEmpty()) app.back() else app.selectTab(Screen.Home) }) { Text("Volver") }
     }
 }

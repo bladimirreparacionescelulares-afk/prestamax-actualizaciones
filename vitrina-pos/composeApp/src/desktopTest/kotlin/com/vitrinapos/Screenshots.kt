@@ -122,6 +122,10 @@ class Screenshots {
         shoot(graph, File(outDir, "43-fe-comprobantes.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalDocs) }
         // Las capturas de red siguientes son de una caja sin certificado.
         runBlocking { repo.saveSettings(repo.settings.value.copy(fiscalEnabled = false)) }
+        val svc = runBlocking {
+            repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Cambio de pantalla (mano de obra)", "", null, null, 0, 150000, 0.0, 0.0, "servicio", true, false, null, "", isService = true))
+        }
+        shoot(graph, File(outDir, "46-servicio.png"), 412, 900, 2f) { it.selectTab(Screen.Catalog); it.open(Screen.ProductForm(svc)) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
 
         // ---- Trabajo en red y usuarios ----
@@ -140,6 +144,12 @@ class Screenshots {
         Thread.sleep(1500)
         shoot(graph, File(outDir, "13-red-principal.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Network) }
         shoot(graph, File(outDir, "14-usuarios.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Users) }
+        val pedroId = graph.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Pedro" }.id
+        runBlocking { graph.repo.setUserPermissions(pedroId, com.vitrinapos.data.Permissions.defaults(com.vitrinapos.data.Roles.SELLER) + com.vitrinapos.data.Permission.WORKSHOP - com.vitrinapos.data.Permission.CASH) }
+        shoot(graph, File(outDir, "44-permisos-usuario.png"), 412, 1500, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.UserDetail(pedroId)) }
+        shoot(graph, File(outDir, "45-vendedor-mas.png"), 412, 900, 2f) { app ->
+            app.repo.currentUser.value = graph.repo.db.appUserQueries.selectById(pedroId).executeAsOne(); app.selectTab(Screen.More)
+        }
         shoot(graph, File(outDir, "15-entrar.png"), 412, 900, 2f) { it.repo.currentUser.value = null }
         val pedro = other.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Pedro" }
         shoot(other, File(outDir, "16-conectado.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
