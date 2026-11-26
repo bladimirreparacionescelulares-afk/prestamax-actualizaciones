@@ -79,6 +79,7 @@ class FiscalFlowTest {
         val repo = g.repo
         SampleData.load(repo)
         g.setupFiscal()
+        repo.openCashSession(0)
         assertTrue(repo.fiscal.missing().isEmpty(), repo.fiscal.missing().toString())
         val ps = repo.db.productQueries.selectActive().executeAsList()
         val cable = ps.first { it.code == "CBL-001" }
@@ -162,6 +163,8 @@ class FiscalFlowTest {
         withTimeout(20_000) { while (caja.repo.fiscalRanges.value.size < 3 || !caja.repo.settings.value.fiscalEnabled) delay(100) }
 
         // La caja recibe el certificado por la red cifrada y pide su bloque de números.
+        caja.repo.openCashSession(0)
+        withTimeout(20_000) { while (caja.repo.openCash.value == null) delay(100) }
         caja.client!!.fetchFiscalCertificate()
         assertEquals("MARIA PEREZ", caja.repo.fiscal.certificate.value!!.holder)
         caja.repo.reserveFiscalBlock(32)

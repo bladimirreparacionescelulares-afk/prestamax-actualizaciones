@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -224,7 +225,7 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
         PinPad(
             title = chosen.name,
             subtitle = "Escribe tu PIN",
-            check = { app.repo.checkPin(chosen, it) },
+            check = { pin, final -> app.repo.pinAttempt(chosen, pin, final) },
             onSuccess = { app.repo.currentUser.value = chosen },
             onBack = if (users.size > 1) ({ selected = null }) else null,
         )
@@ -233,16 +234,40 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
 
 /** Teclado de PIN: comprueba a partir de 4 números y entra en cuanto coincide (hasta 8). */
 @Composable
-fun PinPad(title: String, subtitle: String, check: (String) -> Boolean, onSuccess: () -> Unit, onBack: (() -> Unit)? = null) {
+fun PinPad(
+    title: String, subtitle: String, check: (String, Boolean) -> com.vitrinapos.data.Repository.PinResult,
+    onSuccess: () -> Unit, onBack: (() -> Unit)? = null,
+) {
     var entered by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-    fun press(d: String) {
-        if (entered.length >= 8) return
-        entered += d
-        error = false
-        if (entered.length >= 4 && check(entered)) { onSuccess(); return }
-        if (entered.length == 8) { error = true; entered = "" }
+    var error by remember { mutableStateOf<String?>(null) }
+    var lockedUntil by remember { mutableStateOf(0L) }
+    var now by remember { mutableStateOf(com.vitrinapos.data.Time.now()) }
+    androidx.compose.runtime.LaunchedEffect(lockedUntil) {
+        while (lockedUntil > com.vitrinapos.data.Time.now()) { now = com.vitrinapos.data.Time.now(); kotlinx.coroutines.delay(1000) }
+        now = com.vitrinapos.data.Time.now()
     }
+    val locked = lockedUntil > now
+    fun handle(r: com.vitrinapos.data.Repository.PinResult, final: Boolean) {
+        when (r) {
+            is com.vitrinapos.data.Repository.PinResult.Ok -> onSuccess()
+            is com.vitrinapos.data.Repository.PinResult.Locked -> { lockedUntil = r.until; entered = ""; error = null }
+            is com.vitrinapos.data.Repository.PinResult.Wrong -> if (final) {
+                entered = ""
+                error = "PIN incorrecto. " + (if (r.attemptsLeft == 1) "Queda 1 intento" else "Quedan ${r.attemptsLeft} intentos") + " antes de bloquearse."
+            }
+        }
+    }
+    // Se prueba desde el 4.º número (sin contar como fallo); al llegar a 8 o al tocar ✓ cuenta como intento.
+    fun press(d: String) {
+        if (entered.length >= 8 || locked) return
+        entered += d
+        error = null
+        if (entered.length >= 4) {
+            val r = check(entered, entered.length == 8)
+            if (r !is com.vitrinapos.data.Repository.PinResult.Wrong || entered.length == 8) handle(r, entered.length == 8)
+        }
+    }
+    fun submit() { if (entered.length >= 4 && !locked) handle(check(entered, true), true) }
     Column(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -252,7 +277,15 @@ fun PinPad(title: String, subtitle: String, check: (String) -> Boolean, onSucces
         Spacer(Modifier.height(12.dp))
         Text(title, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
-        Text(if (error) "PIN incorrecto, intenta de nuevo" else subtitle, color = if (error) MaterialTheme.colorScheme.error else AppTheme.extra.muted)
+        Text(
+            when {
+                locked -> "Bloqueado por seguridad. Intenta en " + ((lockedUntil - now + 999) / 1000).let { if (it >= 60) "${(it + 59) / 60} min" else "$it s" }
+                error != null -> error!!
+                else -> subtitle
+            },
+            color = if (locked || error != null) MaterialTheme.colorScheme.error else AppTheme.extra.muted,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             repeat(maxOf(4, entered.length)) { i ->
@@ -260,18 +293,19 @@ fun PinPad(title: String, subtitle: String, check: (String) -> Boolean, onSucces
             }
         }
         Spacer(Modifier.height(26.dp))
-        val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "<")
+        val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "ok", "0", "<")
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             keys.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     row.forEach { k ->
                         Box(
                             Modifier.size(74.dp).clip(CircleShape)
-                                .background(if (k.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer)
-                                .clickable(enabled = k.isNotEmpty()) { if (k == "<") entered = entered.dropLast(1) else press(k) },
+                                .background(if (k == "ok") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
+                                .clickable(enabled = !locked) { when (k) { "<" -> entered = entered.dropLast(1); "ok" -> submit(); else -> press(k) } },
                             contentAlignment = Alignment.Center,
                         ) {
                             if (k == "<") Icon(Icons.AutoMirrored.Rounded.Backspace, "Borrar")
+                            else if (k == "ok") Icon(Icons.Rounded.Check, "Entrar", tint = Color.White)
                             else Text(k, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }

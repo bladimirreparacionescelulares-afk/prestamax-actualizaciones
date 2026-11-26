@@ -45,8 +45,31 @@ object Crypto {
     fun sha256Hex(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 
-    /** Huella del PIN de un usuario (nunca se guarda el PIN tal cual). */
-    fun pinHash(pin: String): String = sha256Hex("vitrina-pin:$pin")
+    /** Huella anterior del PIN (versiones hasta la 1.7). Solo se usa para reconocerla y cambiarla por la nueva. */
+    fun legacyPinHash(pin: String): String = sha256Hex("vitrina-pin:$pin")
+
+    private const val PIN_ITERATIONS = 20_000
+
+    /** Huella del PIN con sal y PBKDF2: "p2$iteraciones$sal$huella". Nunca se guarda el PIN tal cual. */
+    fun pinHash(pin: String): String {
+        val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        return "p2\$" + PIN_ITERATIONS + "\$" + hex(salt) + "\$" + hex(pbkdf2(pin, salt, PIN_ITERATIONS))
+    }
+
+    fun verifyPin(stored: String, pin: String): Boolean {
+        if (!stored.startsWith("p2\$")) return stored == legacyPinHash(pin)
+        val parts = stored.split('$')
+        if (parts.size != 4) return false
+        val expected = unhex(parts[3])
+        val got = pbkdf2(pin, unhex(parts[2]), parts[1].toIntOrNull() ?: return false)
+        return MessageDigest.isEqual(expected, got)
+    }
+
+    fun isLegacyPin(stored: String) = !stored.startsWith("p2\$")
+
+    private fun pbkdf2(pin: String, salt: ByteArray, iterations: Int): ByteArray =
+        javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, iterations, 256)).encoded
 
     fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 

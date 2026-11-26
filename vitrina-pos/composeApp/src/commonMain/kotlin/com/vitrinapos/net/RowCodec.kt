@@ -51,6 +51,7 @@ object RowCodec {
             "cashSession", "id" to L, "openedAt" to L, "openingAmount" to L, "closedAt" to L, "expectedAmount" to L, "countedAmount" to L,
             "notes" to S, "deviceId" to S, "userName" to S,
         ),
+        t("cashMove", "id" to L, "sessionId" to L, "type" to S, "amount" to L, "note" to S, "userName" to S, "createdAt" to L),
         t("appUser", "id" to L, "name" to S, "pinHash" to S, "role" to S, "active" to L, "createdAt" to L, "permissions" to S),
         t(
             "repairOrder", "id" to L, "number" to L, "clientId" to L, "clientName" to S, "clientPhone" to S, "clientEmail" to S,

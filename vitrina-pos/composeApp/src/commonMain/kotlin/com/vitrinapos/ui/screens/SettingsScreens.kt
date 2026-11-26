@@ -352,6 +352,14 @@ fun SettingsScreen() {
             TextInput(d.quoteValidDays.toString(), { d = d.copy(quoteValidDays = it.filter(Char::isDigit).toIntOrNull() ?: 0) }, "Días de validez", keyboard = KeyboardType.Number)
             TextInput(d.quoteTerms, { d = d.copy(quoteTerms = it) }, "Condiciones", singleLine = false, minLines = 3)
 
+            // ---- Ventas ----
+            SectionTitle("Reglas de venta")
+            SwitchRow("Exigir caja abierta para cobrar", "Las ventas, abonos y entregas solo se cobran con la caja del equipo abierta", d.requireCash) { d = d.copy(requireCash = it) }
+            TextInput(d.maxDiscountPct.toString(), { d = d.copy(maxDiscountPct = it.filter(Char::isDigit).take(3).toIntOrNull()?.coerceIn(0, 100) ?: 0) },
+                "Descuento máximo sin autorización (%)", keyboard = KeyboardType.Number)
+            SwitchRow("El administrador puede vender sin existencias", "Apagado: nadie vende más de lo que hay en stock. A otros usuarios se les da el permiso en Más → Usuarios", d.adminNoStock) { d = d.copy(adminNoStock = it) }
+            Text("Vender sin stock o cambiar precios se permite por usuario en Más → Usuarios.", fontSize = 12.sp, color = AppTheme.extra.muted)
+
             // ---- Taller ----
             SectionTitle("Taller de reparación")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

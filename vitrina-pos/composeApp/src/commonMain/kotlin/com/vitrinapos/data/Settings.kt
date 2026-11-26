@@ -30,6 +30,11 @@ data class AppSettings(
     val repairWarrantyDays: Int = 30,
     val repairAbandonDays: Int = 90,
     val repairStatuses: String = "",
+    // Reglas de venta
+    val requireCash: Boolean = true,
+    val maxDiscountPct: Int = 10,
+    /** El administrador (o la tienda sin usuarios) puede vender sin existencias. Apagado por defecto. */
+    val adminNoStock: Boolean = false,
     // Facturación electrónica (e-CF)
     val fiscalEnabled: Boolean = false,
     val fiscalEnv: String = "TEST",
@@ -116,6 +121,9 @@ data class AppSettings(
         "repairAbandonDays" to repairAbandonDays.toString(),
         "repairTerms" to repairTerms,
         "repairStatuses" to repairStatuses,
+        "requireCash" to requireCash.toString(),
+        "maxDiscountPct" to maxDiscountPct.toString(),
+        "adminNoStock" to adminNoStock.toString(),
         "fiscalEnabled" to fiscalEnabled.toString(),
         "fiscalEnv" to fiscalEnv,
         "fiscalKind" to fiscalKind,
@@ -192,6 +200,9 @@ data class AppSettings(
                 repairAbandonDays = i("repairAbandonDays", d.repairAbandonDays),
                 repairTerms = s("repairTerms", d.repairTerms),
                 repairStatuses = m["repairStatuses"] ?: d.repairStatuses,
+                requireCash = b("requireCash", d.requireCash),
+                maxDiscountPct = i("maxDiscountPct", d.maxDiscountPct),
+                adminNoStock = b("adminNoStock", d.adminNoStock),
                 fiscalEnabled = b("fiscalEnabled", d.fiscalEnabled),
                 fiscalEnv = s("fiscalEnv", d.fiscalEnv),
                 fiscalKind = s("fiscalKind", d.fiscalKind),

@@ -144,18 +144,55 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     fun qtyInCart(productId: Long): Double = cart.filter { it.productId == productId }.sumOf { it.qty }
 
-    fun addToCart(p: Product, qty: Double = 1.0) {
+    /** Quien vende puede pasar del stock (permiso "Vender sin existencias"). */
+    val canSellNoStock: Boolean get() {
+        // Nunca por defecto: el administrador (o la tienda sin usuarios) solo si Configuración lo permite;
+        // los demás, con el permiso que les dé el administrador.
+        val noUsers = repo.users.value.none { it.active == 1L }
+        val admin = repo.currentUser.value?.role == com.vitrinapos.data.Roles.ADMIN
+        if (noUsers || admin) return repo.settings.value.adminNoStock && can(com.vitrinapos.data.Permission.SELL_NO_STOCK)
+        return can(com.vitrinapos.data.Permission.SELL_NO_STOCK)
+    }
+
+    /** Cantidad máxima que se puede llevar de un producto (null = sin límite). */
+    fun stockLimit(productId: Long?): Double? {
+        if (productId == null || canSellNoStock) return null
+        val p = repo.products.value.firstOrNull { it.id == productId } ?: return null
+        return if (p.trackStock == 1L) p.stock.coerceAtLeast(0.0) else null
+    }
+
+    private fun stockMessage(name: String, limit: Double) =
+        if (limit <= 0) "$name: no hay existencias" else "$name: solo hay ${limit.fmtQty()}"
+
+    /** Agrega al carrito sin pasar del stock. Devuelve false si no se pudo. */
+    fun addToCart(p: Product, qty: Double = 1.0): Boolean {
+        val limit = stockLimit(p.id)
+        if (limit != null && qtyInCart(p.id) + qty > limit + 1e-9) { toast(stockMessage(p.name, limit)); return false }
         val i = cart.indexOfFirst { it.productId == p.id && it.price == p.price }
         val newQty = (if (i >= 0) cart[i].qty else 0.0) + qty
         if (i >= 0) cart[i] = cart[i].copy(qty = newQty) else cart.add(CartLine.of(p, qty))
-        if (p.trackStock == 1L && newQty > p.stock) {
-            toast(if (p.stock <= 0) "${p.name}: sin stock" else "${p.name}: solo quedan ${p.stock.fmtQty()}")
-        }
+        return true
     }
 
     fun setLineQty(index: Int, qty: Double) {
         if (index !in cart.indices) return
-        if (qty <= 0) cart.removeAt(index) else cart[index] = cart[index].copy(qty = qty)
+        if (qty <= 0) { cart.removeAt(index); return }
+        val line = cart[index]
+        val limit = stockLimit(line.productId)
+        val others = cart.filterIndexed { i, l -> i != index && l.productId == line.productId && line.productId != null }.sumOf { it.qty }
+        if (limit != null && others + qty > limit + 1e-9) {
+            toast(stockMessage(line.name, limit))
+            val allowed = (limit - others).coerceAtLeast(0.0)
+            if (allowed <= 0) cart.removeAt(index) else cart[index] = line.copy(qty = allowed)
+            return
+        }
+        cart[index] = line.copy(qty = qty)
+    }
+
+    /** Hace falta el PIN de un administrador (hay usuarios y quien entró no es administrador). */
+    val needsAdminAuth: Boolean get() {
+        if (repo.users.value.none { it.active == 1L }) return false
+        return repo.currentUser.value?.role != com.vitrinapos.data.Roles.ADMIN
     }
 
     /** Quita una unidad del producto en el carrito (y la línea si llega a cero). */

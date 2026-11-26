@@ -51,6 +51,8 @@ class NetworkTest {
 
         // Venta desde el equipo conectado: descuenta el stock en el principal.
         val cable = main.repo.db.productQueries.selectActive().executeAsList().first { it.code == "CBL-001" }
+        other.repo.openCashSession(0)
+        waitUntil("la caja abierta llega al equipo") { other.repo.openCash.value != null }
         val saleId = other.repo.recordSale(listOf(CartLine.of(cable, 2.0)), null, 0, PaymentMethods.CASH, 100000, null)
         assertTrue(saleId > 0)
         assertEquals(cable.stock - 2, main.repo.db.productQueries.selectById(cable.id).executeAsOne().stock)

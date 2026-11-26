@@ -70,10 +70,18 @@ sealed class Op {
         val fiscal: FiscalChoice? = null,
         /** e-CF ya firmado en una caja sin conexión. */
         val ecf: com.vitrinapos.fiscal.EcfIssued? = null,
+        /** Venta hecha sin conexión: el principal la acepta aunque falte stock (queda anotado). */
+        val offline: Boolean = false,
+        /** Quien vende tiene permiso de vender sin existencias. */
+        val allowNoStock: Boolean = false,
     ) : Op()
 
+    /** Entrada o salida de efectivo en la caja abierta de un equipo. */
+    @Serializable @SerialName("cashMove")
+    data class CashMove(val deviceId: String, val kind: String, val amount: Long, val note: String, val user: String) : Op()
+
     @Serializable @SerialName("saleVoid")
-    data class VoidSale(val saleId: Long, val user: String, val reason: String = "") : Op()
+    data class VoidSale(val saleId: Long, val user: String, val reason: String = "", val deviceId: String = "") : Op()
 
     /** Reserva un bloque de números e-NCF del rango autorizado para que una caja pueda facturar sin conexión. */
     @Serializable @SerialName("fiscalBlock")
@@ -162,6 +170,9 @@ object Roles {
 /** Lo que cada usuario puede ver y hacer. El administrador lo ajusta por usuario en Usuarios. */
 enum class Permission(val title: String, val detail: String) {
     SELL("Vender y cobrar", "Pantalla Vender, cobro y escáner"),
+    DISCOUNTS("Dar descuentos", "Hasta el tope de Configuración; más pide el PIN de un administrador"),
+    CHANGE_PRICES("Cambiar precios al vender", "Modificar el precio de un artículo en el carrito"),
+    SELL_NO_STOCK("Vender sin existencias", "Vender aunque el sistema diga que no hay stock"),
     CATALOG_EDIT("Crear y editar productos", "Agregar productos, precios, fotos y categorías"),
     ADJUST_STOCK("Inventario", "Ajustar existencias, entradas de mercancía y movimientos"),
     CLIENTS("Clientes", "Ver y registrar clientes"),
@@ -182,7 +193,7 @@ enum class Permission(val title: String, val detail: String) {
 }
 
 object Permissions {
-    private val seller = setOf(Permission.SELL, Permission.CLIENTS, Permission.QUOTES, Permission.SALES_HISTORY, Permission.CASH, Permission.LABELS)
+    private val seller = setOf(Permission.SELL, Permission.DISCOUNTS, Permission.CLIENTS, Permission.QUOTES, Permission.SALES_HISTORY, Permission.CASH, Permission.LABELS)
 
     /** Lo que trae cada rol de entrada. */
     fun defaults(role: String?): Set<Permission> = when (role) {

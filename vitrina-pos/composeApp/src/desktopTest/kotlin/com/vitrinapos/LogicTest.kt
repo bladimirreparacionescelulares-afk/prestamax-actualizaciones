@@ -73,6 +73,7 @@ class LogicTest {
         val graph = AppGraph(DesktopPlatform())
         val repo = graph.repo
         SampleData.load(repo)
+        repo.openCashSession(0)
         val products = repo.db.productQueries.selectActive().executeAsList()
         assertEquals(11, products.size)
         val charger = products.first { it.code == "CRG-110" }

@@ -522,7 +522,7 @@ internal fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppU
     val otherAdmins = users.count { it.active == 1L && it.role == Roles.ADMIN && it.id != existing?.id }
     val lastAdmin = existing != null && existing.role == Roles.ADMIN && otherAdmins == 0
     val pinOk = if (existing == null) pin.length in 4..8 else pin.isEmpty() || pin.length in 4..8
-    val pinTaken = pin.length >= 4 && users.any { it.id != existing?.id && it.active == 1L && app.repo.checkPin(it, pin) }
+    val pinTaken = remember(pin) { pin.length >= 4 && users.any { it.id != existing?.id && it.active == 1L && app.repo.checkPin(it, pin) } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) (if (firstUser) "Administrador" else "Nuevo usuario") else "Editar usuario") },

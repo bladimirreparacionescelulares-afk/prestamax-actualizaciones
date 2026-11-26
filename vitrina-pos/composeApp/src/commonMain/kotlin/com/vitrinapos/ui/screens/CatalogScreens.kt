@@ -279,12 +279,12 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
 
     val duplicate = code.isNotBlank() && products.any { it.code.equals(code.trim(), true) && it.id != id }
     val nameError = if (showErrors && name.isBlank()) "Escribe el nombre" else null
-    val priceError = if (showErrors && price == null) "Escribe el precio" else null
+    val priceError = if (showErrors && price == null) "Escribe el precio" else if (price != null && price!! <= 0) "El precio debe ser mayor que cero" else null
     val codeError = if (duplicate) "Ya existe otro producto con este código" else null
 
     fun save(another: Boolean) {
         showErrors = true
-        if (name.isBlank() || price == null || duplicate) return
+        if (name.isBlank() || price == null || (price ?: 0) <= 0 || duplicate) return
         scope.launch {
             val newId = app.repo.saveProduct(
                 ProductDraft(

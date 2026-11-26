@@ -144,6 +144,7 @@ fun SaleDetailScreen(id: Long) {
     val ecf = docs.firstOrNull { it.type != 34L }
     val creditNote = docs.firstOrNull { it.type == 34L }
     var showCreditNote by remember { mutableStateOf(false) }
+    var authVoid by remember { mutableStateOf(false) }
     var voidReason by remember { mutableStateOf("") }
     val ticket = if (showCreditNote && creditNote != null) Ticket.forSale(s, sale, items, ecf = creditNote)
         else Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id }, ecf = ecf)
@@ -221,7 +222,7 @@ fun SaleDetailScreen(id: Long) {
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Share, null); Spacer(Modifier.width(6.dp)); Text("Compartir")
                     }
-                    if (!voided && app.can(com.vitrinapos.data.Permission.VOID_SALES)) OutlinedButton(onClick = { confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    if (!voided && app.can(com.vitrinapos.data.Permission.VOID_SALES)) OutlinedButton(onClick = { if (sale.createdAt < Time.startOfDay() && app.needsAdminAuth) authVoid = true else confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
                         Text("Anular", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -233,6 +234,10 @@ fun SaleDetailScreen(id: Long) {
             }
         }
     }
+    if (authVoid) com.vitrinapos.ui.components.AdminAuthDialog(
+        "Anular una venta de otro día", "Esta venta es del ${Time.date(sale.createdAt)}. Si se pagó en efectivo, el dinero sale de la caja de hoy.",
+        onAuthorized = { authVoid = false; confirmVoid = true }, onDismiss = { authVoid = false },
+    )
     if (confirmVoid && ecf != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmVoid = false },
@@ -404,7 +409,10 @@ fun CashScreen() {
     var amount by remember { mutableStateOf<Long?>(null) }
     var notes by remember { mutableStateOf("") }
     var confirmClose by remember { mutableStateOf(false) }
-    val expected by produceState<Long?>(null, open, recent) { value = open?.let { app.repo.expectedCash(it) } }
+    var moveKind by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+    val summary by produceState<com.vitrinapos.data.Repository.CashSummary?>(null, open, recent, refresh) { value = open?.let { app.repo.cashSummary(it) } }
+    val expected = summary?.expected
     val history by produceState(emptyList<CashSession>(), open) { value = app.repo.cashHistory() }
     val sym = s.currencySymbol
 
@@ -432,8 +440,41 @@ fun CashScreen() {
                     StatCard("Efectivo inicial", Money.format(session.openingAmount, sym), Modifier.weight(1f))
                     StatCard("Debe haber", expected?.let { Money.format(it, sym) } ?: "…", Modifier.weight(1f), accent = true)
                 }
-                Text("Abierta ${Time.relativeDay(session.openedAt).lowercase()} a las ${Time.time(session.openedAt)}. \"Debe haber\" suma el efectivo inicial y las ventas en efectivo.",
-                    color = AppTheme.extra.muted, fontSize = 13.sp)
+                Text("Abierta ${Time.relativeDay(session.openedAt).lowercase()} a las ${Time.time(session.openedAt)}.", color = AppTheme.extra.muted, fontSize = 13.sp)
+                summary?.let { sm ->
+                    AppCard {
+                        KeyValue("Efectivo inicial", Money.format(sm.opening, sym))
+                        KeyValue("Ventas en efectivo", Money.format(sm.cashSales, sym))
+                        if (sm.ins > 0) KeyValue("Entradas de efectivo", Money.format(sm.ins, sym))
+                        if (sm.outs > 0) KeyValue("Gastos y retiros", "−" + Money.format(sm.outs, sym), valueColor = AppTheme.extra.danger)
+                        if (sm.refunds > 0) KeyValue("Devoluciones", "−" + Money.format(sm.refunds, sym), valueColor = AppTheme.extra.danger)
+                        Divider()
+                        KeyValue("Debe haber en efectivo", Money.format(sm.expected, sym), strong = true)
+                        if (sm.cardSales > 0 || sm.transferSales > 0) Text(
+                            "Tarjeta ${Money.format(sm.cardSales, sym)} · Transferencia ${Money.format(sm.transferSales, sym)}",
+                            fontSize = 12.sp, color = AppTheme.extra.muted,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { moveKind = com.vitrinapos.data.CashMoveType.IN }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Entrada") }
+                        OutlinedButton(onClick = { moveKind = com.vitrinapos.data.CashMoveType.EXPENSE }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Gasto") }
+                        OutlinedButton(onClick = { moveKind = com.vitrinapos.data.CashMoveType.OUT }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Retiro") }
+                    }
+                    if (sm.moves.isNotEmpty()) AppCard(padding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
+                        sm.moves.forEachIndexed { i, m ->
+                            if (i > 0) Divider()
+                            Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${com.vitrinapos.data.CashMoveType.label(m.type)} · ${m.note}", fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                    Text("${Time.time(m.createdAt)}" + (if (m.userName.isNotBlank()) " · ${m.userName}" else ""), fontSize = 12.sp, color = AppTheme.extra.muted)
+                                }
+                                val sign = com.vitrinapos.data.CashMoveType.sign(m.type)
+                                Text((if (sign > 0) "+" else "−") + Money.format(m.amount, sym), fontWeight = FontWeight.Bold,
+                                    color = if (sign > 0) AppTheme.extra.ok else AppTheme.extra.danger)
+                            }
+                        }
+                    }
+                }
                 AppCard {
                     Text("Cerrar caja", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(10.dp))
@@ -474,6 +515,32 @@ fun CashScreen() {
                 }
             }
         }
+    }
+    moveKind?.let { kind ->
+        var amt by remember(kind) { mutableStateOf<Long?>(null) }
+        var why by remember(kind) { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { moveKind = null },
+            title = { Text(when (kind) { com.vitrinapos.data.CashMoveType.IN -> "Entrada de efectivo"; com.vitrinapos.data.CashMoveType.EXPENSE -> "Gasto"; else -> "Retiro de efectivo" }) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MoneyInput(amt, { amt = it }, "Monto")
+                    TextInput(why, { why = it }, when (kind) {
+                        com.vitrinapos.data.CashMoveType.IN -> "Motivo * (cambio, depósito del dueño…)"
+                        com.vitrinapos.data.CashMoveType.EXPENSE -> "En qué se gastó *"
+                        else -> "Motivo * (retiro del dueño, depósito al banco…)"
+                    })
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = (amt ?: 0) > 0 && why.isNotBlank(), onClick = {
+                    val a = amt ?: 0; val n = why
+                    moveKind = null
+                    scope.launch { runCatching { app.repo.cashMove(kind, a, n) }.onSuccess { refresh++; app.toast("Movimiento guardado") }.onFailure { app.toast(it.message ?: "No se pudo guardar") } }
+                }) { Text("Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { moveKind = null }) { Text("Cancelar") } },
+        )
     }
     if (confirmClose) {
         val session = open

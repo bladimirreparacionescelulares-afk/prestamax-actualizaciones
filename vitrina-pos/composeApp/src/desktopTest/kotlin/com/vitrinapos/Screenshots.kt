@@ -109,7 +109,7 @@ class Screenshots {
         val ps2 = repo.products.value
         val fsale = runBlocking {
             repo.recordSale(listOf(CartLine.of(ps2.first { it.code == "CRG-020" }, 2.0), CartLine.of(ps2.first { it.code == "CBL-001" })), null, 0,
-                PaymentMethods.CARD, 0, null, com.vitrinapos.data.FiscalChoice(31, "101010632", "FERRETERÍA LA ESQUINA SRL"))
+                PaymentMethods.CARD, 0, null, com.vitrinapos.data.FiscalChoice(31, "101010632", "FERRETERÍA LA ESQUINA SRL"), allowNoStock = true)
         }
         runBlocking {
             repo.recordSale(listOf(CartLine.of(ps2.first { it.code == "AUD-210" })), null, 0, PaymentMethods.CASH, 200000, null)
@@ -127,6 +127,21 @@ class Screenshots {
         }
         shoot(graph, File(outDir, "46-servicio.png"), 412, 900, 2f) { it.selectTab(Screen.Catalog); it.open(Screen.ProductForm(svc)) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
+
+        // ---- Reglas 1.8: caja y stock ----
+        runBlocking {
+            repo.cashMove(com.vitrinapos.data.CashMoveType.IN, 50000, "Cambio traído del banco")
+            repo.cashMove(com.vitrinapos.data.CashMoveType.EXPENSE, 15000, "Botellón de agua y café")
+            repo.cashMove(com.vitrinapos.data.CashMoveType.OUT, 300000, "Retiro del dueño")
+        }
+        shoot(graph, File(outDir, "47-caja-movimientos.png"), 412, 1300, 2f) { it.selectTab(Screen.More); it.open(Screen.Cash) }
+        val few = repo.products.value.first { it.code == "AUD-305" } // segunda tarjeta, 4 en stock
+        shoot(graph, File(outDir, "48-tope-stock.png"), 412, 900, 2f) { app ->
+            app.selectTab(Screen.Pos); app.clearCart(); repeat(few.stock.toInt() + 2) { app.addToCart(few) }
+        }
+        runBlocking { repo.closeCashSession(repo.db.cashSessionQueries.selectOpen(repo.deviceId).executeAsOne(), 0, "") }
+        shoot(graph, File(outDir, "49-cobro-caja-cerrada.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); addCart(app, repo); app.open(Screen.Checkout) }
+        runBlocking { repo.openCashSession(200000) }
 
         // ---- Trabajo en red y usuarios ----
         graph.becomeServer()
@@ -153,7 +168,9 @@ class Screenshots {
         shoot(graph, File(outDir, "15-entrar.png"), 412, 900, 2f) { it.repo.currentUser.value = null }
         val pedro = other.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Pedro" }
         shoot(other, File(outDir, "16-conectado.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
-        // Sin red: la venta queda pendiente
+        // Sin red: la venta queda pendiente (la caja del celular se abrió antes)
+        runBlocking { other.repo.openCashSession(0) }
+        Thread.sleep(1500)
         graph.server!!.stop()
         runBlocking {
             other.repo.currentUser.value = pedro
@@ -239,6 +256,7 @@ class Screenshots {
 
     private suspend fun seed(repo: Repository) {
         SampleData.load(repo)
+        repo.openCashSession(200000)
         repo.saveSettings(
             repo.settings.value.copy(
                 businessName = "Mi Tienda", businessTagline = "Accesorios para celulares", address = "Av. Principal #24, Santo Domingo",
@@ -271,7 +289,6 @@ class Screenshots {
         repo.recordSale(listOf(line("PWB-100"), line("CBL-002")), null, 0, PaymentMethods.TRANSFER, 0, null)
         repo.recordSale(listOf(line("AUD-305"), line("CRG-110", 2.0)), clients[1], 0, PaymentMethods.CASH, 250000, null)
         repo.recordSale(listOf(line("CRG-020"), line("AUD-210"), line("CBL-001")), null, 0, PaymentMethods.CASH, 250000, null)
-        repo.openCashSession(200000)
         repo.saveQuote(null, clients[2], clients[2].name, listOf(line("CRG-020", 10.0).copy(price = 78000), line("CBL-001", 10.0).copy(price = 28000), line("PWB-100", 4.0).copy(price = 135000)),
             0, 15, "", QuoteStatus.SENT)
     }

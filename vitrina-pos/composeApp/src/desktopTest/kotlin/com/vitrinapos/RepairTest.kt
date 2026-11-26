@@ -57,6 +57,7 @@ class RepairTest {
     fun recibirCambiarEstadoYAbono(): Unit = runBlocking {
         val g = AppGraph(platform("taller"))
         val repo = g.repo
+        repo.openCashSession(0)
         val id = repo.saveRepair(draft, PaymentMethods.TRANSFER)
         val r = repo.repairById(id)!!
         assertEquals("REP-0001", r.code)
@@ -119,6 +120,7 @@ class RepairTest {
         val g = AppGraph(platform("entrega"))
         val repo = g.repo
         com.vitrinapos.data.SampleData.load(repo)
+        repo.openCashSession(0)
         repo.saveSettings(repo.settings.value.copy(taxRate = 18.0, pricesIncludeTax = true))
         val part = repo.db.productQueries.selectActive().executeAsList().first { it.code == "MIC-054" }
         val id = repo.saveRepair(draft)                  // abono 1,000.00
@@ -231,6 +233,7 @@ class RepairTest {
         main.becomeServer()
         val other = AppGraph(platform("taller-caja"))
         other.connectTo("127.0.0.1", 8740, main.server!!.pairCode.value.code)
+        other.repo.openCashSession(0)
         val id = other.repo.saveRepair(draft)
         assertNotNull(main.repo.repairById(id))
         assertEquals(1, main.repo.db.saleQueries.selectRecent(10).executeAsList().size)

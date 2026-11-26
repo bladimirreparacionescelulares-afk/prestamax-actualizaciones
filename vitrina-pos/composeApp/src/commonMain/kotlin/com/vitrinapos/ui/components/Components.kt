@@ -377,7 +377,7 @@ fun QtyInput(value: Double?, onChange: (Double?) -> Unit, label: String, modifie
     TextInput(
         value = text,
         onChange = { t ->
-            val clean = t.filter { it.isDigit() || it == '.' || it == ',' || it == '-' }
+            val clean = t.filter { it.isDigit() || it == '.' || it == ',' }
             text = clean
             onChange(parseQty(clean))
         },
@@ -581,4 +581,36 @@ fun rememberSafeScope(): kotlinx.coroutines.CoroutineScope {
         kotlinx.coroutines.CoroutineExceptionHandler { _, e -> app.toast(e.message ?: "Ocurrió un error") }
     }
     return androidx.compose.runtime.rememberCoroutineScope { handler }
+}
+
+/** Pide el PIN de un administrador para algo fuera de los límites del usuario. */
+@Composable
+fun AdminAuthDialog(title: String, message: String, onAuthorized: (String) -> Unit, onDismiss: () -> Unit) {
+    val app = com.vitrinapos.LocalAppState.current
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { if (!app.needsAdminAuth) onAuthorized(app.repo.currentUser.value?.name ?: "") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(message)
+                Text("Un administrador debe autorizarlo con su PIN. Queda anotado.", fontSize = 13.sp, color = AppTheme.extra.muted)
+                TextInput(pin, { pin = it.filter(Char::isDigit).take(8); error = null }, "PIN del administrador", keyboard = KeyboardType.NumberPassword,
+                    visual = androidx.compose.ui.text.input.PasswordVisualTransformation(), error = error)
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = pin.length >= 4, onClick = {
+                val (r, name) = app.repo.authorizeAdmin(pin)
+                when (r) {
+                    is com.vitrinapos.data.Repository.PinResult.Ok -> { app.toast("Autorizado por $name"); onAuthorized(name ?: "") }
+                    is com.vitrinapos.data.Repository.PinResult.Locked -> { error = "Demasiados intentos. Espera unos minutos."; pin = "" }
+                    is com.vitrinapos.data.Repository.PinResult.Wrong -> { error = "PIN incorrecto. Quedan ${r.attemptsLeft} intentos."; pin = "" }
+                }
+            }) { Text("Autorizar") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }

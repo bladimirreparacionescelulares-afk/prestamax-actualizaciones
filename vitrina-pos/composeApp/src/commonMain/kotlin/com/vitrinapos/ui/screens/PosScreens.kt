@@ -209,6 +209,8 @@ fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Unit, onRemove: (() -> Unit)? = null) {
     val app = LocalAppState.current
+    val limit = app.stockLimit(p.id)
+    val canAdd = limit == null || inCart < limit - 1e-9
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -236,10 +238,12 @@ fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Uni
                     Spacer(Modifier.width(6.dp))
                 }
                 Box(
-                    Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.primary).clickable(onClick = onAdd),
+                    Modifier.size(34.dp).clip(RoundedCornerShape(11.dp))
+                        .background(if (canAdd) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onAdd),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Add, "Agregar", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                ) { Icon(Icons.Rounded.Add, "Agregar", tint = if (canAdd) Color.White else AppTheme.extra.muted, modifier = Modifier.size(20.dp)) }
             }
+            if (inCart > 0 && !canAdd && limit != null) Text("Máximo: ${limit.fmtQty()} en stock", fontSize = 11.sp, color = AppTheme.extra.warn)
         }
     }
 }
@@ -335,14 +339,27 @@ fun CartLineRow(app: AppState, index: Int, line: CartLine, compact: Boolean = fa
         }
         QtyStepper(line.qty, { app.setLineQty(index, it) })
     }
-    if (edit) LineEditDialog(line, onDismiss = { edit = false }, onSave = { qty, price ->
+    var pendingPrice by remember { mutableStateOf<Pair<Double, Long>?>(null) }
+    fun apply(qty: Double, price: Long) {
+        if (qty <= 0) { app.setLineQty(index, 0.0); return }
+        if (index in app.cart.indices) { app.cart[index] = line.copy(price = price); app.setLineQty(index, qty) }
+    }
+    if (edit) LineEditDialog(line, canChangePrice = app.can(com.vitrinapos.data.Permission.CHANGE_PRICES), onDismiss = { edit = false }, onSave = { qty, price ->
         edit = false
-        if (qty <= 0) app.setLineQty(index, 0.0) else if (index in app.cart.indices) app.cart[index] = line.copy(qty = qty, price = price)
+        // Por debajo del costo hace falta un administrador.
+        if (price != line.price && price < line.cost && app.needsAdminAuth) pendingPrice = qty to price else apply(qty, price)
     })
+    pendingPrice?.let { (q, p) ->
+        com.vitrinapos.ui.components.AdminAuthDialog(
+            "Precio por debajo del costo",
+            "${line.name} cuesta ${Money.format(line.cost, s.currencySymbol)} y lo quieres vender a ${Money.format(p, s.currencySymbol)}.",
+            onAuthorized = { pendingPrice = null; apply(q, p) }, onDismiss = { pendingPrice = null },
+        )
+    }
 }
 
 @Composable
-fun LineEditDialog(line: CartLine, onDismiss: () -> Unit, onSave: (Double, Long) -> Unit) {
+fun LineEditDialog(line: CartLine, canChangePrice: Boolean = true, onDismiss: () -> Unit, onSave: (Double, Long) -> Unit) {
     var qty by remember { mutableStateOf<Double?>(line.qty) }
     var price by remember { mutableStateOf<Long?>(line.price) }
     AlertDialog(
@@ -351,10 +368,11 @@ fun LineEditDialog(line: CartLine, onDismiss: () -> Unit, onSave: (Double, Long)
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 QtyInput(qty, { qty = it }, "Cantidad")
-                MoneyInput(price, { price = it }, "Precio unitario")
+                if (canChangePrice) MoneyInput(price, { price = it }, "Precio unitario", error = if ((price ?: 1) <= 0) "El precio debe ser mayor que cero" else null)
+                else Text("Precio ${Money.format(line.price, LocalAppState.current.settings.currencySymbol)} · cambiarlo requiere el permiso \"Cambiar precios al vender\"", fontSize = 12.sp, color = AppTheme.extra.muted)
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(qty ?: 0.0, price ?: line.price) }, enabled = qty != null && price != null) { Text("Guardar") } },
+        confirmButton = { TextButton(onClick = { onSave(qty ?: 0.0, price ?: line.price) }, enabled = qty != null && price != null && (price ?: 0) > 0) { Text("Guardar") } },
         dismissButton = {
             Row {
                 TextButton(onClick = { onSave(0.0, line.price) }) {
@@ -388,6 +406,10 @@ fun CheckoutScreen() {
     var received by remember { mutableStateOf<Long?>(null) }
     var pickClient by remember { mutableStateOf(false) }
     var discountDialog by remember { mutableStateOf(false) }
+    var pendingDiscount by remember { mutableStateOf<Long?>(null) }
+    var openAmount by remember { mutableStateOf<Long?>(null) }
+    val openCash by app.repo.openCash.collectAsState()
+    val cashBlocked = s.requireCash && openCash == null
     var busy by remember { mutableStateOf(false) }
     // Facturación electrónica: tipo de comprobante y datos del comprador.
     var ecfType by remember { mutableStateOf(com.vitrinapos.fiscal.EcfType.CONSUMO) }
@@ -399,7 +421,7 @@ fun CheckoutScreen() {
     val change = (received ?: totals.total) - totals.total
     val bigConsumo = s.fiscalEnabled && ecfType == com.vitrinapos.fiscal.EcfType.CONSUMO && totals.total >= com.vitrinapos.fiscal.Ecf.RFCE_LIMIT
     val fiscalOk = !s.fiscalEnabled || ((!needsRnc && !bigConsumo) || (buyerCheck.valid && buyerName.isNotBlank()))
-    val canPay = app.cart.isNotEmpty() && !busy && fiscalOk && (method != PaymentMethods.CASH || (received ?: totals.total) >= totals.total)
+    val canPay = app.cart.isNotEmpty() && !busy && fiscalOk && !cashBlocked && (method != PaymentMethods.CASH || (received ?: totals.total) >= totals.total)
 
     fun pay(print: Boolean) {
         busy = true
@@ -408,7 +430,10 @@ fun CheckoutScreen() {
                 val fiscal = if (s.fiscalEnabled) com.vitrinapos.data.FiscalChoice(
                     ecfType.code, if (buyerCheck.valid) buyerCheck.digits else "", if (buyerCheck.valid) buyerName.trim() else "",
                 ) else null
-                app.repo.recordSale(app.cart.toList(), app.cartClient, app.cartDiscount, method, received ?: totals.total, app.cartQuoteId, fiscal)
+                app.repo.recordSale(
+                    app.cart.toList(), app.cartClient, app.cartDiscount, method, received ?: totals.total, app.cartQuoteId, fiscal,
+                    allowNoStock = app.canSellNoStock,
+                )
             }.getOrElse { app.toast("No se pudo guardar la venta: ${it.message}"); busy = false; return@launch }
             app.clearCart()
             if (print) {
@@ -438,6 +463,18 @@ fun CheckoutScreen() {
                 .widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (cashBlocked) AppCard(color = AppTheme.extra.warnSoft) {
+                Text("La caja está cerrada", fontWeight = FontWeight.Bold)
+                Text("Para cobrar hay que abrir la caja de este equipo y contar el efectivo inicial.", fontSize = 13.sp)
+                if (app.can(com.vitrinapos.data.Permission.CASH)) {
+                    Spacer(Modifier.height(8.dp))
+                    MoneyInput(openAmount, { openAmount = it }, "Efectivo inicial")
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = {
+                        scope.launch { runCatching { app.repo.openCashSession(openAmount ?: 0) }.onSuccess { app.toast("Caja abierta") }.onFailure { app.toast(it.message ?: "No se pudo abrir") } }
+                    }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Abrir caja") }
+                } else Text("Pídele a alguien con permiso de Caja que la abra.", fontSize = 13.sp, color = AppTheme.extra.muted)
+            }
             AppCard(padding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
                 app.cart.forEachIndexed { i, line ->
                     if (i > 0) Divider()
@@ -531,8 +568,22 @@ fun CheckoutScreen() {
     if (pickClient) {
         ClientPickerDialog(clients, onPick = { app.cartClient = it; pickClient = false }, onNew = { pickClient = false; app.open(Screen.ClientForm()) }, onDismiss = { pickClient = false })
     }
+    pendingDiscount?.let { amount ->
+        com.vitrinapos.ui.components.AdminAuthDialog(
+            "Autorizar descuento", "Descuento de ${Money.format(amount, s.currencySymbol)} sobre ${Money.format(totals.gross, s.currencySymbol)}.",
+            onAuthorized = { app.cartDiscount = amount; pendingDiscount = null }, onDismiss = { pendingDiscount = null },
+        )
+    }
     if (discountDialog) {
-        DiscountDialog(totals.gross, app.cartDiscount, s.currencySymbol, onDismiss = { discountDialog = false }) { app.cartDiscount = it; discountDialog = false }
+        val maxFree = when {
+            !app.needsAdminAuth -> totals.gross
+            app.can(com.vitrinapos.data.Permission.DISCOUNTS) -> totals.gross * s.maxDiscountPct / 100
+            else -> 0L
+        }
+        DiscountDialog(totals.gross, app.cartDiscount, s.currencySymbol, maxFree, onDismiss = { discountDialog = false }) { amount ->
+            discountDialog = false
+            if (amount > maxFree) pendingDiscount = amount else app.cartDiscount = amount
+        }
     }
 }
 
@@ -546,7 +597,7 @@ fun quickAmounts(total: Long): List<Long> {
 }
 
 @Composable
-fun DiscountDialog(gross: Long, current: Long, symbol: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
+fun DiscountDialog(gross: Long, current: Long, symbol: String, maxFree: Long = gross, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(current.takeIf { it > 0 }) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -561,6 +612,11 @@ fun DiscountDialog(gross: Long, current: Long, symbol: String, onDismiss: () -> 
                     }
                 }
                 if ((amount ?: 0) > gross) Text("El descuento no puede ser mayor que ${Money.format(gross, symbol)}", color = MaterialTheme.colorScheme.error)
+                else if ((amount ?: 0) > maxFree) Text(
+                    if (maxFree == 0L) "Para dar descuentos hace falta la autorización de un administrador."
+                    else "Tu límite es ${Money.format(maxFree, symbol)}. Más que eso pide el PIN de un administrador.",
+                    color = AppTheme.extra.warn, fontSize = 13.sp,
+                )
             }
         },
         confirmButton = { TextButton(onClick = { onSave((amount ?: 0).coerceIn(0, gross)) }) { Text("Aplicar") } },

@@ -1,0 +1,12 @@
+-- Versión 5 -> 6: movimientos de efectivo en la caja.
+CREATE TABLE cashMove (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sessionId INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX cashMove_session ON cashMove(sessionId);

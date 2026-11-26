@@ -10,6 +10,19 @@ CREATE TABLE cashSession (
   userName TEXT NOT NULL DEFAULT ''
 );
 
+-- Entradas y salidas de efectivo de una caja (gastos, retiros, cambio, devoluciones).
+CREATE TABLE cashMove (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sessionId INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX cashMove_session ON cashMove(sessionId);
+
 selectOpen:
 SELECT * FROM cashSession WHERE closedAt IS NULL AND deviceId = ? ORDER BY openedAt DESC LIMIT 1;
 
@@ -27,3 +40,9 @@ UPDATE cashSession SET closedAt = ?, expectedAmount = ?, countedAmount = ?, note
 
 claimOrphans:
 UPDATE cashSession SET deviceId = ? WHERE deviceId = '';
+
+insertMove:
+INSERT INTO cashMove(sessionId, type, amount, note, userName, createdAt) VALUES (?, ?, ?, ?, ?, ?);
+
+movesBySession:
+SELECT * FROM cashMove WHERE sessionId = ? ORDER BY createdAt;

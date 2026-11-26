@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -144,6 +145,19 @@ interface RemoteGateway {
 
 class OfflineException(message: String) : IOException(message)
 
+/** Una regla del negocio impide la operación (caja cerrada, sin stock…). El mensaje se muestra tal cual. */
+class RuleException(message: String) : IllegalStateException(message)
+
+/** Tipos de movimiento de efectivo en la caja. */
+object CashMoveType {
+    const val IN = "ENTRADA"
+    const val OUT = "SALIDA"
+    const val EXPENSE = "GASTO"
+    const val REFUND = "DEVOLUCION"
+    fun label(t: String) = when (t) { IN -> "Entrada"; OUT -> "Retiro"; EXPENSE -> "Gasto"; REFUND -> "Devolución"; else -> t }
+    fun sign(t: String) = if (t == IN) 1 else -1
+}
+
 class Repository(val platform: Platform) {
     private val scope = CoroutineScope(SupervisorJob() + platform.io)
     val driver: SqlDriver = platform.createDriver()
@@ -200,6 +214,10 @@ class Repository(val platform: Platform) {
         AppSettings.fromMap(db.settingQueries.selectAll().executeAsList().associate { it.key to it.content } + localSettings(meta.value))
             .also { RepairStatus.configure(it.repairStatuses) },
     )
+
+    /** Lee la configuración directamente de la base (sin esperar al flujo), para hacer cumplir reglas. */
+    private fun currentSettings(): AppSettings =
+        AppSettings.fromMap(db.settingQueries.selectAll().executeAsList().associate { it.key to it.content } + localSettings(meta.value))
 
     private fun localSettings(m: Map<String, String>) =
         m.filterKeys { it.startsWith("s.") }.mapKeys { it.key.removePrefix("s.") }
@@ -268,6 +286,11 @@ class Repository(val platform: Platform) {
                     is Op.SaveProduct -> {
                         // Todo producto lleva código: si no lo escribieron, se le asigna uno para su etiqueta.
                         val d = if (op.draft.code.isBlank()) op.draft.copy(code = newCode()) else op.draft
+                        if (d.price <= 0) throw RuleException("El precio de venta debe ser mayor que cero")
+                        if (d.cost < 0) throw RuleException("El costo no puede ser negativo")
+                        db.productQueries.selectByCode(d.code.trim()).executeAsList()
+                            .firstOrNull { it.active == 1L && it.id != d.id }
+                            ?.let { throw RuleException("El código ${d.code.trim()} ya lo tiene \"${it.name}\"") }
                         if (d.id == null) {
                             db.productQueries.insert(
                                 d.name.trim(), d.code.trim(), d.categoryId, d.supplierId, d.cost, d.price, d.initialStock, d.minStock,
@@ -304,6 +327,8 @@ class Repository(val platform: Platform) {
                         JsonObject(out)
                     }
                     is Op.AdjustStock -> {
+                        if (op.newStock < 0) throw RuleException("El stock no puede quedar en negativo")
+                        if (op.note.isBlank()) throw RuleException("Escribe el motivo del ajuste")
                         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull()
                         if (p != null && op.newStock != p.stock) {
                             db.productQueries.setStock(op.newStock, now, op.productId)
@@ -313,6 +338,7 @@ class Repository(val platform: Platform) {
                     }
                     is Op.RegisterEntry -> {
                         val text = listOfNotNull(op.supplierName?.let { "Proveedor: $it" }, op.note.takeIf { it.isNotBlank() }).joinToString(" · ")
+                        if (op.lines.any { it.qty < 0 }) throw RuleException("Las cantidades de una entrada deben ser positivas. Para sacar mercancía usa un ajuste con su motivo.")
                         for (l in op.lines) {
                             if (l.qty == 0.0) continue
                             db.productQueries.addStock(l.qty, now, l.productId)
@@ -350,6 +376,10 @@ class Repository(val platform: Platform) {
                                 val note = fiscal.issueCreditNote(sale, db.saleQueries.itemsBySale(op.saleId).executeAsList(), original, op.reason, now)
                                 fiscal.store(note, op.saleId, deviceId, now)
                             }
+                            // Si la venta era de otro turno y se pagó en efectivo, el dinero sale de la caja de hoy.
+                            val session = op.deviceId.takeIf { it.isNotBlank() }?.let { db.cashSessionQueries.selectOpen(it).executeAsOneOrNull() }
+                            if (session != null && sale.paymentMethod == PaymentMethods.CASH && sale.createdAt < session.openedAt && sale.total > 0)
+                                db.cashSessionQueries.insertMove(session.id, CashMoveType.REFUND, sale.total, "Anulación ${sale.number.let { "venta #$it" }}", op.user, now)
                             db.saleQueries.setStatus(SaleStatus.VOID, op.saleId)
                             for (item in db.saleQueries.itemsBySale(op.saleId).executeAsList()) {
                                 val pid = item.productId ?: continue
@@ -389,7 +419,22 @@ class Repository(val platform: Platform) {
                         JsonNull
                     }
                     is Op.DeleteQuote -> { db.quoteQueries.deleteItems(op.id); db.quoteQueries.delete(op.id); JsonNull }
-                    is Op.OpenCash -> { db.cashSessionQueries.open(now, op.amount, op.deviceId, op.user); JsonNull }
+                    is Op.OpenCash -> {
+                        if (op.amount < 0) throw RuleException("El efectivo inicial no puede ser negativo")
+                        if (db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull() == null)
+                            db.cashSessionQueries.open(now, op.amount, op.deviceId, op.user)
+                        JsonNull
+                    }
+                    is Op.CashMove -> {
+                        if (op.amount <= 0) throw RuleException("El monto debe ser mayor que cero")
+                        if (op.note.isBlank()) throw RuleException("Escribe el motivo")
+                        val session = db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull()
+                            ?: throw RuleException("La caja de este equipo está cerrada")
+                        if (op.kind != CashMoveType.IN && op.amount > expectedCashSync(session))
+                            throw RuleException("No hay tanto efectivo en la caja")
+                        db.cashSessionQueries.insertMove(session.id, op.kind, op.amount, op.note.trim(), op.user, now)
+                        JsonNull
+                    }
                     is Op.CloseCash -> {
                         val s = db.cashSessionQueries.selectById(op.sessionId).executeAsOneOrNull()
                         if (s != null && s.closedAt == null) db.cashSessionQueries.close(now, expectedCashSync(s), op.counted, op.notes, s.id)
@@ -482,6 +527,31 @@ class Repository(val platform: Platform) {
         return id
     }
 
+    /**
+     * Reglas que el principal revisa en toda venta (cobro, abono, entrega del taller):
+     * cantidades y precios válidos, caja abierta en el equipo que vende y stock suficiente.
+     * Las ventas hechas sin conexión se aceptan siempre para no trabar la cola; la caja ya lo revisó.
+     */
+    private fun checkSaleRules(op: Op.RecordSale) {
+        if (op.lines.isEmpty()) throw RuleException("La venta no tiene artículos")
+        op.lines.forEach { l ->
+            if (l.qty <= 0) throw RuleException("${l.name}: la cantidad debe ser mayor que cero")
+            if (l.price < 0) throw RuleException("${l.name}: el precio no puede ser negativo")
+        }
+        if (op.discount < 0) throw RuleException("El descuento no puede ser negativo")
+        if (op.offline) return
+        if (currentSettings().requireCash && db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull() == null)
+            throw RuleException("La caja de este equipo está cerrada. Ábrela para poder cobrar.")
+        if (!op.allowNoStock) {
+            op.lines.filter { it.productId != null && it.trackStock }.groupBy { it.productId!! }.forEach { (pid, ls) ->
+                val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: return@forEach
+                val want = ls.sumOf { it.qty }
+                if (p.trackStock == 1L && want > p.stock + 1e-9)
+                    throw RuleException(if (p.stock <= 0) "${p.name}: no hay existencias" else "${p.name}: solo quedan ${p.stock.fmtQty()}")
+            }
+        }
+    }
+
     /** Entrega (dentro de una transacción): crea la venta del saldo y cierra la orden. Devuelve el id de la venta. */
     private fun deliverRepairLocal(op: Op.DeliverRepair, now: Long): Long {
         val r = db.repairQueries.selectById(op.id).executeAsOneOrNull() ?: throw IllegalStateException("La orden no existe")
@@ -517,6 +587,7 @@ class Repository(val platform: Platform) {
 
     /** Inserta la venta (dentro de una transacción). Devuelve su id. */
     private fun insertSale(op: Op.RecordSale, number: Long): Long {
+        checkSaleRules(op)
         val totals = totalsFor(op.lines, op.discount)
         val cost = op.lines.sumOf { (it.qty * it.cost).roundToLong() }
         val cash = op.paymentMethod == PaymentMethods.CASH
@@ -547,7 +618,10 @@ class Repository(val platform: Platform) {
      * y queda en la cola para enviarse cuando vuelva la red.
      */
     private fun recordSaleOffline(original: Op.RecordSale, opId: String): Long {
-        var op = original
+        // Sin conexión, la caja revisa la caja abierta con su copia local.
+        if (currentSettings().requireCash && db.cashSessionQueries.selectOpen(original.deviceId).executeAsOneOrNull() == null)
+            throw RuleException("La caja de este equipo está cerrada. Ábrela para poder cobrar.")
+        var op = original.copy(offline = true)
         val pid: Long
         synchronized(writeLock) {
             val pending = db.syncQueries.outboxCount().executeAsOne()
@@ -770,11 +844,12 @@ class Repository(val platform: Platform) {
         received: Long,
         quoteId: Long?,
         fiscal: FiscalChoice? = null,
+        allowNoStock: Boolean = false,
     ): Long {
         val user = currentUser.value
         val op = Op.RecordSale(
             lines, client?.id, client?.name ?: "Consumidor final", discount, paymentMethod, received, quoteId,
-            deviceId, user?.id, user?.name ?: "", Time.now(), fiscal = fiscal,
+            deviceId, user?.id, user?.name ?: "", Time.now(), fiscal = fiscal, allowNoStock = allowNoStock,
         )
         val r = remote ?: return withContext(io) { applyLocal(op) }.asId()
         val opId = UUID.randomUUID().toString()
@@ -788,7 +863,7 @@ class Repository(val platform: Platform) {
 
     suspend fun voidSale(saleId: Long, reason: String = "") {
         if (saleId < 0) throw OfflineException("Esta venta todavía no llega al equipo principal. Podrás anularla cuando se envíe.")
-        run(Op.VoidSale(saleId, userName, reason))
+        run(Op.VoidSale(saleId, userName, reason, deviceId))
     }
 
     // ================= Facturación electrónica =================
@@ -850,12 +925,35 @@ class Repository(val platform: Platform) {
     suspend fun openCashSession(amount: Long) { run(Op.OpenCash(amount, deviceId, userName)) }
 
     private fun expectedCashSync(session: CashSession): Long {
-        val sales = db.saleQueries.selectBetween(session.openedAt, Long.MAX_VALUE).executeAsList()
+        val sales = db.saleQueries.selectBetween(session.openedAt, session.closedAt ?: Long.MAX_VALUE).executeAsList()
+        val moves = db.cashSessionQueries.movesBySession(session.id).executeAsList()
         return session.openingAmount + sales.filter {
             it.status == SaleStatus.OK && it.paymentMethod == PaymentMethods.CASH &&
                 (session.deviceId.isBlank() || it.deviceId == session.deviceId)
-        }.sumOf { it.total }
+        }.sumOf { it.total } + moves.sumOf { CashMoveType.sign(it.type) * it.amount }
     }
+
+    /** Resumen de una caja: ventas por forma de pago y movimientos. */
+    data class CashSummary(
+        val opening: Long, val cashSales: Long, val cardSales: Long, val transferSales: Long,
+        val ins: Long, val outs: Long, val refunds: Long, val expected: Long, val moves: List<com.vitrinapos.db.CashMove>,
+    )
+
+    suspend fun cashSummary(session: CashSession): CashSummary = withContext(io) {
+        val sales = db.saleQueries.selectBetween(session.openedAt, session.closedAt ?: Long.MAX_VALUE).executeAsList()
+            .filter { it.status == SaleStatus.OK && (session.deviceId.isBlank() || it.deviceId == session.deviceId) }
+        val moves = db.cashSessionQueries.movesBySession(session.id).executeAsList()
+        fun by(m: String) = sales.filter { it.paymentMethod == m }.sumOf { it.total }
+        CashSummary(
+            session.openingAmount, by(PaymentMethods.CASH), by(PaymentMethods.CARD), by(PaymentMethods.TRANSFER),
+            moves.filter { it.type == CashMoveType.IN }.sumOf { it.amount },
+            moves.filter { it.type == CashMoveType.OUT || it.type == CashMoveType.EXPENSE }.sumOf { it.amount },
+            moves.filter { it.type == CashMoveType.REFUND }.sumOf { it.amount },
+            expectedCashSync(session), moves,
+        )
+    }
+
+    suspend fun cashMove(kind: String, amount: Long, note: String) { run(Op.CashMove(deviceId, kind, amount, note, userName)) }
 
     /** Efectivo esperado en la caja de este equipo: monto inicial + ventas en efectivo desde la apertura. */
     suspend fun expectedCash(session: CashSession): Long = withContext(io) { expectedCashSync(session) }
@@ -893,7 +991,53 @@ class Repository(val platform: Platform) {
     suspend fun saveUser(id: Long?, name: String, pin: String?, role: String, active: Boolean): Long =
         run(Op.SaveUser(id, name, pin?.takeIf { it.isNotBlank() }?.let { Crypto.pinHash(it) }, role, active)).asId()
 
-    fun checkPin(user: AppUser, pin: String): Boolean = user.pinHash == Crypto.pinHash(pin)
+    fun checkPin(user: AppUser, pin: String): Boolean = Crypto.verifyPin(user.pinHash, pin)
+
+    /** Resultado de un intento de PIN. */
+    sealed interface PinResult {
+        data object Ok : PinResult
+        data class Wrong(val attemptsLeft: Int) : PinResult
+        data class Locked(val until: Long) : PinResult
+    }
+
+    private fun failKey(key: String) = "pin.fail.$key"
+
+    /** Bloqueo tras fallar: cada 5 intentos, 1, 5 y luego 15 minutos (se guarda en este equipo). */
+    fun pinLockedUntil(key: String): Long =
+        metaGet(failKey(key))?.split(':')?.getOrNull(1)?.toLongOrNull()?.takeIf { it > Time.now() } ?: 0
+
+    private fun registerPinFailure(key: String): PinResult {
+        val count = (metaGet(failKey(key))?.split(':')?.getOrNull(0)?.toIntOrNull() ?: 0) + 1
+        val lockMinutes = if (count % 5 == 0) when (count / 5) { 1 -> 1; 2 -> 5; else -> 15 } else 0
+        val until = if (lockMinutes > 0) Time.now() + lockMinutes * 60_000L else 0
+        metaPut(failKey(key), "$count:$until")
+        return if (until > 0) PinResult.Locked(until) else PinResult.Wrong(5 - count % 5)
+    }
+
+    /**
+     * Comprueba el PIN de un usuario. [final] = la persona terminó de escribir: si no coincide, cuenta como intento fallido.
+     * Al entrar con una huella de la versión anterior, se cambia por la nueva con sal.
+     */
+    fun pinAttempt(user: AppUser, pin: String, final: Boolean): PinResult {
+        val key = "u" + user.id
+        pinLockedUntil(key).takeIf { it > 0 }?.let { return PinResult.Locked(it) }
+        if (checkPin(user, pin)) {
+            metaPut(failKey(key), "0:0")
+            if (Crypto.isLegacyPin(user.pinHash)) scope.launch {
+                runCatching { run(Op.SaveUser(user.id, user.name, Crypto.pinHash(pin), user.role, user.active == 1L)) }
+            }
+            return PinResult.Ok
+        }
+        return if (final) registerPinFailure(key) else PinResult.Wrong(5)
+    }
+
+    /** Autorización de un administrador (descuentos grandes, precios bajo costo, anulaciones viejas). Devuelve su nombre. */
+    fun authorizeAdmin(pin: String): Pair<PinResult, String?> {
+        pinLockedUntil("admin").takeIf { it > 0 }?.let { return PinResult.Locked(it) to null }
+        val admin = users.value.firstOrNull { it.active == 1L && it.role == Roles.ADMIN && checkPin(it, pin) }
+        if (admin != null) { metaPut(failKey("admin"), "0:0"); return PinResult.Ok to admin.name }
+        return registerPinFailure("admin") to null
+    }
 
     // ================= Respaldo =================
 
