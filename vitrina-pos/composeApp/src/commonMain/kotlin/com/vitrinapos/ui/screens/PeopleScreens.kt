@@ -157,7 +157,12 @@ fun ClientFormScreen(id: Long?) {
     FormScaffold(if (id == null) "Nuevo cliente" else "Editar cliente", onSave = ::save, onDelete = if (id != null && app.can(com.vitrinapos.data.Permission.DELETE_RECORDS)) ({ confirmDelete = true }) else null) {
         TextInput(name, { name = it }, "Nombre *", error = if (showErrors && name.isBlank()) "Escribe el nombre" else null)
         TextInput(phone, { phone = it }, "Teléfono", keyboard = KeyboardType.Phone)
-        TextInput(docId, { docId = it }, "Cédula o RNC")
+        val taxCheck = com.vitrinapos.fiscal.TaxId.check(docId)
+        TextInput(
+            docId, { docId = it }, "Cédula o RNC", keyboard = KeyboardType.Number,
+            error = if (docId.isNotBlank() && !taxCheck.valid) taxCheck.message else null,
+        )
+        if (taxCheck.valid) Text("✓ ${taxCheck.message} · ${taxCheck.formatted}", fontSize = 12.sp, color = AppTheme.extra.ok)
         TextInput(email, { email = it }, "Correo", keyboard = KeyboardType.Email)
         TextInput(address, { address = it }, "Dirección")
         TextInput(notes, { notes = it }, "Notas", singleLine = false, minLines = 2)
