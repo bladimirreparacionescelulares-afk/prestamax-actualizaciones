@@ -37,7 +37,19 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
 - Al crear un producto, la app pregunta si imprimir sus etiquetas (una por unidad en stock).
 - Salidas: PDF del tamaño exacto de la etiqueta (para el driver de la etiquetadora) u hojas adhesivas A4 o Carta (24, 21 o 65 por hoja A4, 30 por hoja Carta), con opción de empezar en cualquier etiqueta de una hoja usada.
 - Probado: todas las plantillas caben en todos los tamaños y el QR y las barras se leen al imprimir a 203 dpi.
-- La impresión directa en la etiquetadora (Bluetooth o USB, TSPL, ZPL y ESC/POS) llega en la versión 1.3.
+- **Impresión directa en la etiquetadora** (Configuración → Etiquetadora):
+  - Conexión: Bluetooth (Android), impresora instalada en Windows (USB) o impresora de red por IP (puerto 9100, en los dos).
+  - Lenguajes: **TSPL** (Xprinter, HPRT, Gprinter, Munbyn, TSC, iDPRT…), **ZPL** (Zebra y compatibles) y **ESC/POS** (impresoras de tickets con rollo de etiquetas).
+  - Resolución 203 o 300 dpi, espacio entre etiquetas, oscuridad, ajuste de posición y etiqueta de prueba.
+  - Cada producto se envía una vez y la impresora repite las copias.
+  - Probado de punta a punta: lo que recibe una impresora de red simulada se vuelve a convertir en imagen y su QR se lee (TSPL, ZPL y ESC/POS; 203 y 300 dpi), también desde el APK en Android.
+- Las etiquetadoras que solo funcionan con su propia app (Niimbot, Phomemo) no son compatibles.
+
+### Escáner continuo
+
+- En Vender y en Etiquetas, el botón de escanear abre la cámara y cada código que pasa se agrega solo, con pitido y vibración. El mismo código se cuenta una vez cada 1,5 s.
+- Si un código no existe, ofrece crear el producto con ese código.
+- Linterna para lugares oscuros. En Windows se usa un lector USB.
 
 ### Trabajo en red (varios equipos)
 
