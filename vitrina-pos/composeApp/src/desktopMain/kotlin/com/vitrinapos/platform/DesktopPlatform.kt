@@ -140,6 +140,8 @@ class DesktopPlatform : Platform {
     override fun openFile(file: File) {
         runCatching { Desktop.getDesktop().open(file) }
     }
+
+    override fun openUrl(url: String): Boolean = runCatching { Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 }
 
 /** PDF con PDFBox; convierte las coordenadas (PDFBox cuenta desde abajo). */

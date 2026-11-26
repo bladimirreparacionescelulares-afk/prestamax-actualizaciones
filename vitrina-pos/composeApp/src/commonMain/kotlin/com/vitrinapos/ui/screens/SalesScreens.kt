@@ -137,7 +137,8 @@ fun SaleDetailScreen(id: Long) {
         Column { ScreenHeader("Venta", onBack = { app.back() }) }
         return
     }
-    val ticket = Ticket.forSale(s, sale, items)
+    val repairs by app.repo.repairs.collectAsState()
+    val ticket = Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id })
     val fresh = Time.now() - sale.createdAt < 120_000
     val voided = sale.status == SaleStatus.VOID
 

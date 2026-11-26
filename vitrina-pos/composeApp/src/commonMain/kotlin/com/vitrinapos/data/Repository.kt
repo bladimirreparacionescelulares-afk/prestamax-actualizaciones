@@ -188,10 +188,11 @@ class Repository(val platform: Platform) {
     // ---------- Datos compartidos ----------
 
     val settings: StateFlow<AppSettings> = combine(db.settingQueries.selectAll().asFlow().mapToList(io), meta) { rows, m ->
-        AppSettings.fromMap(rows.associate { it.key to it.content } + localSettings(m))
+        AppSettings.fromMap(rows.associate { it.key to it.content } + localSettings(m)).also { RepairStatus.configure(it.repairStatuses) }
     }.stateIn(
         scope, SharingStarted.Eagerly,
-        AppSettings.fromMap(db.settingQueries.selectAll().executeAsList().associate { it.key to it.content } + localSettings(meta.value)),
+        AppSettings.fromMap(db.settingQueries.selectAll().executeAsList().associate { it.key to it.content } + localSettings(meta.value))
+            .also { RepairStatus.configure(it.repairStatuses) },
     )
 
     private fun localSettings(m: Map<String, String>) =
@@ -383,6 +384,7 @@ class Repository(val platform: Platform) {
                         }
                         JsonNull
                     }
+                    is Op.DeliverRepair -> JsonPrimitive(deliverRepairLocal(op, now))
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
                             db.appUserQueries.insert(op.name.trim(), op.pinHash ?: "", op.role, if (op.active) 1 else 0, now)
@@ -436,6 +438,31 @@ class Repository(val platform: Platform) {
             )
         }
         return id
+    }
+
+    /** Entrega (dentro de una transacción): crea la venta del saldo y cierra la orden. Devuelve el id de la venta. */
+    private fun deliverRepairLocal(op: Op.DeliverRepair, now: Long): Long {
+        val r = db.repairQueries.selectById(op.id).executeAsOneOrNull() ?: throw IllegalStateException("La orden no existe")
+        if (RepairStatus.isClosed(r.status)) throw IllegalStateException("La orden ${r.code} ya fue entregada")
+        val code = r.code
+        val charged = totalsFor(op.lines, 0).total
+        if (r.deposit > charged) throw IllegalStateException("El abono es mayor que el total a cobrar")
+        // El abono ya se cobró al recibir: se descuenta como una línea negativa para que Caja y Reportes no lo cuenten dos veces.
+        val lines = op.lines + if (r.deposit > 0) listOf(CartLine(null, "Abono recibido $code", code, 1.0, -r.deposit, 0, false, null, false)) else emptyList()
+        val saleId = insertSale(
+            Op.RecordSale(lines, r.clientId, r.clientName, 0, op.paymentMethod, op.received, null, op.deviceId, op.userId, op.userName, now),
+            number = db.saleQueries.nextNumber().executeAsOne(),
+        )
+        val warranty = if (op.repaired) r.warrantyDays else 0
+        db.repairQueries.deliver(RepairStatus.DELIVERED, now, charged, saleId, warranty, now, op.id)
+        val note = listOf(
+            if (op.repaired) "Reparado" else "Sin reparar",
+            "Total ${Money.format(charged, settings.value.currencySymbol)}",
+            if (warranty > 0) "garantía $warranty días" else "",
+            op.note.trim(),
+        ).filter { it.isNotBlank() }.joinToString(" · ")
+        db.repairQueries.insertEvent(op.id, RepairStatus.DELIVERED, note, op.userName, now)
+        return saleId
     }
 
     /** Inserta la venta (dentro de una transacción). Devuelve su id. */
@@ -748,6 +775,12 @@ class Repository(val platform: Platform) {
         val u = currentUser.value
         return run(Op.SaveRepair(d, depositMethod, deviceId, u?.id, u?.name ?: "")).asId()
     }
+
+    /** Entrega el equipo y cobra. Devuelve el id de la venta. */
+    suspend fun deliverRepair(id: Long, lines: List<CartLine>, repaired: Boolean, paymentMethod: String, received: Long, note: String = ""): Long =
+        run(Op.DeliverRepair(id, lines, repaired, paymentMethod, received, note, deviceId, currentUser.value?.id, userName)).asId()
+
+    suspend fun repairsWithStatus(status: String): Long = withContext(io) { db.repairQueries.countByStatus(status).executeAsOne() }
 
     suspend fun setRepairStatus(id: Long, status: String, note: String = "") { run(Op.SetRepairStatus(id, status, note, userName)) }
 

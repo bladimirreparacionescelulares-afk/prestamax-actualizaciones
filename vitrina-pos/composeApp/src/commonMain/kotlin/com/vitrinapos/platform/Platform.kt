@@ -46,6 +46,9 @@ interface Platform {
     fun shareFile(file: File, mime: String, title: String)
     fun shareText(text: String, title: String)
     fun openFile(file: File)
+
+    /** Abre un enlace (por ejemplo, WhatsApp). Devuelve false si no hay con qué abrirlo. */
+    fun openUrl(url: String): Boolean
 }
 
 /** Lienzo para dibujar PDF; coordenadas en puntos desde la esquina superior izquierda. */

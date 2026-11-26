@@ -3,7 +3,18 @@ package com.vitrinapos.data
 import com.vitrinapos.db.RepairOrder
 import kotlinx.serialization.Serializable
 
-/** Estados de una reparación, en el orden en que suele avanzar. */
+/** Tipo de estado: decide en qué lista sale la orden y de qué color. */
+enum class StatusKind(val title: String) {
+    WORK("En proceso"), WAIT("En espera"), READY("Listo para entregar"), NOT_REPAIRED("No reparado"), DELIVERED("Entregado")
+}
+
+/** Un estado del taller. Los fijos ([locked]) se pueden renombrar, pero no quitar. */
+data class StatusDef(val key: String, val label: String, val kind: StatusKind, val locked: Boolean = false)
+
+/**
+ * Estados de una reparación, en el orden en que suele avanzar.
+ * La lista se puede editar en Configuración → Taller (se guarda en [AppSettings.repairStatuses]).
+ */
 object RepairStatus {
     const val RECEIVED = "RECIBIDO"
     const val DIAGNOSIS = "DIAGNOSTICO"
@@ -14,39 +25,84 @@ object RepairStatus {
     const val DELIVERED = "ENTREGADO"
     const val NOT_REPAIRED = "NO_REPARADO"
 
-    val flow = listOf(RECEIVED, DIAGNOSIS, APPROVAL, PARTS, REPAIRING, READY, DELIVERED)
-    val all = flow + NOT_REPAIRED
+    private val LOCKED = setOf(RECEIVED, READY, DELIVERED, NOT_REPAIRED)
 
-    fun label(s: String) = when (s) {
-        RECEIVED -> "Recibido"
-        DIAGNOSIS -> "En diagnóstico"
-        APPROVAL -> "Esperando aprobación"
-        PARTS -> "Esperando repuesto"
-        REPAIRING -> "En reparación"
-        READY -> "Listo para entregar"
-        DELIVERED -> "Entregado"
-        NOT_REPAIRED -> "No reparado"
-        else -> s
+    val defaults = listOf(
+        StatusDef(RECEIVED, "Recibido", StatusKind.WORK, true),
+        StatusDef(DIAGNOSIS, "En diagnóstico", StatusKind.WORK),
+        StatusDef(APPROVAL, "Esperando aprobación", StatusKind.WAIT),
+        StatusDef(PARTS, "Esperando repuesto", StatusKind.WAIT),
+        StatusDef(REPAIRING, "En reparación", StatusKind.WORK),
+        StatusDef(READY, "Listo para entregar", StatusKind.READY, true),
+        StatusDef(DELIVERED, "Entregado", StatusKind.DELIVERED, true),
+        StatusDef(NOT_REPAIRED, "No reparado", StatusKind.NOT_REPAIRED, true),
+    )
+
+    private val shortNames = mapOf(
+        RECEIVED to "Recibido", DIAGNOSIS to "Diagnóstico", APPROVAL to "Aprobación", PARTS to "Repuesto",
+        REPAIRING to "Reparando", READY to "Listo", DELIVERED to "Entregado", NOT_REPAIRED to "No reparado",
+    )
+
+    private var state = androidx.compose.runtime.mutableStateOf(defaults)
+    val defs: List<StatusDef> get() = state.value
+
+    /** Texto guardado: una línea por estado, "CLAVE|Nombre|TIPO". */
+    fun encode(list: List<StatusDef>): String = list.joinToString("\n") { "${it.key}|${it.label.replace('|', '/').replace('\n', ' ')}|${it.kind.name}" }
+
+    fun decode(text: String): List<StatusDef> {
+        if (text.isBlank()) return defaults
+        val parsed = text.lines().mapNotNull { line ->
+            val p = line.split('|')
+            if (p.size < 3 || p[0].isBlank()) return@mapNotNull null
+            val kind = runCatching { StatusKind.valueOf(p[2]) }.getOrNull() ?: return@mapNotNull null
+            StatusDef(p[0], p[1].ifBlank { p[0] }, kind, p[0] in LOCKED)
+        }.distinctBy { it.key }
+        // Los estados fijos siempre existen, aunque el texto esté dañado.
+        val missing = defaults.filter { d -> d.locked && parsed.none { it.key == d.key } }
+        return (parsed + missing).map { if (it.key in LOCKED) it.copy(kind = defaults.first { d -> d.key == it.key }.kind, locked = true) else it }
     }
 
-    fun short(s: String) = when (s) {
-        RECEIVED -> "Recibido"; DIAGNOSIS -> "Diagnóstico"; APPROVAL -> "Aprobación"; PARTS -> "Repuesto"
-        REPAIRING -> "Reparando"; READY -> "Listo"; DELIVERED -> "Entregado"; NOT_REPAIRED -> "No reparado"; else -> s
+    fun configure(text: String) {
+        val list = decode(text)
+        if (list != state.value) state.value = list
+    }
+
+    /** Clave nueva a partir del nombre (sin acentos ni espacios). */
+    fun newKey(label: String, taken: Collection<String>): String {
+        val base = java.text.Normalizer.normalize(label, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+            .uppercase().replace(Regex("[^A-Z0-9]+"), "_").trim('_').take(20).ifBlank { "ESTADO" }
+        var k = base
+        var i = 2
+        while (k in taken) k = "${base}_${i++}"
+        return k
+    }
+
+    fun def(s: String): StatusDef = defs.firstOrNull { it.key == s } ?: StatusDef(s, s.lowercase().replaceFirstChar { it.uppercase() }.replace('_', ' '), StatusKind.WORK)
+    fun kind(s: String) = def(s).kind
+
+    /** Orden en que se muestran: los de trabajo y espera, luego listo, no reparado y entregado. */
+    val all: List<String> get() = defs.map { it.key }
+    val flow: List<String> get() = defs.filter { it.kind != StatusKind.NOT_REPAIRED }.map { it.key }
+
+    fun label(s: String) = def(s).label
+    fun short(s: String): String {
+        val d = def(s)
+        val default = defaults.firstOrNull { it.key == s }
+        return if (default != null && default.label == d.label) shortNames[s] ?: d.label else d.label
     }
 
     /** Todo lo que todavía no está listo cuenta como pendiente. */
-    fun isPending(s: String) = s in setOf(RECEIVED, DIAGNOSIS, APPROVAL, PARTS, REPAIRING)
-    fun isReady(s: String) = s == READY || s == NOT_REPAIRED
-    fun isClosed(s: String) = s == DELIVERED
+    fun isPending(s: String) = kind(s) == StatusKind.WORK || kind(s) == StatusKind.WAIT
+    fun isWaiting(s: String) = kind(s) == StatusKind.WAIT
+    fun isReady(s: String) = kind(s) == StatusKind.READY || kind(s) == StatusKind.NOT_REPAIRED
+    fun isClosed(s: String) = kind(s) == StatusKind.DELIVERED
 
-    /** Siguiente paso sugerido. */
-    fun next(s: String): String? = when (s) {
-        RECEIVED -> DIAGNOSIS
-        DIAGNOSIS -> APPROVAL
-        APPROVAL -> REPAIRING
-        PARTS -> REPAIRING
-        REPAIRING -> READY
-        else -> null
+    /** Siguiente paso sugerido: el próximo estado de trabajo (o "Listo"), saltando los de espera. */
+    fun next(s: String): String? {
+        if (!isPending(s)) return null
+        val list = defs
+        val i = list.indexOfFirst { it.key == s }
+        return list.drop(i + 1).firstOrNull { it.kind == StatusKind.WORK || it.kind == StatusKind.READY }?.key ?: READY
     }
 }
 
@@ -131,6 +187,24 @@ val RepairOrder.photoList: List<String> get() = photos.split(',').filter { it.is
 
 /** Lee el número de una orden desde el QR o el texto "REP-0042". */
 fun parseRepairCode(text: String): Long? = Regex("""(?i)^\s*REP-?(\d{1,8})\s*$""").find(text)?.groupValues?.get(1)?.toLongOrNull()
+
+/** Días que lleva listo esperando que lo retiren (0 si no está listo). */
+fun RepairOrder.daysWaiting(now: Long = Time.now()): Int =
+    if (!RepairStatus.isReady(status)) 0 else ((Time.startOfDay(now) - Time.startOfDay(updatedAt)) / 86_400_000L).toInt()
+
+fun RepairOrder.isAbandoned(abandonDays: Int, now: Long = Time.now()): Boolean = abandonDays > 0 && daysWaiting(now) >= abandonDays
+
+/** Fin de la garantía de un equipo entregado reparado (null si no tiene). */
+val RepairOrder.warrantyUntil: Long? get() =
+    deliveredAt?.takeIf { RepairStatus.isClosed(status) && warrantyDays > 0 }?.let { Time.addDays(Time.startOfDay(it), warrantyDays.toInt()) + 86_399_999L }
+
+/** Teléfono para WhatsApp: solo números, con el código del país si falta. */
+fun whatsappNumber(phone: String, countryCode: String): String? {
+    val d = phone.filter(Char::isDigit)
+    if (d.length < 7) return null
+    val cc = countryCode.filter(Char::isDigit)
+    return if (d.length <= 10 && cc.isNotEmpty()) cc + d.trimStart('0') else d
+}
 
 /** Días desde la entrega estimada (positivo = atrasado). */
 fun RepairOrder.daysLate(now: Long = Time.now()): Int {

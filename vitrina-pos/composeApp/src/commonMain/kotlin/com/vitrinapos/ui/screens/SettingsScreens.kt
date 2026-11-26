@@ -357,6 +357,16 @@ fun SettingsScreen() {
             }
             TextInput(d.repairAbandonDays.toString(), { d = d.copy(repairAbandonDays = it.filter(Char::isDigit).take(4).toIntOrNull() ?: 0) }, "Días para considerar un equipo abandonado", keyboard = KeyboardType.Number)
             TextInput(d.repairTerms, { d = d.copy(repairTerms = it) }, "Condiciones del comprobante de recepción", singleLine = false, minLines = 3)
+            TextInput(d.whatsappCountry, { d = d.copy(whatsappCountry = it.filter(Char::isDigit).take(4)) }, "Código de país para WhatsApp (1 = Rep. Dominicana)", keyboard = KeyboardType.Number)
+            AppCard(onClick = { app.open(Screen.RepairStatuses) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Estados del taller", fontWeight = FontWeight.SemiBold)
+                        Text(com.vitrinapos.data.RepairStatus.defs.joinToString(" · ") { it.label }, fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 2)
+                    }
+                    Text("Editar", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
             }
 
             if (dirty) {

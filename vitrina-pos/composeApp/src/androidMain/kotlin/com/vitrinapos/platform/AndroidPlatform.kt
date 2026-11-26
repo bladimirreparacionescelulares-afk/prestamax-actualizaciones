@@ -188,6 +188,10 @@ class AndroidPlatform(private val context: Context) : Platform {
         context.startActivity(Intent.createChooser(send, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    override fun openUrl(url: String): Boolean = runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.isSuccess
+
     override fun openFile(file: File) {
         val view = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uriFor(file), if (file.extension == "pdf") "application/pdf" else "*/*")

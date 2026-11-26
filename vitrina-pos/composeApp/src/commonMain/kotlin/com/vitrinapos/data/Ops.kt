@@ -102,6 +102,20 @@ sealed class Op {
     @Serializable @SerialName("repairStatus")
     data class SetRepairStatus(val id: Long, val status: String, val note: String, val user: String) : Op()
 
+    /** Entrega del equipo: cobra el saldo (repuestos y servicio menos el abono) y cierra la orden. */
+    @Serializable @SerialName("repairDeliver")
+    data class DeliverRepair(
+        val id: Long,
+        val lines: List<CartLine>,
+        val repaired: Boolean,
+        val paymentMethod: String,
+        val received: Long,
+        val note: String,
+        val deviceId: String,
+        val userId: Long?,
+        val userName: String,
+    ) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 

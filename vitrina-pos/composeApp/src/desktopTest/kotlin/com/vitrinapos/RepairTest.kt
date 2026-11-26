@@ -13,6 +13,9 @@ import com.vitrinapos.data.RepairStatus
 import com.vitrinapos.data.SaleStatus
 import com.vitrinapos.data.UnlockTypes
 import com.vitrinapos.data.code
+import com.vitrinapos.data.daysWaiting
+import com.vitrinapos.data.isAbandoned
+import com.vitrinapos.data.warrantyUntil
 import com.vitrinapos.data.parseRepairCode
 import com.vitrinapos.labels.LabelContent
 import com.vitrinapos.labels.LabelLayout
@@ -109,6 +112,96 @@ class RepairTest {
         // Comando de QR nativo (GS ( k)
         assertTrue(bytes.toList().windowed(3).any { it == listOf<Byte>(0x1D, 0x28, 0x6B) })
         g.repo.close()
+    }
+
+    @Test
+    fun entregarYCobrar(): Unit = runBlocking {
+        val g = AppGraph(platform("entrega"))
+        val repo = g.repo
+        com.vitrinapos.data.SampleData.load(repo)
+        repo.saveSettings(repo.settings.value.copy(taxRate = 18.0, pricesIncludeTax = true))
+        val part = repo.db.productQueries.selectActive().executeAsList().first { it.code == "MIC-054" }
+        val id = repo.saveRepair(draft)                  // abono 1,000.00
+        repo.setRepairStatus(id, RepairStatus.READY)
+        // Mano de obra 3,000 + repuesto del inventario; el abono se descuenta.
+        val labor = com.vitrinapos.data.CartLine(null, "Reparación", "REP-0001", 1.0, 300000, 0, true, null, false)
+        val saleId = repo.deliverRepair(id, listOf(labor, com.vitrinapos.data.CartLine.of(part)), true, PaymentMethods.CASH, 500000)
+        val sale = repo.saleById(saleId)!!
+        assertEquals(300000 + part.price - 100000, sale.total)
+        assertEquals(part.stock - 1, repo.db.productQueries.selectById(part.id).executeAsOne().stock)
+        val r = repo.repairById(id)!!
+        assertEquals(RepairStatus.DELIVERED, r.status)
+        assertEquals(300000 + part.price, r.total)
+        assertEquals(saleId, r.saleId)
+        assertNotNull(r.warrantyUntil)
+        // Abono + entrega = lo que pagó el cliente en total.
+        val paid = repo.salesByClient(r.clientId!!).sumOf { it.total }
+        assertEquals(r.total, paid)
+        // Comprobante de entrega con la garantía.
+        val text = Ticket.forSale(repo.settings.value, sale, repo.saleItems(saleId), repair = r).preview()
+        assertTrue("COMPROBANTE DE ENTREGA" in text && "GARANT" in text && "Abono recibido REP-0001" in text, text)
+        // No se entrega dos veces.
+        assertTrue(runCatching { repo.deliverRepair(id, listOf(labor), true, PaymentMethods.CASH, 0) }.isFailure)
+
+        // Sin reparar: se cobra el diagnóstico y no hay garantía.
+        val id2 = repo.saveRepair(draft.copy(deposit = 0))
+        repo.setRepairStatus(id2, RepairStatus.NOT_REPAIRED)
+        val diag = com.vitrinapos.data.CartLine(null, "Diagnóstico", "REP-0002", 1.0, 30000, 0, false, null, false)
+        repo.deliverRepair(id2, listOf(diag), false, PaymentMethods.CARD, 0)
+        assertEquals(0L, repo.repairById(id2)!!.warrantyDays)
+        assertNull(repo.repairById(id2)!!.warrantyUntil)
+
+        // El abono no puede ser mayor que el cobro.
+        val id3 = repo.saveRepair(draft)
+        assertTrue(runCatching { repo.deliverRepair(id3, listOf(diag), false, PaymentMethods.CASH, 0) }.isFailure)
+        assertEquals(RepairStatus.RECEIVED, repo.repairById(id3)!!.status)
+        g.repo.close()
+    }
+
+    @Test
+    fun estadosEditables() {
+        val custom = RepairStatus.defaults.filter { it.key != RepairStatus.APPROVAL }.toMutableList()
+        val key = RepairStatus.newKey("En garantía del proveedor", custom.map { it.key })
+        assertEquals("EN_GARANTIA_DEL_PROV", key)
+        custom.add(2, com.vitrinapos.data.StatusDef(key, "En garantía del proveedor", com.vitrinapos.data.StatusKind.WAIT))
+        custom[0] = custom[0].copy(label = "Ingresado")
+        try {
+            RepairStatus.configure(RepairStatus.encode(custom))
+            assertEquals("Ingresado", RepairStatus.label(RepairStatus.RECEIVED))
+            assertTrue(RepairStatus.isWaiting(key))
+            assertTrue(RepairStatus.isPending(key))
+            // "Pasar a" salta los de espera.
+            assertEquals(RepairStatus.REPAIRING, RepairStatus.next(RepairStatus.DIAGNOSIS))
+            assertEquals(RepairStatus.READY, RepairStatus.next(RepairStatus.REPAIRING))
+            assertNull(RepairStatus.next(RepairStatus.READY))
+            // Los fijos no se pueden perder aunque el texto venga incompleto.
+            RepairStatus.configure("DIAGNOSTICO|Revisión|WORK")
+            assertEquals(listOf(RepairStatus.DIAGNOSIS, RepairStatus.RECEIVED, RepairStatus.READY, RepairStatus.DELIVERED, RepairStatus.NOT_REPAIRED), RepairStatus.all)
+            assertEquals(com.vitrinapos.data.StatusKind.READY, RepairStatus.kind(RepairStatus.READY))
+            // Un estado borrado que aún tenga alguna orden se sigue mostrando.
+            assertEquals("Repuesto", RepairStatus.label("REPUESTO"))
+        } finally {
+            RepairStatus.configure("")
+        }
+        assertEquals(RepairStatus.defaults, RepairStatus.defs)
+    }
+
+    @Test
+    fun whatsappYAbandonados() {
+        assertEquals("18095550101", com.vitrinapos.data.whatsappNumber("809-555-0101", "1"))
+        assertEquals("18095550101", com.vitrinapos.data.whatsappNumber("+1 (809) 555-0101", "1"))
+        assertEquals("5215512345678", com.vitrinapos.data.whatsappNumber("5215512345678", "52"))
+        assertNull(com.vitrinapos.data.whatsappNumber("123", "1"))
+        val day = 86_400_000L
+        val now = com.vitrinapos.data.Time.now()
+        val r = com.vitrinapos.db.RepairOrder(1, 1, null, "Ana Gómez", "8095550101", "", "TELEFONO", "Apple", "iPhone 11", "", "", "NONE", "", "Batería",
+            "", "", "", 250000, 50000, 30000, null, "", RepairStatus.READY, "", "", 0, 30, null, null, now - 100 * day, now - 95 * day)
+        assertTrue(RepairStatus.isReady(r.status))
+        assertEquals(95, r.daysWaiting(now))
+        assertTrue(r.isAbandoned(90, now))
+        val msgs = com.vitrinapos.ui.screens.RepairMessages.options(AppSettings(businessName = "Mi Tienda"), r)
+        assertTrue(msgs.first().text.contains("listo para retirar") && msgs.first().text.contains("2,000.00"), msgs.first().text)
+        assertTrue(msgs.any { it.title.startsWith("Recordatorio") })
     }
 
     @Test

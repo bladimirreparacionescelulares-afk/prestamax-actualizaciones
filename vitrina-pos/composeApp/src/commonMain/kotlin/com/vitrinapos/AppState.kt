@@ -30,7 +30,9 @@ sealed interface Screen {
     data object Clients : Screen
     data object More : Screen
     data object Taller : Screen
-    data class RepairReceive(val id: Long? = null) : Screen
+    data class RepairReceive(val id: Long? = null, val warrantyOf: Long? = null) : Screen
+    data class RepairDeliver(val id: Long) : Screen
+    data object RepairStatuses : Screen
     data class RepairDetail(val id: Long) : Screen
 
     // Pantallas secundarias

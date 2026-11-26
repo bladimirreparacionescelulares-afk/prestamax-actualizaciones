@@ -99,6 +99,12 @@ import com.vitrinapos.data.Time
 import com.vitrinapos.data.UnlockTypes
 import com.vitrinapos.data.code
 import com.vitrinapos.data.daysLate
+import com.vitrinapos.data.daysWaiting
+import com.vitrinapos.data.isAbandoned
+import com.vitrinapos.data.warrantyUntil
+import com.vitrinapos.data.StatusKind
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.automirrored.rounded.Chat
 import com.vitrinapos.data.deviceName
 import com.vitrinapos.data.parseRepairCode
 import com.vitrinapos.data.photoList
@@ -142,12 +148,12 @@ fun deviceIcon(type: String): ImageVector = when (type) {
 @Composable
 fun RepairStatusPill(status: String, modifier: Modifier = Modifier) {
     val ex = AppTheme.extra
-    val (fg, bg) = when {
-        status == RepairStatus.READY -> ex.ok to ex.okSoft
-        status == RepairStatus.DELIVERED -> ex.muted to MaterialTheme.colorScheme.surfaceContainer
-        status == RepairStatus.NOT_REPAIRED -> ex.danger to ex.dangerSoft
-        status == RepairStatus.APPROVAL || status == RepairStatus.PARTS -> ex.warn to ex.warnSoft
-        else -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.primaryContainer
+    val (fg, bg) = when (RepairStatus.kind(status)) {
+        StatusKind.READY -> ex.ok to ex.okSoft
+        StatusKind.DELIVERED -> ex.muted to MaterialTheme.colorScheme.surfaceContainer
+        StatusKind.NOT_REPAIRED -> ex.danger to ex.dangerSoft
+        StatusKind.WAIT -> ex.warn to ex.warnSoft
+        StatusKind.WORK -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.primaryContainer
     }
     Pill(RepairStatus.label(status), fg, bg, modifier)
 }
@@ -204,7 +210,8 @@ fun TallerScreen() {
     val ready = repairs.filter { RepairStatus.isReady(it.status) }
     val delivered = repairs.filter { RepairStatus.isClosed(it.status) }
     val late = pending.count { it.daysLate() > 0 }
-    val base = when (tab) { 0 -> pending; 1 -> ready; else -> delivered }
+    val abandoned = ready.filter { it.isAbandoned(app.settings.repairAbandonDays) }
+    val base = when (tab) { 0 -> pending; 1 -> ready.sortedByDescending { it.daysWaiting() }; else -> delivered }
     val q = query.trim()
     val list = base.filter { r ->
         q.isEmpty() || listOf(r.code, r.clientName, r.clientPhone, r.serial, r.brand, r.model, r.problem).any { it.contains(q, true) }
@@ -219,6 +226,18 @@ fun TallerScreen() {
                 Kpi("Pendientes", pending.size.toString(), MaterialTheme.colorScheme.onSurface, Modifier.weight(1f)) { tab = 0 }
                 Kpi("Listos", ready.size.toString(), AppTheme.extra.ok, Modifier.weight(1f)) { tab = 1 }
                 Kpi("Atrasados", late.toString(), if (late > 0) AppTheme.extra.danger else AppTheme.extra.muted, Modifier.weight(1f)) { tab = 0 }
+            }
+            if (abandoned.isNotEmpty()) {
+                Surface(
+                    onClick = { tab = 1; query = "" }, shape = RoundedCornerShape(14.dp), color = AppTheme.extra.dangerSoft,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        if (abandoned.size == 1) "1 equipo lleva más de ${app.settings.repairAbandonDays} días sin retirar: se considera abandonado. Avísale al cliente por WhatsApp."
+                        else "${abandoned.size} equipos llevan más de ${app.settings.repairAbandonDays} días sin retirar: se consideran abandonados. Avísales por WhatsApp.",
+                        color = AppTheme.extra.danger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(12.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -259,7 +278,10 @@ private fun Kpi(label: String, value: String, color: Color, modifier: Modifier, 
 
 @Composable
 fun RepairRow(r: RepairOrder, onClick: () -> Unit) {
-    val late = r.daysLate()
+    val abandonDays = LocalAppState.current.settings.repairAbandonDays
+    val waiting = r.daysWaiting()
+    val abandoned = r.isAbandoned(abandonDays)
+    val late = if (abandoned) waiting else r.daysLate()
     Surface(
         onClick = onClick, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, if (late > 0) AppTheme.extra.danger.copy(alpha = 0.5f) else AppTheme.extra.line),
@@ -274,7 +296,9 @@ fun RepairRow(r: RepairOrder, onClick: () -> Unit) {
                     Text(r.deviceName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text(
                         when {
+                            abandoned -> "Abandonado · $waiting días"
                             late > 0 -> "+$late ${if (late == 1) "día" else "días"}"
+                            RepairStatus.isReady(r.status) && waiting > 0 -> "listo hace $waiting ${if (waiting == 1) "día" else "días"}"
                             RepairStatus.isClosed(r.status) -> Time.shortDate(r.deliveredAt ?: r.updatedAt)
                             else -> Time.relativeDay(r.createdAt).lowercase()
                         },
@@ -297,7 +321,7 @@ fun RepairRow(r: RepairOrder, onClick: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RepairReceiveScreen(editId: Long?) {
+fun RepairReceiveScreen(editId: Long?, warrantyOf: Long? = null) {
     val app = LocalAppState.current
     val s = app.settings
     val scope = rememberSafeScope()
@@ -306,7 +330,7 @@ fun RepairReceiveScreen(editId: Long?) {
     val measurer = rememberTextMeasurer()
     var step by remember { mutableIntStateOf(0) }
     var d by remember { mutableStateOf(RepairDraft(diagnosisFee = s.repairDiagnosisFee, warrantyDays = s.repairWarrantyDays, technician = "")) }
-    var loaded by remember { mutableStateOf(editId == null) }
+    var loaded by remember { mutableStateOf(editId == null && warrantyOf == null) }
     var depositMethod by remember { mutableStateOf(PaymentMethods.CASH) }
     var etaDays by remember { mutableStateOf<Int?>(2) }
     var printLabel by remember { mutableStateOf(true) }
@@ -323,6 +347,16 @@ fun RepairReceiveScreen(editId: Long?) {
                 r.technician, r.notes, r.warrantyDays.toInt(),
             )
             etaDays = null
+            loaded = true
+        }
+        // Reingreso por garantía: mismos datos del equipo, sin costo.
+        if (editId == null && warrantyOf != null) app.repo.repairById(warrantyOf)?.let { r ->
+            d = d.copy(
+                clientId = r.clientId, clientName = r.clientName, clientPhone = r.clientPhone, clientEmail = r.clientEmail, deviceType = r.deviceType,
+                brand = r.brand, model = r.model, serial = r.serial, color = r.color, unlockType = r.unlockType, unlockCode = r.unlockCode,
+                problem = "Garantía de ${r.code}: ", estimate = 0, diagnosisFee = 0, technician = r.technician,
+                notes = "Reingreso por garantía de ${r.code} (entregado el ${r.deliveredAt?.let { Time.date(it) } ?: "-"})",
+            )
             loaded = true
         }
     }
@@ -356,11 +390,29 @@ fun RepairReceiveScreen(editId: Long?) {
         }
     }
 
+    // Cada paso empieza arriba.
+    val stepScroll = rememberScrollState()
+    LaunchedEffect(step) { stepScroll.scrollTo(0) }
+    var confirmExit by remember { mutableStateOf(false) }
+    fun goBack() {
+        when {
+            step > 0 -> step--
+            editId == null && (d.clientName.isNotBlank() || d.problem.isNotBlank() || d.model.isNotBlank()) -> confirmExit = true
+            else -> app.back()
+        }
+    }
+    // El botón "atrás" del teléfono vuelve al paso anterior en vez de cerrar y perder lo escrito.
+    com.vitrinapos.platform.PlatformBackHandler(enabled = true) { goBack() }
+    if (confirmExit) com.vitrinapos.ui.components.ConfirmDialog(
+        "¿Salir sin guardar?", "Se pierde lo que escribiste de este equipo.", "Salir",
+        onConfirm = { confirmExit = false; app.back() }, onDismiss = { confirmExit = false }, destructive = true,
+    )
+
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
-            if (editId == null) "Recibir equipo" else "Editar orden",
+            if (editId != null) "Editar orden" else if (warrantyOf != null) "Recibir por garantía" else "Recibir equipo",
             subtitle = "Paso ${step + 1} de 3",
-            onBack = { if (step > 0) step-- else app.back() },
+            onBack = ::goBack,
         )
         if (!loaded) return@Column
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -379,7 +431,7 @@ fun RepairReceiveScreen(editId: Long?) {
             }
         }
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
+            Modifier.weight(1f).verticalScroll(stepScroll).padding(16.dp).widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (step) {
@@ -642,6 +694,14 @@ fun RepairDetailScreen(id: Long) {
     var changeStatus by remember { mutableStateOf(false) }
     var showUnlock by remember { mutableStateOf(false) }
     var receipt by remember { mutableStateOf(false) }
+    var whatsapp by remember { mutableStateOf(false) }
+    val deliveryTicket by produceState<Ticket?>(null, r?.saleId, r?.status) {
+        val sid = r?.saleId
+        value = if (r != null && sid != null && RepairStatus.isClosed(r.status)) {
+            val sale = app.repo.saleById(sid)
+            sale?.let { Ticket.forSale(s, it, app.repo.saleItems(sid), repair = r) }
+        } else null
+    }
     if (r == null) {
         Column { ScreenHeader("Orden", onBack = { app.back() }) }
         return
@@ -671,12 +731,22 @@ fun RepairDetailScreen(id: Long) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RepairStatusPill(r.status)
                             if (late > 0) { Spacer(Modifier.width(6.dp)); Pill("Atrasado $late ${if (late == 1) "día" else "días"}", AppTheme.extra.danger, AppTheme.extra.dangerSoft) }
+                            if (r.isAbandoned(s.repairAbandonDays)) { Spacer(Modifier.width(6.dp)); Pill("Abandonado · ${r.daysWaiting()} días", AppTheme.extra.danger, AppTheme.extra.dangerSoft) }
                         }
                     }
                 }
             }
             StatusTrack(r.status)
-            if (!RepairStatus.isClosed(r.status)) {
+            if (RepairStatus.isReady(r.status)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { app.open(Screen.RepairDeliver(r.id)) },
+                        modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppTheme.extra.cta, contentColor = AppTheme.extra.onCta),
+                    ) { Text("Entregar y cobrar", fontWeight = FontWeight.Bold, maxLines = 1) }
+                    OutlinedButton(onClick = { changeStatus = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp)) { Text("Otro estado") }
+                }
+            } else if (!RepairStatus.isClosed(r.status)) {
                 val next = RepairStatus.next(r.status)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (next != null) Button(
@@ -695,10 +765,13 @@ fun RepairDetailScreen(id: Long) {
                         Text(r.clientName, fontWeight = FontWeight.SemiBold)
                         Text(listOf(r.clientPhone, r.clientEmail).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Sin contacto" }, fontSize = 13.sp, color = AppTheme.extra.muted)
                     }
+                    FilledTonalButton(onClick = { whatsapp = true }, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.Chat, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("WhatsApp")
+                    }
                 }
             }
 
-            AppCard {
+            AppCard(Modifier.fillMaxWidth()) {
                 Text("Falla", fontSize = 12.sp, color = AppTheme.extra.muted)
                 Text(r.problem, fontWeight = FontWeight.SemiBold)
                 if (r.conditionText.isNotBlank()) {
@@ -724,9 +797,27 @@ fun RepairDetailScreen(id: Long) {
                     r.photoList.forEach { ph -> ProductImage(ph, "Foto", Modifier.size(110.dp), RoundedCornerShape(12.dp), maxSide = 640) }
                 }
             }
+            if (RepairStatus.isClosed(r.status)) AppCard(color = MaterialTheme.colorScheme.primaryContainer) {
+                r.deliveredAt?.let { KeyValue("Entregado", "${Time.shortDate(it)} · ${Time.time(it)}") }
+                KeyValue("Total cobrado", Money.format(r.total, sym), strong = true)
+                val until = r.warrantyUntil
+                if (until != null) {
+                    val active = Time.now() <= until
+                    KeyValue("Garantía hasta", Time.longDate(until), valueColor = if (active) AppTheme.extra.ok else AppTheme.extra.danger)
+                    Text(if (active) "Garantía vigente" else "Garantía vencida", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (active) AppTheme.extra.ok else AppTheme.extra.danger)
+                    if (active) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { app.open(Screen.RepairReceive(warrantyOf = r.id)) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                            Text("Recibir por garantía")
+                        }
+                    }
+                } else Text("Entregado sin garantía", fontSize = 13.sp, color = AppTheme.extra.muted)
+                r.saleId?.let { sid -> TextButton(onClick = { app.open(Screen.SaleDetail(sid)) }) { Text("Ver la venta") } }
+            }
             AppCard {
                 if (r.estimate > 0) KeyValue("Presupuesto", Money.format(r.estimate, sym))
-                if (r.diagnosisFee > 0) KeyValue("Diagnóstico", Money.format(r.diagnosisFee, sym))
+                if (r.diagnosisFee > 0 && !RepairStatus.isClosed(r.status)) KeyValue("Diagnóstico", Money.format(r.diagnosisFee, sym))
                 KeyValue("Abonado", Money.format(r.deposit, sym))
                 r.estimatedAt?.let { KeyValue("Entrega estimada", Time.longDate(it), valueColor = if (late > 0) AppTheme.extra.danger else Color.Unspecified) }
                 if (r.technician.isNotBlank()) KeyValue("Técnico", r.technician)
@@ -741,7 +832,7 @@ fun RepairDetailScreen(id: Long) {
                     Icon(Icons.Rounded.Receipt, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Recibo")
                 }
                 OutlinedButton(
-                    onClick = { app.platform.shareText(Ticket.forRepair(s, r).preview(), "${r.code} · ${r.clientName}") },
+                    onClick = { app.platform.shareText((deliveryTicket ?: Ticket.forRepair(s, r)).preview(), "${r.code} · ${r.clientName}") },
                     modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp),
                 ) { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Compartir") }
             }
@@ -765,6 +856,7 @@ fun RepairDetailScreen(id: Long) {
             }
         }
     }
+    if (whatsapp) WhatsAppDialog(r) { whatsapp = false }
     if (changeStatus) StatusDialog(r.status, onDismiss = { changeStatus = false }) { st, note ->
         changeStatus = false
         scope.launch { app.repo.setRepairStatus(r.id, st, note); app.toast("${r.code}: ${RepairStatus.label(st)}") }
@@ -772,13 +864,13 @@ fun RepairDetailScreen(id: Long) {
     if (receipt) {
         AlertDialog(
             onDismissRequest = { receipt = false },
-            title = { Text("Comprobante ${r.code}") },
+            title = { Text(if (deliveryTicket != null) "Entrega ${r.code}" else "Comprobante ${r.code}") },
             text = {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color.White).verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
-                    TicketPreview(Ticket.forRepair(s, r), Modifier.padding(12.dp))
+                    TicketPreview(deliveryTicket ?: Ticket.forRepair(s, r), Modifier.padding(12.dp))
                 }
             },
-            confirmButton = { TextButton(onClick = { receipt = false; app.printRepairReceipt(r) }) { Icon(Icons.Rounded.Print, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Imprimir") } },
+            confirmButton = { TextButton(onClick = { receipt = false; deliveryTicket?.let { app.print(it) } ?: app.printRepairReceipt(r) }) { Icon(Icons.Rounded.Print, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Imprimir") } },
             dismissButton = { TextButton(onClick = { receipt = false }) { Text("Cerrar") } },
         )
     }
@@ -786,27 +878,33 @@ fun RepairDetailScreen(id: Long) {
 
 @Composable
 private fun StatusTrack(status: String) {
-    val steps = listOf(RepairStatus.RECEIVED, RepairStatus.DIAGNOSIS, RepairStatus.REPAIRING, RepairStatus.READY, RepairStatus.DELIVERED)
-    val position = when (status) {
-        RepairStatus.APPROVAL, RepairStatus.PARTS -> 1
-        RepairStatus.NOT_REPAIRED -> 3
-        else -> steps.indexOf(status).coerceAtLeast(0)
+    // Recibido → (estado de trabajo actual) → Listo → Entregado. Se adapta a los estados que el negocio haya creado.
+    val kind = RepairStatus.kind(status)
+    val middle = if (RepairStatus.isPending(status) && status != RepairStatus.RECEIVED) RepairStatus.short(status) else "En proceso"
+    val steps = listOf("Recibido", middle, RepairStatus.short(if (kind == StatusKind.NOT_REPAIRED) status else RepairStatus.READY), RepairStatus.short(RepairStatus.DELIVERED))
+    val position = when {
+        status == RepairStatus.RECEIVED -> 0
+        RepairStatus.isPending(status) -> 1
+        RepairStatus.isReady(status) -> 2
+        else -> 3
     }
+    val waiting = RepairStatus.isWaiting(status)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         steps.forEachIndexed { i, st ->
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                val current = if (waiting) AppTheme.extra.warn else if (kind == StatusKind.NOT_REPAIRED) AppTheme.extra.danger else AppTheme.extra.cta
                 Box(
                     Modifier.size(16.dp).clip(CircleShape).background(
                         when {
                             i < position -> MaterialTheme.colorScheme.primary
-                            i == position -> AppTheme.extra.cta
+                            i == position -> current
                             else -> AppTheme.extra.line
                         },
                     ),
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(RepairStatus.short(st), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 1,
-                    color = if (i == position) AppTheme.extra.cta else AppTheme.extra.muted, fontWeight = if (i == position) FontWeight.Bold else FontWeight.Normal)
+                Text(st, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (i == position) current else AppTheme.extra.muted, fontWeight = if (i == position) FontWeight.Bold else FontWeight.Normal)
             }
         }
     }
@@ -821,7 +919,8 @@ private fun StatusDialog(current: String, onDismiss: () -> Unit, onSave: (String
         title = { Text("Cambiar estado") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                RepairStatus.all.forEach { s ->
+                // "Entregado" solo se pone con el botón "Entregar y cobrar".
+                RepairStatus.all.filter { !RepairStatus.isClosed(it) }.forEach { s ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { st = s }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(st == s, { st = s })
                         Text(RepairStatus.label(s))

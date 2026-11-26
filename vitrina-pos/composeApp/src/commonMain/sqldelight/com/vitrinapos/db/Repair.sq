@@ -86,3 +86,9 @@ INSERT INTO repairEvent(repairId, status, note, userName, createdAt) VALUES (?, 
 
 eventsByRepair:
 SELECT * FROM repairEvent WHERE repairId = ? ORDER BY createdAt DESC, id DESC;
+
+deliver:
+UPDATE repairOrder SET status = ?, deliveredAt = ?, total = ?, saleId = ?, warrantyDays = ?, updatedAt = ? WHERE id = ?;
+
+countByStatus:
+SELECT count(*) FROM repairOrder WHERE status = ?;

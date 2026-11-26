@@ -136,11 +136,19 @@ class Ticket(val width: Int) {
             return out
         }
 
-        fun forSale(s: AppSettings, sale: Sale, items: List<SaleItem>, reprint: Boolean = false): Ticket {
+        fun forSale(s: AppSettings, sale: Sale, items: List<SaleItem>, reprint: Boolean = false, repair: com.vitrinapos.db.RepairOrder? = null): Ticket {
             val t = Ticket(s.ticketChars)
             val wide = s.ticketChars >= 48
             header(t, s)
             t.separator()
+            if (repair != null) {
+                t.center("COMPROBANTE DE ENTREGA", Style.Bold)
+                t.center(com.vitrinapos.data.repairCode(repair.number), Style.Big)
+                t.left("Equipo: ${com.vitrinapos.data.DeviceTypes.label(repair.deviceType)} ${listOf(repair.brand, repair.model).filter { it.isNotBlank() }.joinToString(" ")}".trim())
+                if (repair.serial.isNotBlank()) t.left("${if (repair.deviceType == com.vitrinapos.data.DeviceTypes.PHONE) "IMEI" else "Serie"}: ${repair.serial}")
+                t.left("Recibido: ${Time.date(repair.createdAt)}")
+                t.separator()
+            }
             t.pair(if (sale.number < 0) "Venta P${-sale.number}" else "Venta #${sale.number.toString().padStart(4, '0')}", Time.dateTime(sale.createdAt))
             t.left("Cliente: ${sale.clientName}")
             val seller = sale.userName.ifBlank { s.sellerName }
@@ -177,6 +185,21 @@ class Ticket(val width: Int) {
                 t.pair("Cambio", Money.plain(sale.changeDue))
             } else {
                 t.pair("Pago", sale.paymentMethod)
+            }
+            if (repair != null) {
+                t.separator()
+                val until = repair.deliveredAt?.takeIf { repair.warrantyDays > 0 }?.let { Time.addDays(Time.startOfDay(it), repair.warrantyDays.toInt()) }
+                if (until != null) {
+                    t.center("GARANTÍA: ${repair.warrantyDays} DÍAS", Style.Bold)
+                    t.center("Válida hasta el ${Time.date(until)}")
+                    t.center("Cubre la reparación realizada. No cubre golpes, humedad ni equipos abiertos por terceros.")
+                } else {
+                    t.center("Equipo entregado sin reparar: sin garantía.")
+                }
+                t.qr(com.vitrinapos.data.repairCode(repair.number))
+                t.blank(); t.blank()
+                t.center("______________________________".take(t.width - 4))
+                t.center("Recibí conforme")
             }
             footer(t, s)
             return t

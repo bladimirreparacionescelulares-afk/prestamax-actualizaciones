@@ -85,6 +85,10 @@ class Screenshots {
         shoot(graph, File(outDir, "27-orden.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(repId)) }
         shoot(graph, File(outDir, "28-windows-taller.png"), 1366, 800, 1f) { it.selectTab(Screen.Taller) }
         shoot(graph, File(outDir, "29-inicio-taller.png"), 412, 900, 2f) { it.selectTab(Screen.Home) }
+        shoot(graph, File(outDir, "30-entregar.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(readyId)); it.open(Screen.RepairDeliver(readyId)) }
+        shoot(graph, File(outDir, "31-entregado-garantia.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(doneId)) }
+        shoot(graph, File(outDir, "32-estados.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.RepairStatuses) }
+        shoot(graph, File(outDir, "33-listos.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(readyId)) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
 
         // ---- Trabajo en red y usuarios ----
@@ -169,10 +173,26 @@ class Screenshots {
         val ready = repo.saveRepair(base.copy(clientName = "José Rodríguez", clientPhone = "829-555-0177", deviceType = com.vitrinapos.data.DeviceTypes.LAPTOP,
             brand = "HP", model = "Pavilion 15", serial = "5CD1234XYZ", problem = "Muy lenta, limpieza y cambio a SSD", estimate = 450000, deposit = 200000, estimatedAt = Time.now()))
         repo.setRepairStatus(ready, com.vitrinapos.data.RepairStatus.READY)
+        // Uno entregado con garantía y otro listo desde hace 4 meses (abandonado).
+        val done = repo.saveRepair(base.copy(clientName = "Carlos Méndez", clientPhone = "809-555-0144", brand = "Xiaomi", model = "Redmi Note 12",
+            problem = "Cambio de batería", estimate = 150000, deposit = 50000, estimatedAt = Time.now() - day))
+        repo.setRepairStatus(done, com.vitrinapos.data.RepairStatus.READY)
+        repo.deliverRepair(done, listOf(com.vitrinapos.data.CartLine(null, "Cambio de batería", "REP-0004", 1.0, 150000, 0, true, null, false)), true, PaymentMethods.CASH, 100000)
+        val old = repo.saveRepair(base.copy(clientName = "Pedro Almonte", clientPhone = "829-555-0190", brand = "Motorola", model = "Moto G32",
+            problem = "No enciende", estimate = 120000))
+        repo.setRepairStatus(old, com.vitrinapos.data.RepairStatus.READY)
+        repo.driver.execute(null, "UPDATE repairOrder SET updatedAt = ?, createdAt = ? WHERE id = ?", 3) {
+            bindLong(0, Time.now() - 120 * day); bindLong(1, Time.now() - 130 * day); bindLong(2, old)
+        }
+        repo.driver.notifyListeners("repairOrder")
         repo.saveRepair(base.copy(clientName = "Ana Castillo", clientPhone = "849-555-0123", deviceType = com.vitrinapos.data.DeviceTypes.TABLET, brand = "Lenovo",
             model = "Tab M10", problem = "Batería se descarga rápido", estimatedAt = Time.now() + day))
+        doneId = done
+        readyId = ready
         return id
     }
+    private var doneId = 0L
+    private var readyId = 0L
 
     private suspend fun seed(repo: Repository) {
         SampleData.load(repo)

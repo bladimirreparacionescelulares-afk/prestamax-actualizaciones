@@ -53,6 +53,11 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
 - Al recibir se imprime la **etiqueta del equipo** (QR con el número REP, dueño, contacto, equipo, IMEI) en la etiquetadora, o se crea un PDF si no hay una; y el **comprobante** para el cliente en la impresora de tickets, con QR.
 - Escanear la etiqueta (desde Taller, Vender o el escáner continuo) o escribir REP-0001 abre la orden.
 - Cada cambio de estado queda en el historial con fecha y usuario.
+- **Entregar y cobrar**: mano de obra (o el diagnóstico si no se reparó), repuestos del inventario que se descuentan del stock, y el abono ya pagado se resta. Se cobra el saldo en efectivo, tarjeta o transferencia y se imprime el comprobante de entrega con la garantía.
+- **Garantía**: la ficha del equipo entregado dice hasta qué fecha está vigente; con "Recibir por garantía" se abre una orden nueva con los mismos datos y sin costo.
+- **WhatsApp**: botón en la ficha con mensajes listos (recibido, presupuesto, esperando repuesto, listo, no reparado, recordatorio, gracias), que se pueden cambiar antes de enviar. Queda anotado en el historial.
+- **Abandonados**: los equipos listos que pasan de los días configurados (90) se marcan en rojo y salen avisados en la lista del taller.
+- **Estados editables** (Configuración → Taller → Estados del taller): renombrar, ordenar, agregar y quitar. Recibido, Listo, Entregado y No reparado son fijos (solo se renombran). No se puede quitar un estado que tenga órdenes.
 - En Configuración → Taller: costo de diagnóstico, días de garantía, días para considerar un equipo abandonado y condiciones del comprobante.
 
 ### Escáner continuo
