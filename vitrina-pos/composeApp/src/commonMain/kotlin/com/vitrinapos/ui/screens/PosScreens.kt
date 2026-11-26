@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vitrinapos.AppState
 import com.vitrinapos.LocalAppState
+import com.vitrinapos.data.fullName
 import com.vitrinapos.Screen
 import com.vitrinapos.data.CartLine
 import com.vitrinapos.data.Money
@@ -105,9 +106,15 @@ import kotlin.math.ceil
 fun AppState.addByCode(code: String, products: List<Product>): Boolean {
     val c = code.trim()
     if (c.isEmpty()) return false
-    val p = products.firstOrNull { it.code.equals(c, ignoreCase = true) } ?: return false
-    addToCart(p)
-    toast("Agregado: ${p.name}")
+    val p = products.firstOrNull { it.code.equals(c, ignoreCase = true) }
+    if (p == null) {
+        // ¿Es el IMEI de un equipo en existencia?
+        val u = repo.availableUnits.value.firstOrNull { it.serial.equals(c, ignoreCase = true) } ?: return false
+        val owner = products.firstOrNull { it.id == u.productId } ?: return false
+        if (addUnit(owner, u.serial)) toast("Agregado: ${owner.fullName} · IMEI ${u.serial}")
+        return true
+    }
+    if (addToCart(p)) toast("Agregado: ${p.fullName}")
     return true
 }
 
@@ -127,7 +134,11 @@ fun PosScreen(wide: Boolean) {
             if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) app.open(Screen.ProductForm(presetCode = code))
         }
     }
-    val list = products.filter { (category == null || it.categoryId == category) && it.matches(query) }
+    val matching = products.filter { (category == null || it.categoryId == category) && it.matches(query) }
+    // Las variantes de un mismo producto salen en una sola tarjeta (al buscar, cada una por separado).
+    val list = if (query.isNotBlank()) matching else matching.filter { p ->
+        p.variantGroup.isBlank() || matching.first { it.variantGroup == p.variantGroup } == p
+    }
 
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -169,7 +180,9 @@ fun PosScreen(wide: Boolean) {
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(list, key = { it.id }) { p ->
-                            ProductTile(
+                            val group = if (query.isBlank() && p.variantGroup.isNotBlank()) products.filter { it.variantGroup == p.variantGroup } else emptyList()
+                            if (group.size > 1) VariantTile(p, group, group.sumOf { app.qtyInCart(it.id) }) { app.variantPicker = p.variantGroup }
+                            else ProductTile(
                                 p, app.qtyInCart(p.id), onAdd = { app.addToCart(p) },
                                 onEdit = { if (app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) app.open(Screen.ProductForm(p.id)) },
                                 onRemove = { app.removeOne(p.id) },
@@ -223,7 +236,7 @@ fun ProductTile(p: Product, inCart: Double, onAdd: () -> Unit, onEdit: () -> Uni
                 StockPill(p, Modifier.align(Alignment.TopStart).padding(6.dp))
                 if (inCart > 0) CountBadge(inCart.fmtQty())
             }
-            Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp, modifier = Modifier.height(34.dp))
+            Text(p.fullName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp, modifier = Modifier.height(34.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(Money.format(p.price, app.settings.currencySymbol), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
@@ -323,6 +336,29 @@ private fun CartPanel(app: AppState) {
     }
 }
 
+/** Tarjeta de un producto con variantes (color, capacidad…): al tocarla se elige cuál. */
+@Composable
+fun VariantTile(p: Product, group: List<Product>, inCart: Double, onClick: () -> Unit) {
+    val app = LocalAppState.current
+    val sym = app.settings.currencySymbol
+    Surface(
+        onClick = onClick, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(if (inCart > 0) 2.dp else 1.dp, if (inCart > 0) AppTheme.extra.cta else AppTheme.extra.line),
+    ) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box {
+                ProductImage(p.imagePath, p.name, Modifier.fillMaxWidth().aspectRatio(1.15f), RoundedCornerShape(13.dp), textSize = 28)
+                com.vitrinapos.ui.components.Pill("${group.size} opciones", Color.White, MaterialTheme.colorScheme.primary, Modifier.align(Alignment.TopStart).padding(6.dp))
+                if (inCart > 0) CountBadge(inCart.fmtQty())
+            }
+            Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 17.sp, modifier = Modifier.height(34.dp))
+            val min = group.minOf { it.price }; val max = group.maxOf { it.price }
+            Text(if (min == max) Money.format(min, sym) else "Desde " + Money.format(min, sym), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
+            Text(group.joinToString(" · ") { it.variantName.ifBlank { "Base" } }, fontSize = 11.sp, color = AppTheme.extra.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 fun CartLineRow(app: AppState, index: Int, line: CartLine, compact: Boolean = false) {
     var edit by remember { mutableStateOf(false) }
@@ -336,6 +372,7 @@ fun CartLineRow(app: AppState, index: Int, line: CartLine, compact: Boolean = fa
                 "${Money.format(line.price, s.currencySymbol)} · ${Money.format(line.amount, s.currencySymbol)}",
                 fontSize = 12.sp, color = AppTheme.extra.muted,
             )
+            if (line.serials.isNotEmpty()) Text("IMEI " + line.serials.joinToString(", "), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, maxLines = 3)
         }
         QtyStepper(line.qty, { app.setLineQty(index, it) })
     }

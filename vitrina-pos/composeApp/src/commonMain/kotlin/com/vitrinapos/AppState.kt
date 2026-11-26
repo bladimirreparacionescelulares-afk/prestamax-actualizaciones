@@ -45,7 +45,16 @@ sealed interface Screen {
     data class RepairDetail(val id: Long) : Screen
 
     // Pantallas secundarias
-    data class ProductForm(val id: Long? = null, val presetCode: String? = null, val key: Long = 0) : Screen
+    data class ProductForm(val id: Long? = null, val presetCode: String? = null, val key: Long = 0, val copyOf: Long? = null) : Screen
+    data object Inventory : Screen
+    data object Purchases : Screen
+    data class PurchaseDetail(val id: Long) : Screen
+    data object StockCount : Screen
+    data class StockCountDetail(val id: Long) : Screen
+    data class Kardex(val productId: Long) : Screen
+    data object ImeiSearch : Screen
+    data class ProductUnits(val productId: Long) : Screen
+    data class SaleReturn(val saleId: Long) : Screen
     data object Checkout : Screen
     data class SaleDetail(val id: Long) : Screen
     data object SalesHistory : Screen
@@ -164,8 +173,28 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
     private fun stockMessage(name: String, limit: Double) =
         if (limit <= 0) "$name: no hay existencias" else "$name: solo hay ${limit.fmtQty()}"
 
+    /** Producto con IMEI al que hay que elegirle la unidad (abre el selector). */
+    var unitPicker by mutableStateOf<Long?>(null)
+
+    /** Grupo de variantes que se está eligiendo (abre el selector). */
+    var variantPicker by mutableStateOf<String?>(null)
+
+    /** Agrega una unidad con su IMEI. Devuelve false si no se pudo. */
+    fun addUnit(p: Product, serial: String): Boolean {
+        val sn = serial.trim().uppercase()
+        if (cart.any { sn in it.serials }) { toast("El IMEI $sn ya está en la venta"); return false }
+        val u = repo.availableUnits.value.firstOrNull { it.serial == sn }
+        if (u == null || u.productId != p.id) { toast("El IMEI $sn no está en existencia"); return false }
+        val i = cart.indexOfFirst { it.productId == p.id && it.price == p.price }
+        if (i >= 0) cart[i] = cart[i].copy(qty = cart[i].qty + 1, serials = cart[i].serials + sn)
+        else cart.add(CartLine.of(p, 1.0, listOf(sn)))
+        return true
+    }
+
     /** Agrega al carrito sin pasar del stock. Devuelve false si no se pudo. */
     fun addToCart(p: Product, qty: Double = 1.0): Boolean {
+        // Con IMEI se elige la unidad exacta.
+        if (p.serialized == 1L) { unitPicker = p.id; return false }
         val limit = stockLimit(p.id)
         if (limit != null && qtyInCart(p.id) + qty > limit + 1e-9) { toast(stockMessage(p.name, limit)); return false }
         val i = cart.indexOfFirst { it.productId == p.id && it.price == p.price }
@@ -178,6 +207,13 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         if (index !in cart.indices) return
         if (qty <= 0) { cart.removeAt(index); return }
         val line = cart[index]
+        if (line.serials.isNotEmpty()) {
+            // Con IMEI: subir abre el selector; bajar quita los últimos IMEI elegidos.
+            if (qty > line.qty) { unitPicker = line.productId; return }
+            val keep = qty.toInt().coerceAtLeast(1)
+            cart[index] = line.copy(qty = keep.toDouble(), serials = line.serials.take(keep))
+            return
+        }
         val limit = stockLimit(line.productId)
         val others = cart.filterIndexed { i, l -> i != index && l.productId == line.productId && line.productId != null }.sumOf { it.qty }
         if (limit != null && others + qty > limit + 1e-9) {
@@ -200,7 +236,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         val i = cart.indexOfLast { it.productId == productId }
         if (i < 0) return
         val l = cart[i]
-        if (l.qty > 1) cart[i] = l.copy(qty = l.qty - 1) else cart.removeAt(i)
+        if (l.qty > 1) cart[i] = l.copy(qty = l.qty - 1, serials = l.serials.dropLast(1)) else cart.removeAt(i)
     }
 
     fun clearCart() {
@@ -290,7 +326,11 @@ fun requiredPermission(screen: Screen): List<com.vitrinapos.data.Permission> {
     return when (screen) {
         Screen.Pos, Screen.Checkout, is Screen.Scanner -> listOf(Permission.SELL)
         is Screen.ProductForm, Screen.Categories -> listOf(Permission.CATALOG_EDIT)
-        is Screen.StockEntry, Screen.StockMoves -> listOf(Permission.ADJUST_STOCK)
+        Screen.StockMoves, Screen.StockCount, is Screen.StockCountDetail, is Screen.Kardex, is Screen.ProductUnits -> listOf(Permission.ADJUST_STOCK)
+        is Screen.StockEntry, Screen.Purchases, is Screen.PurchaseDetail -> listOf(Permission.PURCHASES)
+        Screen.Inventory -> listOf(Permission.ADJUST_STOCK, Permission.PURCHASES)
+        Screen.ImeiSearch -> listOf(Permission.ADJUST_STOCK, Permission.SALES_HISTORY)
+        is Screen.SaleReturn -> listOf(Permission.RETURNS)
         Screen.Clients, is Screen.ClientForm, is Screen.ClientDetail -> listOf(Permission.CLIENTS)
         Screen.Suppliers, is Screen.SupplierForm -> listOf(Permission.SUPPLIERS)
         Screen.Quotes, is Screen.QuoteEditor -> listOf(Permission.QUOTES)

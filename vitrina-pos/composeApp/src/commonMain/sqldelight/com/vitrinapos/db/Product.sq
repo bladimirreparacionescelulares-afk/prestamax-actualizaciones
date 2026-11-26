@@ -16,7 +16,10 @@ CREATE TABLE product (
   active INTEGER NOT NULL DEFAULT 1,
   createdAt INTEGER NOT NULL,
   updatedAt INTEGER NOT NULL,
-  isService INTEGER NOT NULL DEFAULT 0
+  isService INTEGER NOT NULL DEFAULT 0,
+  serialized INTEGER NOT NULL DEFAULT 0,
+  variantGroup TEXT NOT NULL DEFAULT '',
+  variantName TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX product_code ON product(code);
@@ -58,3 +61,12 @@ SELECT last_insert_rowid();
 
 setService:
 UPDATE product SET isService = ? WHERE id = ?;
+
+setExtras:
+UPDATE product SET serialized = ?, variantGroup = ?, variantName = ? WHERE id = ?;
+
+joinGroup:
+UPDATE product SET variantGroup = ? WHERE id = ? AND variantGroup = '';
+
+setCostOnly:
+UPDATE product SET cost = ? WHERE id = ?;

@@ -222,7 +222,8 @@ class Fiscal(private val repo: Repository) {
     }
 
     /** Nota de crédito E34 que anula una venta ya facturada. */
-    fun issueCreditNote(sale: Sale, items: List<SaleItem>, original: EcfDoc, reason: String, now: Long): EcfIssued {
+    /** Nota de crédito E34. [code] 1 = anula la venta completa; 3 = corrige montos (devolución parcial). */
+    fun issueCreditNote(sale: Sale, items: List<SaleItem>, original: EcfDoc, reason: String, now: Long, discount: Long = sale.discount, code: Int = 1): EcfIssued {
         val s = settings
         val (encf, _) = takeNumber(EcfType.NOTA_CREDITO, now)
         val lines = items.map { item ->
@@ -231,8 +232,8 @@ class Fiscal(private val repo: Repository) {
         }
         val draft = EcfDraft(
             type = EcfType.NOTA_CREDITO, encf = encf, emitter = emitter(s), buyer = EcfBuyer(original.buyerRnc, original.buyerName),
-            lines = Ecf.spreadDiscount(lines, sale.discount), pricesIncludeTax = sale.taxIncluded == 1L, taxRate = s.taxRate,
-            issuedAt = now, reference = EcfReference(original.encf, original.signedAt, 1, reason.ifBlank { "Anulación de la venta" }),
+            lines = Ecf.spreadDiscount(lines, discount), pricesIncludeTax = sale.taxIncluded == 1L, taxRate = s.taxRate,
+            issuedAt = now, reference = EcfReference(original.encf, original.signedAt, code, reason.ifBlank { if (code == 1) "Anulación de la venta" else "Devolución" }),
         )
         return issue(draft, now)
     }

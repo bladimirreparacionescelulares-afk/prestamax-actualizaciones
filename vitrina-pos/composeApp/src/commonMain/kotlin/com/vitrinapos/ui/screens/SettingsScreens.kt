@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.Lan
@@ -124,8 +125,7 @@ fun MoreScreen() {
         add(MoreItem(Icons.Rounded.PointOfSale, "Caja", if (cash != null) "Abierta" else "Apertura y cierre", Screen.Cash))
         add(MoreItem(Icons.Rounded.QrCode2, "Etiquetas", "QR y precio para tus productos", Screen.Labels))
         add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
-        add(MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()))
-        add(MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves))
+        add(MoreItem(Icons.Rounded.Inventory2, "Inventario", "Compras, conteo, mermas, IMEI y kardex", Screen.Inventory))
         val fiscalScreen = if (app.allows(Screen.Fiscal)) Screen.Fiscal else Screen.FiscalDocs
         if (fiscalScreen == Screen.Fiscal || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", fiscalScreen))
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))

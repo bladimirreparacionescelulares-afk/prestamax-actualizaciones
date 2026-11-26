@@ -57,14 +57,57 @@ data class CartLine(
     val imagePath: String?,
     val trackStock: Boolean,
     val service: Boolean = false,
+    /** IMEI o números de serie de las unidades vendidas (productos con IMEI). */
+    val serials: List<String> = emptyList(),
 ) {
     val amount: Long get() = LineInput(qty, price, taxable).amount
 
     companion object {
-        fun of(p: Product, qty: Double = 1.0) = CartLine(
-            productId = p.id, name = p.name, code = p.code, qty = qty, price = p.price, cost = p.cost,
+        fun of(p: Product, qty: Double = 1.0, serials: List<String> = emptyList()) = CartLine(
+            productId = p.id, name = p.fullName, code = p.code, qty = qty, price = p.price, cost = p.cost,
             taxable = p.taxable == 1L, imagePath = p.imagePath, trackStock = p.trackStock == 1L, service = p.isService == 1L,
+            serials = serials,
         )
+    }
+}
+
+/** Nombre con la variante: "iPhone 13 · Azul 128 GB". */
+val Product.fullName: String get() = if (variantName.isBlank()) name else "$name · $variantName"
+val Product.isSerialized: Boolean get() = serialized == 1L
+
+@Serializable
+data class PurchaseLine(val productId: Long, val qty: Double, val unitCost: Long, val serials: List<String> = emptyList())
+
+@Serializable
+data class CountLine(val productId: Long, val counted: Double, val expected: Double)
+
+@Serializable
+data class ReturnLine(val saleItemId: Long, val qty: Double, val restock: Boolean = true, val serials: List<String> = emptyList())
+
+/** Estados de una unidad con IMEI. */
+object UnitStatus {
+    const val AVAILABLE = "DISPONIBLE"
+    const val SOLD = "VENDIDO"
+    const val LOST = "MERMA"
+    const val RETURNED = "DEVUELTO_PROVEEDOR"
+    fun label(s: String) = when (s) { AVAILABLE -> "En existencia"; SOLD -> "Vendido"; LOST -> "Merma"; RETURNED -> "Devuelto al proveedor"; else -> s }
+}
+
+/** Motivos de merma. */
+object LossReason {
+    val all = listOf("Dañado", "Vencido", "Robo o pérdida", "Uso interno", "Regalo o muestra", "Garantía del proveedor")
+}
+
+/** Comprobantes fiscales de compra: NCF (B01, B11…) o e-NCF (E31…). Devuelve null si es válido, o el problema. */
+fun ncfProblem(ncf: String): String? {
+    val t = ncf.trim().uppercase()
+    if (t.isEmpty()) return null
+    return when {
+        Regex("B(01|02|03|04|11|12|13|14|15|16|17)\\d{8}").matches(t) -> null
+        Regex("E(31|32|33|34|41|43|44|45|46|47)\\d{10}").matches(t) -> null
+        t.startsWith("B") -> "Un NCF tiene 11 caracteres: B01 y 8 números"
+        t.startsWith("E") -> "Un e-NCF tiene 13 caracteres: E31 y 10 números"
+        else -> "El NCF empieza por B o E (por ejemplo B0100000123)"
     }
 }
 
@@ -86,6 +129,11 @@ data class ProductDraft(
     val description: String,
     /** Servicio (mano de obra, instalación…): no lleva existencias y en el e-CF va como servicio. */
     val isService: Boolean = false,
+    /** Cada unidad lleva su IMEI o número de serie. */
+    val serialized: Boolean = false,
+    /** Productos que son variantes del mismo (color, capacidad…) comparten el grupo. */
+    val variantGroup: String = "",
+    val variantName: String = "",
 )
 
 @Serializable
@@ -120,8 +168,15 @@ object MoveType {
     const val ADJUST = "AJUSTE"
     const val VOID = "ANULACION"
     const val INITIAL = "INICIAL"
+    const val PURCHASE = "COMPRA"
+    const val PURCHASE_VOID = "COMPRA_ANULADA"
+    const val LOSS = "MERMA"
+    const val COUNT = "CONTEO"
+    const val RETURN = "DEVOLUCION"
     fun label(t: String) = when (t) {
-        SALE -> "Venta"; ENTRY -> "Entrada"; ADJUST -> "Ajuste"; VOID -> "Anulación"; INITIAL -> "Stock inicial"; else -> t
+        SALE -> "Venta"; ENTRY -> "Entrada"; ADJUST -> "Ajuste"; VOID -> "Anulación"; INITIAL -> "Stock inicial"
+        PURCHASE -> "Compra"; PURCHASE_VOID -> "Compra anulada"; LOSS -> "Merma"; COUNT -> "Conteo físico"; RETURN -> "Devolución"
+        else -> t
     }
 }
 
@@ -181,7 +236,8 @@ class Repository(val platform: Platform) {
 
     fun metaGet(key: String): String? = db.syncQueries.metaAll().executeAsList().firstOrNull { it.key == key }?.content
 
-    fun metaPut(key: String, value: String) = db.syncQueries.metaPut(key, value)
+    /** Toda escritura va con el candado: en WAL, dos conexiones escribiendo a la vez dan "database is locked". */
+    fun metaPut(key: String, value: String) = synchronized(writeLock) { db.syncQueries.metaPut(key, value) }
 
     val deviceId: String = metaGet("deviceId") ?: UUID.randomUUID().toString().also { metaPut("deviceId", it) }
 
@@ -285,7 +341,8 @@ class Repository(val platform: Platform) {
                     is Op.DeleteCategory -> { db.categoryQueries.clearFromProducts(op.id); db.categoryQueries.delete(op.id); JsonNull }
                     is Op.SaveProduct -> {
                         // Todo producto lleva código: si no lo escribieron, se le asigna uno para su etiqueta.
-                        val d = if (op.draft.code.isBlank()) op.draft.copy(code = newCode()) else op.draft
+                        var d = if (op.draft.code.isBlank()) op.draft.copy(code = newCode()) else op.draft
+                        if (d.serialized) d = d.copy(trackStock = true, isService = false)
                         if (d.price <= 0) throw RuleException("El precio de venta debe ser mayor que cero")
                         if (d.cost < 0) throw RuleException("El costo no puede ser negativo")
                         db.productQueries.selectByCode(d.code.trim()).executeAsList()
@@ -298,7 +355,8 @@ class Repository(val platform: Platform) {
                             )
                             val id = db.productQueries.lastId().executeAsOne()
                             db.productQueries.setService(if (d.isService) 1 else 0, id)
-                            if (d.initialStock != 0.0) db.stockMoveQueries.insert(id, MoveType.INITIAL, d.initialStock, "", now, op.user)
+                            saveExtras(d, id)
+                            if (d.initialStock != 0.0) logMove(id, MoveType.INITIAL, d.initialStock, "", now, op.user)
                             JsonPrimitive(id)
                         } else {
                             db.productQueries.update(
@@ -306,6 +364,7 @@ class Repository(val platform: Platform) {
                                 d.unit.ifBlank { "und" }, if (d.taxable) 1 else 0, if (d.trackStock) 1 else 0, d.imagePath, d.description.trim(), now, d.id,
                             )
                             db.productQueries.setService(if (d.isService) 1 else 0, d.id)
+                            saveExtras(d, d.id)
                             JsonPrimitive(d.id)
                         }
                     }
@@ -330,9 +389,10 @@ class Repository(val platform: Platform) {
                         if (op.newStock < 0) throw RuleException("El stock no puede quedar en negativo")
                         if (op.note.isBlank()) throw RuleException("Escribe el motivo del ajuste")
                         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull()
+                        if (p?.serialized == 1L) throw RuleException("Este producto se controla por IMEI: registra los IMEI o usa una merma")
                         if (p != null && op.newStock != p.stock) {
                             db.productQueries.setStock(op.newStock, now, op.productId)
-                            db.stockMoveQueries.insert(op.productId, MoveType.ADJUST, op.newStock - p.stock, op.note, now, op.user)
+                            logMove(op.productId, MoveType.ADJUST, op.newStock - p.stock, op.note, now, op.user)
                         }
                         JsonNull
                     }
@@ -341,9 +401,11 @@ class Repository(val platform: Platform) {
                         if (op.lines.any { it.qty < 0 }) throw RuleException("Las cantidades de una entrada deben ser positivas. Para sacar mercancía usa un ajuste con su motivo.")
                         for (l in op.lines) {
                             if (l.qty == 0.0) continue
+                            if (db.productQueries.selectById(l.productId).executeAsOneOrNull()?.serialized == 1L)
+                                throw RuleException("Los productos con IMEI entran con una compra")
                             db.productQueries.addStock(l.qty, now, l.productId)
                             if (l.newCost != null) db.productQueries.setCost(l.newCost, now, l.productId)
-                            db.stockMoveQueries.insert(l.productId, MoveType.ENTRY, l.qty, text, now, op.user)
+                            logMove(l.productId, MoveType.ENTRY, l.qty, text, now, op.user)
                         }
                         JsonNull
                     }
@@ -369,6 +431,8 @@ class Repository(val platform: Platform) {
                     is Op.VoidSale -> {
                         val sale = db.saleQueries.selectById(op.saleId).executeAsOneOrNull()
                         if (sale != null && sale.status != SaleStatus.VOID) {
+                            if (db.inventoryQueries.returnsBySale(op.saleId).executeAsList().isNotEmpty())
+                                throw RuleException("Esta venta ya tiene devoluciones. Devuelve lo que falta desde Devolución.")
                             // Una venta con e-CF solo se anula con una nota de crédito E34 firmada.
                             val docs = db.fiscalQueries.docBySale(op.saleId).executeAsList()
                             val original = docs.firstOrNull { it.type != 34L }
@@ -381,12 +445,14 @@ class Repository(val platform: Platform) {
                             if (session != null && sale.paymentMethod == PaymentMethods.CASH && sale.createdAt < session.openedAt && sale.total > 0)
                                 db.cashSessionQueries.insertMove(session.id, CashMoveType.REFUND, sale.total, "Anulación ${sale.number.let { "venta #$it" }}", op.user, now)
                             db.saleQueries.setStatus(SaleStatus.VOID, op.saleId)
+                            for (u in db.inventoryQueries.unitsBySale(op.saleId).executeAsList())
+                                db.inventoryQueries.setUnitStatus(UnitStatus.AVAILABLE, null, "Anulación venta #${sale.number}", now, u.id)
                             for (item in db.saleQueries.itemsBySale(op.saleId).executeAsList()) {
                                 val pid = item.productId ?: continue
                                 val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: continue
                                 if (p.trackStock == 1L) {
                                     db.productQueries.addStock(item.qty, now, pid)
-                                    db.stockMoveQueries.insert(pid, MoveType.VOID, item.qty, "Anulación venta #${sale.number}", now, op.user)
+                                    logMove(pid, MoveType.VOID, item.qty, "Anulación venta #${sale.number}", now, op.user)
                                 }
                             }
                         }
@@ -469,6 +535,12 @@ class Repository(val platform: Platform) {
                         db.fiscalQueries.deleteSequence(op.id)
                         JsonNull
                     }
+                    is Op.SavePurchase -> JsonPrimitive(savePurchaseLocal(op, now))
+                    is Op.VoidPurchase -> { voidPurchaseLocal(op, now); JsonNull }
+                    is Op.StockLoss -> { stockLossLocal(op, now); JsonNull }
+                    is Op.ApplyCount -> JsonPrimitive(applyCountLocal(op, now))
+                    is Op.ReturnSale -> JsonPrimitive(returnSaleLocal(op, now))
+                    is Op.AddUnits -> { addUnitsLocal(op, now); JsonNull }
                     is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
@@ -485,6 +557,236 @@ class Repository(val platform: Platform) {
         }
         changeSignal.value = db.syncQueries.maxSeq().executeAsOne()
         return result
+    }
+
+    /** Anota un movimiento en el kardex con el saldo y el costo después del cambio (dentro de una transacción). */
+    private fun logMove(productId: Long, type: String, qty: Double, note: String, at: Long, user: String, unitCost: Long? = null) {
+        val p = db.productQueries.selectById(productId).executeAsOneOrNull()
+        db.stockMoveQueries.insert(productId, type, qty, note, at, user, unitCost ?: p?.cost ?: 0, p?.stock ?: 0.0)
+    }
+
+    /** IMEI y variante del producto. Al crear una variante de otro producto, este entra al grupo. */
+    private fun saveExtras(d: ProductDraft, id: Long) {
+        db.productQueries.setExtras(if (d.serialized) 1 else 0, d.variantGroup.trim(), d.variantName.trim(), id)
+        val owner = d.variantGroup.removePrefix("g").toLongOrNull()
+        if (d.variantGroup.startsWith("g") && owner != null && owner != id) db.productQueries.joinGroup(d.variantGroup, owner)
+    }
+
+    private fun cleanSerials(list: List<String>): List<String> = list.map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+
+    /** Compra (dentro de una transacción). Devuelve su id. */
+    private fun savePurchaseLocal(op: Op.SavePurchase, now: Long): Long {
+        val lines = op.lines.filter { it.qty != 0.0 }
+        if (lines.isEmpty()) throw RuleException("La compra no tiene productos")
+        lines.forEach {
+            if (it.qty < 0) throw RuleException("Las cantidades de una compra deben ser positivas")
+            if (it.unitCost < 0) throw RuleException("El costo no puede ser negativo")
+        }
+        if (op.tax < 0) throw RuleException("El ITBIS no puede ser negativo")
+        val ncf = op.ncf.trim().uppercase()
+        ncfProblem(ncf)?.let { throw RuleException(it) }
+        val rnc = op.supplierRnc.filter(Char::isDigit)
+        if (ncf.isNotEmpty() && db.inventoryQueries.purchaseByNcf(ncf, rnc).executeAsOneOrNull() != null)
+            throw RuleException("Ya registraste una compra con el NCF $ncf de este proveedor")
+        val seen = HashSet<String>()
+        val products = lines.associate { l ->
+            val p = db.productQueries.selectById(l.productId).executeAsOneOrNull() ?: throw RuleException("Un producto de la compra ya no existe")
+            if (p.serialized == 1L) {
+                val sn = cleanSerials(l.serials)
+                if (sn.size.toDouble() != l.qty) throw RuleException("${p.fullName}: escribe o escanea un IMEI por cada unidad (${l.qty.fmtQty()})")
+                sn.forEach { if (!seen.add(it) || db.inventoryQueries.availableUnit(it).executeAsOneOrNull() != null) throw RuleException("El IMEI $it ya está en existencia") }
+            }
+            l.productId to p
+        }
+        val subtotal = lines.sumOf { (it.qty * it.unitCost).roundToLong() }
+        val number = db.inventoryQueries.nextPurchaseNumber().executeAsOne()
+        db.inventoryQueries.insertPurchase(
+            number, op.supplierId, op.supplierName.trim(), rnc, ncf, op.docDate, subtotal, op.tax, subtotal + op.tax,
+            op.paymentMethod, op.note.trim(), op.user, now,
+        )
+        val id = db.inventoryQueries.lastId().executeAsOne()
+        val text = listOf("Compra #$number", op.supplierName.trim(), ncf).filter { it.isNotBlank() }.joinToString(" · ")
+        for (l in lines) {
+            val p = db.productQueries.selectById(l.productId).executeAsOne()
+            val sn = if (products.getValue(l.productId).serialized == 1L) cleanSerials(l.serials) else emptyList()
+            db.inventoryQueries.insertPurchaseItem(id, p.id, p.fullName, l.qty, l.unitCost, sn.joinToString(","))
+            // Costo promedio ponderado: lo que había a su costo más lo que entra a su costo.
+            val old = p.stock.coerceAtLeast(0.0)
+            val avg = if (old + l.qty > 0) ((old * p.cost + l.qty * l.unitCost) / (old + l.qty)).roundToLong() else l.unitCost
+            db.productQueries.setCost(avg, now, p.id)
+            if (p.trackStock == 1L) {
+                db.productQueries.addStock(l.qty, now, p.id)
+                logMove(p.id, MoveType.PURCHASE, l.qty, text, now, op.user, l.unitCost)
+            }
+            sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, l.unitCost, id, "", now, now) }
+        }
+        return id
+    }
+
+    private fun voidPurchaseLocal(op: Op.VoidPurchase, now: Long) {
+        val pu = db.inventoryQueries.purchaseById(op.id).executeAsOneOrNull() ?: throw RuleException("La compra no existe")
+        if (pu.status != SaleStatus.OK) return
+        if (op.reason.isBlank()) throw RuleException("Escribe el motivo")
+        val items = db.inventoryQueries.purchaseItems(op.id).executeAsList()
+        // Primero se revisa que todo siga en existencia.
+        for (it in items) {
+            val p = db.productQueries.selectById(it.productId).executeAsOneOrNull() ?: continue
+            if (p.trackStock == 1L && p.stock + 1e-9 < it.qty) throw RuleException("No se puede anular: de ${p.fullName} solo quedan ${p.stock.fmtQty()}")
+            it.serials.split(',').filter { s -> s.isNotBlank() }.forEach { sn ->
+                if (db.inventoryQueries.availableUnit(sn).executeAsOneOrNull() == null) throw RuleException("No se puede anular: el IMEI $sn ya no está en existencia")
+            }
+        }
+        for (it in items) {
+            val p = db.productQueries.selectById(it.productId).executeAsOneOrNull() ?: continue
+            val left = p.stock - it.qty
+            if (left > 0) db.productQueries.setCost(((p.stock * p.cost - it.qty * it.unitCost) / left).roundToLong().coerceAtLeast(0), now, p.id)
+            if (p.trackStock == 1L) {
+                db.productQueries.addStock(-it.qty, now, p.id)
+                logMove(p.id, MoveType.PURCHASE_VOID, -it.qty, "Compra #${pu.number} anulada · ${op.reason.trim()}", now, op.user, it.unitCost)
+            }
+            it.serials.split(',').filter { s -> s.isNotBlank() }.forEach { sn ->
+                db.inventoryQueries.availableUnit(sn).executeAsOneOrNull()?.let { u ->
+                    db.inventoryQueries.setUnitStatus(UnitStatus.RETURNED, null, "Compra #${pu.number} anulada", now, u.id)
+                }
+            }
+        }
+        db.inventoryQueries.setPurchaseStatus(SaleStatus.VOID, op.id)
+    }
+
+    private fun stockLossLocal(op: Op.StockLoss, now: Long) {
+        if (op.qty <= 0) throw RuleException("La cantidad debe ser mayor que cero")
+        if (op.reason.isBlank()) throw RuleException("Elige el motivo de la merma")
+        val p = db.productQueries.selectById(op.productId).executeAsOneOrNull() ?: throw RuleException("El producto no existe")
+        if (p.trackStock != 1L) throw RuleException("Este producto no lleva existencias")
+        if (op.qty > p.stock + 1e-9) throw RuleException("De ${p.fullName} solo hay ${p.stock.fmtQty()}")
+        val text = listOf(op.reason.trim(), op.note.trim()).filter { it.isNotBlank() }.joinToString(" · ")
+        if (p.serialized == 1L) {
+            val sn = cleanSerials(op.serials)
+            if (sn.size.toDouble() != op.qty) throw RuleException("Elige el IMEI de cada unidad")
+            sn.forEach { s ->
+                val u = db.inventoryQueries.availableUnit(s).executeAsOneOrNull()
+                if (u == null || u.productId != p.id) throw RuleException("El IMEI $s no está en existencia")
+                db.inventoryQueries.setUnitStatus(UnitStatus.LOST, null, text, now, u.id)
+            }
+        }
+        db.productQueries.addStock(-op.qty, now, p.id)
+        logMove(p.id, MoveType.LOSS, -op.qty, text, now, op.user)
+    }
+
+    /** Conteo físico. Devuelve el id del conteo. */
+    private fun applyCountLocal(op: Op.ApplyCount, now: Long): Long {
+        if (op.lines.isEmpty()) throw RuleException("No contaste ningún producto")
+        data class Row(val p: Product, val line: CountLine, val real: Double)
+        val rows = op.lines.mapNotNull { l ->
+            if (l.counted < 0) throw RuleException("Las cantidades contadas no pueden ser negativas")
+            val p = db.productQueries.selectById(l.productId).executeAsOneOrNull() ?: return@mapNotNull null
+            if (p.trackStock != 1L || p.serialized == 1L) return@mapNotNull null
+            // Lo que se vendió o entró mientras se contaba se descuenta de lo contado.
+            Row(p, l, (l.counted + (p.stock - l.expected)).coerceAtLeast(0.0))
+        }
+        if (rows.isEmpty()) throw RuleException("Ninguno de los productos contados lleva existencias (los de IMEI se revisan en su ficha)")
+        val number = db.inventoryQueries.nextCountNumber().executeAsOne()
+        val diffQty = rows.sumOf { it.real - it.p.stock }
+        val diffValue = rows.sumOf { ((it.real - it.p.stock) * it.p.cost).roundToLong() }
+        db.inventoryQueries.insertCount(number, op.note.trim(), rows.size.toLong(), diffQty, diffValue, op.user, now)
+        val id = db.inventoryQueries.lastId().executeAsOne()
+        val text = listOf("Conteo #$number", op.note.trim()).filter { it.isNotBlank() }.joinToString(" · ")
+        for (r in rows) {
+            db.inventoryQueries.insertCountItem(id, r.p.id, r.p.fullName, r.line.expected, r.line.counted, r.p.cost)
+            val diff = r.real - r.p.stock
+            if (kotlin.math.abs(diff) > 1e-9) {
+                db.productQueries.setStock(r.real, now, r.p.id)
+                logMove(r.p.id, MoveType.COUNT, diff, text, now, op.user)
+            }
+        }
+        return id
+    }
+
+    /** Devolución de una venta (todo o parte). Devuelve el id de la devolución. */
+    private fun returnSaleLocal(op: Op.ReturnSale, now: Long): Long {
+        val sale = db.saleQueries.selectById(op.saleId).executeAsOneOrNull() ?: throw RuleException("La venta no existe")
+        if (sale.status == SaleStatus.VOID) throw RuleException("Esta venta está anulada")
+        if (op.reason.isBlank()) throw RuleException("Escribe el motivo de la devolución")
+        val lines = op.lines.filter { it.qty > 0 }
+        if (lines.isEmpty()) throw RuleException("Elige qué se devuelve")
+        val items = db.saleQueries.itemsBySale(op.saleId).executeAsList()
+        val prior = db.inventoryQueries.returnItemsBySale(op.saleId).executeAsList()
+        val gross = items.sumOf { LineInput(it.qty, it.price, it.taxable == 1L).amount }
+        val ratio = if (gross == 0L) 0.0 else sale.total.toDouble() / gross
+        data class R(val item: SaleItem, val line: ReturnLine, val serials: List<String>, val amount: Long)
+        val rows = lines.map { l ->
+            val item = items.firstOrNull { it.id == l.saleItemId } ?: throw RuleException("Ese artículo no es de esta venta")
+            val left = item.qty - prior.filter { it.saleItemId == item.id }.sumOf { it.qty }
+            if (l.qty > left + 1e-9) throw RuleException("${item.name}: solo quedan ${left.fmtQty()} por devolver")
+            val sold = item.serials.split(',').filter { it.isNotBlank() }
+            val sn = cleanSerials(l.serials)
+            if (sold.isNotEmpty()) {
+                val back = prior.filter { it.saleItemId == item.id }.flatMap { it.serials.split(',') }.toSet()
+                if (sn.size.toDouble() != l.qty) throw RuleException("${item.name}: elige el IMEI de cada unidad que se devuelve")
+                sn.forEach { if (it !in sold || it in back) throw RuleException("El IMEI $it no se puede devolver en esta venta") }
+            }
+            R(item, l, sn, (l.qty * item.price * ratio).roundToLong())
+        }
+        val already = db.inventoryQueries.returnsBySale(op.saleId).executeAsList().sumOf { it.total }
+        // Nota de crédito (E34) cuando la venta tiene comprobante electrónico.
+        val original = db.fiscalQueries.docBySale(op.saleId).executeAsList().firstOrNull { it.type != 34L }
+        var total = rows.sumOf { it.amount }
+        if (original != null) {
+            val retItems = rows.map { it.item.copy(qty = it.line.qty) }
+            val retGross = retItems.sumOf { LineInput(it.qty, it.price, it.taxable == 1L).amount }
+            val disc = if (gross == 0L) 0 else (sale.discount * retGross.toDouble() / gross).roundToLong()
+            val whole = rows.sumOf { it.line.qty } + prior.sumOf { it.qty } >= items.sumOf { it.qty } - 1e-9
+            val note = fiscal.issueCreditNote(sale, retItems, original, op.reason.trim(), now, discount = disc, code = if (whole && already == 0L) 1 else 3)
+            fiscal.store(note, op.saleId, deviceId, now)
+            total = note.total
+        }
+        total = total.coerceAtMost(sale.total - already).coerceAtLeast(0)
+        val tax = if (sale.total == 0L) 0 else (sale.tax * total.toDouble() / sale.total).roundToLong()
+        val cost = rows.sumOf { (it.line.qty * it.item.cost).roundToLong() }
+        // Reembolso en efectivo: sale de la caja abierta de este equipo.
+        if (op.refundMethod == PaymentMethods.CASH && total > 0) {
+            val session = db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull()
+                ?: throw RuleException("Para devolver en efectivo abre la caja de este equipo")
+            if (total > expectedCashSync(session)) throw RuleException("No hay suficiente efectivo en la caja para devolver")
+            db.cashSessionQueries.insertMove(session.id, CashMoveType.REFUND, total, "Devolución venta #${sale.number}", op.user, now)
+        }
+        db.inventoryQueries.insertReturn(op.saleId, total, tax, cost, op.refundMethod, op.reason.trim(), op.deviceId, op.user, now)
+        val id = db.inventoryQueries.lastId().executeAsOne()
+        for (r in rows) {
+            db.inventoryQueries.insertReturnItem(id, r.item.id, r.item.productId, r.item.name, r.line.qty, r.amount, if (r.line.restock) 1 else 0, r.serials.joinToString(","))
+            val pid = r.item.productId ?: continue
+            val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: continue
+            if (r.line.restock && p.trackStock == 1L) {
+                db.productQueries.addStock(r.line.qty, now, pid)
+                logMove(pid, MoveType.RETURN, r.line.qty, "Devolución venta #${sale.number} · ${op.reason.trim()}", now, op.user, r.item.cost)
+            }
+            r.serials.forEach { sn ->
+                db.inventoryQueries.unitBySerial(sn).executeAsList().firstOrNull { it.saleId == sale.id }?.let { u ->
+                    db.inventoryQueries.setUnitStatus(
+                        if (r.line.restock) UnitStatus.AVAILABLE else UnitStatus.LOST, null,
+                        "Devuelto de la venta #${sale.number}" + if (r.line.restock) "" else " (dañado)", now, u.id,
+                    )
+                }
+            }
+        }
+        return id
+    }
+
+    private fun addUnitsLocal(op: Op.AddUnits, now: Long) {
+        val p = db.productQueries.selectById(op.productId).executeAsOneOrNull() ?: throw RuleException("El producto no existe")
+        if (p.serialized != 1L) throw RuleException("Este producto no se controla por IMEI")
+        val sn = cleanSerials(op.serials)
+        if (sn.isEmpty()) throw RuleException("Escribe o escanea al menos un IMEI")
+        if (sn.toSet().size != sn.size) throw RuleException("Hay IMEI repetidos")
+        sn.forEach { if (db.inventoryQueries.availableUnit(it).executeAsOneOrNull() != null) throw RuleException("El IMEI $it ya está en existencia") }
+        // Primero se le pone IMEI a lo que ya está en existencia; lo que sobre entra como existencia nueva.
+        val untagged = (p.stock - db.inventoryQueries.countAvailable(p.id).executeAsOne()).coerceAtLeast(0.0).toInt()
+        sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, p.cost, null, "Registrado en existencia", now, now) }
+        val extra = sn.size - untagged
+        if (extra > 0) {
+            db.productQueries.addStock(extra.toDouble(), now, p.id)
+            logMove(p.id, MoveType.ENTRY, extra.toDouble(), "Alta por IMEI", now, op.user)
+        }
     }
 
     private fun newCode(): String = com.vitrinapos.labels.Codes.newInternalEan { db.productQueries.selectByCode(it).executeAsOneOrNull() != null }
@@ -540,6 +842,18 @@ class Repository(val platform: Platform) {
         }
         if (op.discount < 0) throw RuleException("El descuento no puede ser negativo")
         if (op.offline) return
+        // Productos con IMEI: una unidad disponible por cada una que se vende, sin repetir.
+        val seen = HashSet<String>()
+        op.lines.filter { it.productId != null }.forEach { l ->
+            val p = db.productQueries.selectById(l.productId!!).executeAsOneOrNull() ?: return@forEach
+            if (p.serialized != 1L) return@forEach
+            if (l.serials.size.toDouble() != l.qty) throw RuleException("${l.name}: elige el IMEI de cada unidad")
+            l.serials.forEach { sn ->
+                if (!seen.add(sn)) throw RuleException("El IMEI $sn está repetido en la venta")
+                val u = db.inventoryQueries.availableUnit(sn).executeAsOneOrNull()
+                if (u == null || u.productId != p.id) throw RuleException("El IMEI $sn no está disponible para ${p.fullName}")
+            }
+        }
         if (currentSettings().requireCash && db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull() == null)
             throw RuleException("La caja de este equipo está cerrada. Ábrela para poder cobrar.")
         if (!op.allowNoStock) {
@@ -588,8 +902,14 @@ class Repository(val platform: Platform) {
     /** Inserta la venta (dentro de una transacción). Devuelve su id. */
     private fun insertSale(op: Op.RecordSale, number: Long): Long {
         checkSaleRules(op)
-        val totals = totalsFor(op.lines, op.discount)
-        val cost = op.lines.sumOf { (it.qty * it.cost).roundToLong() }
+        // Con IMEI, el costo es el de cada unidad (identificación específica).
+        val lines = op.lines.map { l ->
+            if (l.serials.isEmpty()) return@map l
+            val costs = l.serials.mapNotNull { db.inventoryQueries.availableUnit(it).executeAsOneOrNull()?.cost }
+            if (costs.size == l.serials.size && costs.isNotEmpty()) l.copy(cost = costs.sum() / costs.size) else l
+        }
+        val totals = totalsFor(lines, op.discount)
+        val cost = lines.sumOf { (it.qty * it.cost).roundToLong() }
         val cash = op.paymentMethod == PaymentMethods.CASH
         val change = if (cash) (op.received - totals.total).coerceAtLeast(0) else 0
         val paid = if (cash) op.received else totals.total
@@ -599,11 +919,15 @@ class Repository(val platform: Platform) {
             op.deviceId, op.userId, op.userName,
         )
         val saleId = db.saleQueries.lastId().executeAsOne()
-        for (l in op.lines) {
-            db.saleQueries.insertItem(saleId, l.productId, l.name, l.code, l.qty, l.price, l.cost, if (l.taxable) 1 else 0)
+        for (l in lines) {
+            db.saleQueries.insertItem(saleId, l.productId, l.name, l.code, l.qty, l.price, l.cost, if (l.taxable) 1 else 0, l.serials.joinToString(","))
             if (l.productId != null && l.trackStock) {
                 db.productQueries.addStock(-l.qty, op.createdAt, l.productId)
-                db.stockMoveQueries.insert(l.productId, MoveType.SALE, -l.qty, "Venta #$number", op.createdAt, op.userName)
+                logMove(l.productId, MoveType.SALE, -l.qty, "Venta #$number", op.createdAt, op.userName, l.cost)
+            }
+            for (sn in l.serials) {
+                val u = db.inventoryQueries.availableUnit(sn).executeAsOneOrNull() ?: continue
+                db.inventoryQueries.setUnitStatus(UnitStatus.SOLD, saleId, "", op.createdAt, u.id)
             }
         }
         if (op.quoteId != null) db.quoteQueries.setStatus(QuoteStatus.SOLD, saleId, op.createdAt, op.quoteId)
@@ -661,6 +985,7 @@ class Repository(val platform: Platform) {
                         "id" to JsonPrimitive(pid * 1000 - i), "saleId" to JsonPrimitive(pid), "productId" to (l.productId?.let { JsonPrimitive(it) } ?: JsonNull),
                         "name" to JsonPrimitive(l.name), "code" to JsonPrimitive(l.code), "qty" to JsonPrimitive(l.qty), "price" to JsonPrimitive(l.price),
                         "cost" to JsonPrimitive(l.cost), "taxable" to JsonPrimitive(if (l.taxable) 1 else 0),
+                        "serials" to JsonPrimitive(l.serials.joinToString(",")),
                     )))
                     if (l.productId != null && l.trackStock) {
                         db.productQueries.addStock(-l.qty, op.createdAt, l.productId)
@@ -739,14 +1064,14 @@ class Repository(val platform: Platform) {
 
     fun appliedResult(opId: String): String? = db.syncQueries.appliedGet(opId).executeAsOneOrNull()
 
-    fun saveAppliedResult(opId: String, result: String) = db.syncQueries.appliedPut(opId, result, Time.now())
+    fun saveAppliedResult(opId: String, result: String) = synchronized(writeLock) { db.syncQueries.appliedPut(opId, result, Time.now()) }
 
     // ================= Configuración =================
 
     suspend fun saveSettings(s: AppSettings) {
         val all = s.toMap()
         val local = all.filterKeys { it in AppSettings.LOCAL_KEYS }
-        withContext(io) { db.transaction { local.forEach { (k, v) -> db.syncQueries.metaPut("s.$k", v) } } }
+        withContext(io) { synchronized(writeLock) { db.transaction { local.forEach { (k, v) -> db.syncQueries.metaPut("s.$k", v) } } } }
         val shared = all.filterKeys { it !in AppSettings.LOCAL_KEYS }
         val current = settings.value.toMap()
         val changed = shared.filter { (k, v) -> current[k] != v }
@@ -806,6 +1131,69 @@ class Repository(val platform: Platform) {
     }
 
     suspend fun registerEntry(lines: List<EntryLine>, supplierName: String?, note: String) { run(Op.RegisterEntry(lines, supplierName, note, userName)) }
+
+    // ---------- Inventario (1.9) ----------
+
+    val availableUnits: StateFlow<List<com.vitrinapos.db.ProductUnit>> = db.inventoryQueries.availableUnits().asFlow().mapToList(io)
+        .stateIn(scope, SharingStarted.Eagerly, db.inventoryQueries.availableUnits().executeAsList())
+
+    val purchases: StateFlow<List<com.vitrinapos.db.Purchase>> = db.inventoryQueries.purchases(300).asFlow().mapToList(io)
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    suspend fun savePurchase(
+        supplier: Supplier?, supplierName: String, supplierRnc: String, ncf: String, docDate: Long,
+        lines: List<PurchaseLine>, tax: Long, paymentMethod: String, note: String,
+    ): Long = run(Op.SavePurchase(supplier?.id, supplierName, supplierRnc, ncf, docDate, lines, tax, paymentMethod, note, userName)).asId()
+
+    suspend fun voidPurchase(id: Long, reason: String) { run(Op.VoidPurchase(id, reason, userName)) }
+
+    suspend fun purchaseById(id: Long) = withContext(io) { db.inventoryQueries.purchaseById(id).executeAsOneOrNull() }
+
+    suspend fun purchaseItems(id: Long) = withContext(io) { db.inventoryQueries.purchaseItems(id).executeAsList() }
+
+    suspend fun purchasesBetween(from: Long, to: Long) = withContext(io) { db.inventoryQueries.purchasesBetween(from, to).executeAsList() }
+
+    suspend fun stockLoss(productId: Long, qty: Double, reason: String, note: String, serials: List<String> = emptyList()) {
+        run(Op.StockLoss(productId, qty, reason, note, serials, userName))
+    }
+
+    suspend fun lossesBetween(from: Long, to: Long) = withContext(io) { db.stockMoveQueries.lossesBetween(from, to).executeAsList() }
+
+    suspend fun applyCount(lines: List<CountLine>, note: String): Long = run(Op.ApplyCount(lines, note, userName)).asId()
+
+    suspend fun counts() = withContext(io) { db.inventoryQueries.counts().executeAsList() }
+
+    suspend fun countItems(id: Long) = withContext(io) { db.inventoryQueries.countItems(id).executeAsList() }
+
+    /** Conteo en curso de este equipo (se guarda para no perderlo si se cierra la app). */
+    fun countDraft(): Map<Long, Pair<Double, Double>> = metaGet("count.draft")?.split(';')?.mapNotNull { e ->
+        val (id, c, x) = e.split(':').takeIf { it.size == 3 } ?: return@mapNotNull null
+        id.toLongOrNull()?.let { pid -> pid to ((c.toDoubleOrNull() ?: 0.0) to (x.toDoubleOrNull() ?: 0.0)) }
+    }?.toMap() ?: emptyMap()
+
+    fun saveCountDraft(d: Map<Long, Pair<Double, Double>>) = metaPut("count.draft", d.entries.joinToString(";") { "${it.key}:${it.value.first}:${it.value.second}" })
+
+    suspend fun returnSale(saleId: Long, lines: List<ReturnLine>, reason: String, refundMethod: String): Long {
+        if (saleId < 0) throw OfflineException("Esta venta todavía no llega al equipo principal.")
+        return run(Op.ReturnSale(saleId, lines, reason, refundMethod, deviceId, userName)).asId()
+    }
+
+    suspend fun returnsBySale(saleId: Long) = withContext(io) { db.inventoryQueries.returnsBySale(saleId).executeAsList() }
+
+    suspend fun returnItemsBySale(saleId: Long) = withContext(io) { db.inventoryQueries.returnItemsBySale(saleId).executeAsList() }
+
+    suspend fun returnsBetween(from: Long, to: Long) = withContext(io) { db.inventoryQueries.returnsBetween(from, to).executeAsList() }
+
+    suspend fun addUnits(productId: Long, serials: List<String>) { run(Op.AddUnits(productId, serials, userName)) }
+
+    suspend fun unitsOf(productId: Long) = withContext(io) { db.inventoryQueries.unitsByProduct(productId).executeAsList() }
+
+    suspend fun searchUnits(q: String) = withContext(io) { db.inventoryQueries.searchUnits(q.trim().uppercase()).executeAsList() }
+
+    /** Kardex de un producto: saldo anterior y movimientos del periodo. */
+    suspend fun kardex(productId: Long, from: Long, to: Long): Pair<Double, List<StockMove>> = withContext(io) {
+        db.stockMoveQueries.balanceBefore(productId, from).executeAsOne() to db.stockMoveQueries.kardex(productId, from, to).executeAsList()
+    }
 
     suspend fun movesByProduct(productId: Long): List<StockMove> = withContext(io) { db.stockMoveQueries.selectByProduct(productId).executeAsList() }
 

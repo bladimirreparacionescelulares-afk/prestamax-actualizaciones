@@ -45,12 +45,12 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
     val devices: List<Device> get() = repo.db.syncQueries.deviceAll().executeAsList()
 
     fun revoke(id: String) {
-        repo.db.syncQueries.deviceRevoke(id)
+        synchronized(repo.writeLock) { repo.db.syncQueries.deviceRevoke(id) }
         synchronized(keys) { keys.remove(id) }
     }
 
     fun forget(id: String) {
-        repo.db.syncQueries.deviceDelete(id)
+        synchronized(repo.writeLock) { repo.db.syncQueries.deviceDelete(id) }
         synchronized(keys) { keys.remove(id) }
     }
 
@@ -89,7 +89,7 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
             val req = json.decodeFromString(PairRequest.serializer(), String(plain))
             val deviceKey = Crypto.randomBytes(32)
             val now = Time.now()
-            repo.db.syncQueries.deviceAdd(req.deviceId, req.name.take(60), req.platform.take(20), Crypto.hex(deviceKey), now, now)
+            synchronized(repo.writeLock) { repo.db.syncQueries.deviceAdd(req.deviceId, req.name.take(60), req.platform.take(20), Crypto.hex(deviceKey), now, now) }
             synchronized(keys) { keys[req.deviceId] = deviceKey }
             refreshCode()
             val resp = PairResponse(Crypto.hex(deviceKey), repo.deviceId, serverName(), epoch)
@@ -111,7 +111,7 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
         val key = keyFor(deviceId) ?: return 401 to "Este equipo no está autorizado".toByteArray()
         val req = runCatching { json.decodeFromString(ApiRequest.serializer(), String(Crypto.open(key, body))) }
             .getOrElse { return 401 to "No se pudo leer el pedido".toByteArray() }
-        repo.db.syncQueries.deviceSeen(Time.now(), deviceId)
+        synchronized(repo.writeLock) { repo.db.syncQueries.deviceSeen(Time.now(), deviceId) }
         val resp = runCatching { answer(req) }.getOrElse { ApiResponse(ok = false, error = it.message ?: "Error en el equipo principal") }
         return 200 to Crypto.seal(key, json.encodeToString(ApiResponse.serializer(), resp).toByteArray())
     }

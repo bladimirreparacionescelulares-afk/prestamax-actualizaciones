@@ -5,13 +5,15 @@ CREATE TABLE stockMove (
   qty REAL NOT NULL,
   note TEXT NOT NULL DEFAULT '',
   createdAt INTEGER NOT NULL,
-  userName TEXT NOT NULL DEFAULT ''
+  userName TEXT NOT NULL DEFAULT '',
+  unitCost INTEGER NOT NULL DEFAULT 0,
+  balance REAL NOT NULL DEFAULT 0
 );
 
 CREATE INDEX stockMove_product ON stockMove(productId);
 
 insert:
-INSERT INTO stockMove(productId, type, qty, note, createdAt, userName) VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO stockMove(productId, type, qty, note, createdAt, userName, unitCost, balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteProvisional:
 DELETE FROM stockMove WHERE id < 0;
@@ -22,4 +24,16 @@ JOIN product ON product.id = stockMove.productId
 ORDER BY stockMove.createdAt DESC LIMIT ?;
 
 selectByProduct:
-SELECT * FROM stockMove WHERE productId = ? ORDER BY createdAt DESC LIMIT 50;
+SELECT * FROM stockMove WHERE productId = ? ORDER BY createdAt DESC, id DESC LIMIT 50;
+
+kardex:
+SELECT * FROM stockMove WHERE productId = ? AND createdAt >= ? AND createdAt < ? ORDER BY createdAt, id;
+
+balanceBefore:
+SELECT COALESCE(SUM(qty), 0) FROM stockMove WHERE productId = ? AND createdAt < ?;
+
+lossesBetween:
+SELECT stockMove.*, product.name AS productName FROM stockMove
+JOIN product ON product.id = stockMove.productId
+WHERE stockMove.type = 'MERMA' AND stockMove.createdAt >= ? AND stockMove.createdAt < ?
+ORDER BY stockMove.createdAt DESC;

@@ -165,6 +165,7 @@ class Ticket(val width: Int) {
             items.forEach {
                 t.left(it.name)
                 t.pair("   ${it.qty.fmtQty()} x ${Money.plain(it.price)}", Money.plain(Math.round(it.qty * it.price)))
+                it.serials.split(',').filter { sn -> sn.isNotBlank() }.forEach { sn -> t.left("   IMEI: $sn") }
             }
             t.separator()
             val units = items.sumOf { it.qty }

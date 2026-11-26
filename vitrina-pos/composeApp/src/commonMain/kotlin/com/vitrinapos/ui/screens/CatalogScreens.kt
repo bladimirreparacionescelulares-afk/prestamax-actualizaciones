@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -216,7 +217,7 @@ private val units = listOf("und", "kg", "lb", "m", "caja", "par", "paquete", "se
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ProductFormScreen(id: Long?, presetCode: String?) {
+fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
     val app = LocalAppState.current
     val s = app.settings
     val scope = com.vitrinapos.ui.components.rememberSafeScope()
@@ -238,6 +239,10 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
     var taxable by remember { mutableStateOf(true) }
     var trackStock by remember { mutableStateOf(true) }
     var isService by remember { mutableStateOf(false) }
+    var serialized by remember { mutableStateOf(false) }
+    var variantGroup by remember { mutableStateOf("") }
+    var variantName by remember { mutableStateOf("") }
+    var unitsWithImei by remember { mutableStateOf(0) }
     var imagePath by remember { mutableStateOf<String?>(null) }
     var description by remember { mutableStateOf("") }
     var showErrors by remember { mutableStateOf(false) }
@@ -255,9 +260,18 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                 name = p.name; code = p.code; categoryId = p.categoryId; supplierId = p.supplierId
                 cost = p.cost; price = p.price; stock = p.stock; minStock = p.minStock; unit = p.unit
                 taxable = p.taxable == 1L; trackStock = p.trackStock == 1L; isService = p.isService == 1L; imagePath = p.imagePath; description = p.description
+                serialized = p.serialized == 1L; variantGroup = p.variantGroup; variantName = p.variantName
             }
             moves = app.repo.movesByProduct(id)
+            unitsWithImei = app.repo.unitsOf(id).count { it.status == com.vitrinapos.data.UnitStatus.AVAILABLE }
             loaded = true
+        } else if (copyOf != null) {
+            // Nueva variante: copia los datos del producto y entra en su grupo.
+            app.repo.productById(copyOf)?.let { p ->
+                name = p.name; categoryId = p.categoryId; supplierId = p.supplierId; cost = p.cost; price = p.price; unit = p.unit
+                taxable = p.taxable == 1L; trackStock = p.trackStock == 1L; imagePath = p.imagePath; description = p.description
+                serialized = p.serialized == 1L; variantGroup = p.variantGroup.ifBlank { "g${p.id}" }
+            }
         }
     }
     // Si se sale sin guardar, borra las fotos nuevas que no se usaron.
@@ -292,6 +306,8 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                     cost = cost ?: 0, price = price ?: 0, initialStock = if (id == null) stock ?: 0.0 else 0.0,
                     minStock = minStock ?: 0.0, unit = unit, taxable = taxable, trackStock = trackStock && !isService,
                     imagePath = imagePath, description = description, isService = isService,
+                    serialized = serialized && !isService, variantGroup = if (isService) "" else variantGroup,
+                    variantName = if (isService) "" else variantName.trim(),
                 ),
             )
             if (original?.imagePath != null && original?.imagePath != imagePath) app.repo.deleteImage(original?.imagePath)
@@ -304,7 +320,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
-            when { id == null && isService -> "Nuevo servicio"; id == null -> "Nuevo producto"; isService -> "Editar servicio"; else -> "Editar producto" },
+            when { copyOf != null && id == null -> "Nueva variante"; id == null && isService -> "Nuevo servicio"; id == null -> "Nuevo producto"; isService -> "Editar servicio"; else -> "Editar producto" },
             onBack = { app.back() },
         ) {
             if (id != null) IconButton(onClick = { app.openLabelsFor(listOf(com.vitrinapos.AppState.LabelItem(id, original?.suggestedCopies() ?: 1))) }) {
@@ -360,6 +376,11 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
             }
 
             TextInput(name, { name = it }, if (isService) "Nombre del servicio *" else "Nombre del producto *", error = nameError)
+            if (!isService && (variantGroup.isNotBlank() || variantName.isNotBlank())) {
+                TextInput(variantName, { variantName = it }, "Variante (color, capacidad…)", placeholder = "Ej.: Azul 128 GB")
+                val siblings = products.filter { variantGroup.isNotBlank() && it.variantGroup == variantGroup && it.id != id }
+                if (siblings.isNotEmpty()) Text("Otras variantes: " + siblings.joinToString(", ") { it.variantName.ifBlank { it.name } }, fontSize = 12.sp, color = AppTheme.extra.muted)
+            }
             TextInput(
                 code, { code = it }, "Código de barras o referencia", error = codeError, placeholder = "Vacío: se asigna uno para su etiqueta",
                 trailing = {
@@ -395,7 +416,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
             }
 
             if (!isService) SectionTitle("Inventario")
-            if (!isService) AppCard(onClick = { trackStock = !trackStock }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
+            if (!isService && !serialized) AppCard(onClick = { trackStock = !trackStock }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Controlar existencias", fontWeight = FontWeight.SemiBold)
@@ -404,17 +425,42 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
                     Switch(trackStock, { trackStock = it })
                 }
             }
+            if (!isService) AppCard(onClick = { serialized = !serialized; if (serialized) trackStock = true }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Con IMEI o número de serie", fontWeight = FontWeight.SemiBold)
+                        Text("Celulares y equipos: cada unidad se registra y se vende por su IMEI", fontSize = 12.sp, color = AppTheme.extra.muted)
+                    }
+                    Switch(serialized, { serialized = it; if (it) trackStock = true })
+                }
+            }
+            if (serialized && !isService && id != null) {
+                val stockNow = (original?.stock ?: 0.0)
+                val missing = (stockNow - unitsWithImei).coerceAtLeast(0.0)
+                AppCard(onClick = { app.open(Screen.ProductUnits(id)) }, color = if (missing > 0) AppTheme.extra.warnSoft else MaterialTheme.colorScheme.surface) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("$unitsWithImei con IMEI en existencia", fontWeight = FontWeight.SemiBold)
+                            Text(if (missing > 0) "Faltan ${missing.fmtQty()} por registrar: sin IMEI no se pueden vender" else "Toca para ver, agregar o buscar los IMEI",
+                                fontSize = 12.sp, color = AppTheme.extra.muted)
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+            if (serialized && !isService && id == null) Text("Las unidades entran con una compra (Más → Inventario) o registrando sus IMEI después de guardar.", fontSize = 12.sp, color = AppTheme.extra.muted)
             if (trackStock && !isService) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (id == null) {
+                    if (id == null && !serialized) {
                         QtyInput(stock, { stock = it }, "Stock inicial", Modifier.weight(1f))
-                    } else {
+                    } else if (id != null) {
                         Column(
                             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-                                .clickable(enabled = app.can(com.vitrinapos.data.Permission.ADJUST_STOCK)) { adjust = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                                .clickable(enabled = app.can(com.vitrinapos.data.Permission.ADJUST_STOCK)) { if (serialized) app.open(Screen.ProductUnits(id)) else adjust = true }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
                         ) {
                             Text("Stock actual", fontSize = 12.sp, color = AppTheme.extra.muted)
-                            Text("${(original?.stock ?: 0.0).fmtQty()} $unit · Ajustar", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("${(original?.stock ?: 0.0).fmtQty()} $unit · " + (if (serialized) "IMEI" else "Ajustar"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     QtyInput(minStock, { minStock = it }, "Avisar cuando queden", Modifier.weight(1f))
@@ -432,8 +478,13 @@ fun ProductFormScreen(id: Long?, presetCode: String?) {
             }
             TextInput(description, { description = it }, "Descripción (opcional)", singleLine = false, minLines = 2)
 
+            if (id != null && !isService && app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) {
+                OutlinedButton(onClick = { app.open(Screen.ProductForm(copyOf = id)) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                    Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Crear otra variante")
+                }
+            }
             if (id != null && moves.isNotEmpty()) {
-                SectionTitle("Últimos movimientos")
+                SectionTitle("Últimos movimientos", action = if (app.can(com.vitrinapos.data.Permission.ADJUST_STOCK)) "Kardex" else null, onAction = { app.open(Screen.Kardex(id)) })
                 AppCard(padding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
                     moves.take(8).forEachIndexed { i, m ->
                         if (i > 0) Divider()
@@ -594,86 +645,6 @@ fun CategoryDialog(existing: Category?, onDismiss: () -> Unit, onSave: (String, 
         confirmButton = { TextButton(onClick = { onSave(name, color) }, enabled = name.isNotBlank()) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
-}
-
-// ================= Entrada de mercancía =================
-
-private data class EntryDraft(val product: Product, val qty: Double?, val cost: Long?)
-
-@Composable
-fun StockEntryScreen(supplierId: Long?) {
-    val app = LocalAppState.current
-    val scope = com.vitrinapos.ui.components.rememberSafeScope()
-    val suppliers by app.repo.suppliers.collectAsState()
-    val products by app.repo.products.collectAsState()
-    var supplier by remember { mutableStateOf(suppliers.firstOrNull { it.id == supplierId }) }
-    val lines = remember { mutableStateListOf<EntryDraft>() }
-    var note by remember { mutableStateOf("") }
-    var picking by remember { mutableStateOf(false) }
-    fun add(p: Product) {
-        if (lines.none { it.product.id == p.id }) lines += EntryDraft(p, 1.0, p.cost)
-    }
-    val scanner = rememberBarcodeScanner { code ->
-        products.firstOrNull { it.code.equals(code, true) }?.let { add(it) } ?: app.toast("No hay producto con el código $code")
-    }
-    val pickable = products.filter { it.trackStock == 1L }.let { list -> supplier?.let { s -> list.sortedByDescending { it.supplierId == s.id } } ?: list }
-
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Entrada de mercancía", subtitle = "Suma existencias y actualiza el costo", onBack = { app.back() })
-        LazyColumn(
-            Modifier.weight(1f).widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item { DropdownField("Proveedor", supplier, suppliers, { it.name }, { supplier = it }, noneLabel = "Sin proveedor") }
-            itemsIndexed(lines, key = { _, l -> l.product.id }) { i, l ->
-                AppCard(padding = PaddingValues(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ProductImage(l.product.imagePath, l.product.name, Modifier.size(48.dp), textSize = 14)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(l.product.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Stock actual: ${l.product.stock.fmtQty()}", fontSize = 12.sp, color = AppTheme.extra.muted)
-                        }
-                        IconButton(onClick = { lines.removeAt(i) }) { Icon(Icons.Rounded.Delete, "Quitar", tint = AppTheme.extra.muted) }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        QtyInput(l.qty, { lines[i] = l.copy(qty = it) }, "Cantidad que entra", Modifier.weight(1f))
-                        MoneyInput(l.cost, { lines[i] = l.copy(cost = it) }, "Costo unitario", Modifier.weight(1f))
-                    }
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = { picking = true }, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp)) {
-                        Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Agregar producto")
-                    }
-                    if (scanner != null) OutlinedButton(onClick = scanner, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp)) {
-                        Icon(Icons.Rounded.QrCodeScanner, "Escanear")
-                    }
-                }
-            }
-            item { TextInput(note, { note = it }, "Nota (factura, observaciones)") }
-        }
-        Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
-            Button(
-                onClick = {
-                    scope.launch {
-                        app.repo.registerEntry(
-                            lines.mapNotNull { l -> l.qty?.takeIf { it != 0.0 }?.let { EntryLine(l.product.id, it, l.cost?.takeIf { c -> c != l.product.cost }) } },
-                            supplier?.name, note,
-                        )
-                        app.toast("Entrada registrada")
-                        app.back()
-                    }
-                },
-                enabled = lines.any { (it.qty ?: 0.0) != 0.0 },
-                modifier = Modifier.fillMaxWidth().padding(16.dp).height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) { Text("Registrar entrada", fontWeight = FontWeight.Bold) }
-        }
-    }
-    if (picking) ProductPickerDialog(pickable, onPick = { add(it); picking = false }, onDismiss = { picking = false })
 }
 
 // ================= Movimientos =================

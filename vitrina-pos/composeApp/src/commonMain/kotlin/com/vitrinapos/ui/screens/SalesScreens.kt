@@ -150,6 +150,9 @@ fun SaleDetailScreen(id: Long) {
         else Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id }, ecf = ecf)
     val fresh = Time.now() - sale.createdAt < 120_000
     val voided = sale.status == SaleStatus.VOID
+    val returns by produceState(emptyList<com.vitrinapos.db.SaleReturn>(), id, refresh) { value = app.repo.returnsBySale(id) }
+    val returnedItems by produceState(emptyList<com.vitrinapos.db.SaleReturnItem>(), id, refresh) { value = app.repo.returnItemsBySale(id) }
+    val fullyReturned = items.isNotEmpty() && returnedItems.sumOf { it.qty } >= items.sumOf { it.qty } - 1e-9
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(sale.label, subtitle = Time.dateTime(sale.createdAt) + (if (sale.userName.isNotBlank()) " · ${sale.userName}" else ""), onBack = { app.back() })
@@ -181,6 +184,16 @@ fun SaleDetailScreen(id: Long) {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(AppTheme.extra.dangerSoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Block, null, tint = AppTheme.extra.danger); Spacer(Modifier.width(10.dp))
                     Text("Venta anulada. El inventario se devolvió.", color = AppTheme.extra.danger, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (returns.isNotEmpty()) {
+                com.vitrinapos.ui.components.AppCard(color = AppTheme.extra.warnSoft) {
+                    Text(if (fullyReturned) "Devuelta completa" else "Devolución parcial", fontWeight = FontWeight.Bold, color = AppTheme.extra.warn)
+                    returns.forEach { r ->
+                        val names = returnedItems.filter { it.returnId == r.id }.joinToString(", ") { "${it.qty.fmtQty()} ${it.name}" }
+                        Text("${Time.dateTime(r.createdAt)} · ${Money.format(r.total, s.currencySymbol)} en ${r.method.lowercase()}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(listOf(names, r.reason).filter { it.isNotBlank() }.joinToString(" · "), fontSize = 12.sp, color = AppTheme.extra.muted)
+                    }
                 }
             }
             if (docs.isNotEmpty()) {
@@ -222,7 +235,11 @@ fun SaleDetailScreen(id: Long) {
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Share, null); Spacer(Modifier.width(6.dp)); Text("Compartir")
                     }
-                    if (!voided && app.can(com.vitrinapos.data.Permission.VOID_SALES)) OutlinedButton(onClick = { if (sale.createdAt < Time.startOfDay() && app.needsAdminAuth) authVoid = true else confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    if (!voided && !fullyReturned && sale.id > 0 && app.can(com.vitrinapos.data.Permission.RETURNS)) OutlinedButton(
+                        onClick = { app.open(Screen.SaleReturn(sale.id)) }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) { Text("Devolver") }
+                    if (!voided && returns.isEmpty() && app.can(com.vitrinapos.data.Permission.VOID_SALES)) OutlinedButton(onClick = { if (sale.createdAt < Time.startOfDay() && app.needsAdminAuth) authVoid = true else confirmVoid = true }, modifier = Modifier.height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
                         Text("Anular", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -285,8 +302,17 @@ fun ReportsScreen() {
     }
     val sales = data?.first.orEmpty().filter { it.status == SaleStatus.OK }
     val items = data?.second.orEmpty()
-    val total = sales.sumOf { it.total }
-    val profit = sales.sumOf { it.total - it.tax - it.costTotal }
+    val extra by produceState<Triple<List<com.vitrinapos.db.SaleReturn>, Long, Long>?>(null, range, recent) {
+        value = Triple(
+            app.repo.returnsBetween(from, to),
+            app.repo.lossesBetween(from, to).sumOf { (-it.qty * it.unitCost).roundToLong() },
+            app.repo.purchasesBetween(from, to).sumOf { it.total },
+        )
+    }
+    val returns = extra?.first.orEmpty()
+    val returned = returns.sumOf { it.total }
+    val total = sales.sumOf { it.total } - returned
+    val profit = sales.sumOf { it.total - it.tax - it.costTotal } - returns.sumOf { it.total - it.tax - it.cost } - (extra?.second ?: 0)
     val sym = s.currencySymbol
 
     Column(Modifier.fillMaxSize()) {
@@ -299,7 +325,7 @@ fun ReportsScreen() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatCard("Vendido", Money.format(total, sym), Modifier.weight(1f), accent = true)
+                StatCard(if (returned > 0) "Vendido (neto)" else "Vendido", Money.format(total, sym), Modifier.weight(1f), accent = true)
                 StatCard("Ganancia", Money.format(profit, sym), Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -325,6 +351,9 @@ fun ReportsScreen() {
                 Divider()
                 KeyValue("${s.taxName} cobrado", Money.format(sales.sumOf { it.tax }, sym))
                 KeyValue("Descuentos", Money.format(sales.sumOf { it.discount }, sym))
+                if (returned > 0) KeyValue("Devoluciones · ${returns.size}", "−" + Money.format(returned, sym), valueColor = AppTheme.extra.danger)
+                if ((extra?.second ?: 0) > 0) KeyValue("Mermas (a costo)", "−" + Money.format(extra?.second ?: 0, sym), valueColor = AppTheme.extra.danger)
+                if ((extra?.third ?: 0) > 0) KeyValue("Compras registradas", Money.format(extra?.third ?: 0, sym))
             }
 
             SectionTitle("Más vendidos")
@@ -359,8 +388,8 @@ fun ReportsScreen() {
                 KeyValue("Valor a precio de venta", Money.format(tracked.sumOf { (it.stock * it.price).roundToLong() }, sym))
                 KeyValue("Con stock bajo", products.count { it.trackStock == 1L && it.stock <= it.minStock }.toString())
                 Spacer(Modifier.height(6.dp))
-                OutlinedButton(onClick = { app.open(Screen.StockMoves) }, shape = RoundedCornerShape(12.dp)) {
-                    Icon(Icons.Rounded.History, null); Spacer(Modifier.width(6.dp)); Text("Ver movimientos de inventario")
+                OutlinedButton(onClick = { app.open(Screen.Inventory) }, shape = RoundedCornerShape(12.dp)) {
+                    Icon(Icons.Rounded.History, null); Spacer(Modifier.width(6.dp)); Text("Ir a Inventario")
                 }
             }
         }

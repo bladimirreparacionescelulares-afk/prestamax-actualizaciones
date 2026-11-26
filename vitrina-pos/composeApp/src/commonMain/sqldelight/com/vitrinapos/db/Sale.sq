@@ -31,7 +31,8 @@ CREATE TABLE saleItem (
   qty REAL NOT NULL,
   price INTEGER NOT NULL,
   cost INTEGER NOT NULL,
-  taxable INTEGER NOT NULL
+  taxable INTEGER NOT NULL,
+  serials TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX saleItem_sale ON saleItem(saleId);
@@ -68,7 +69,10 @@ lastId:
 SELECT last_insert_rowid();
 
 insertItem:
-INSERT INTO saleItem(saleId, productId, name, code, qty, price, cost, taxable) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO saleItem(saleId, productId, name, code, qty, price, cost, taxable, serials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+itemById:
+SELECT * FROM saleItem WHERE id = ?;
 
 itemsBySale:
 SELECT * FROM saleItem WHERE saleId = ? ORDER BY id;

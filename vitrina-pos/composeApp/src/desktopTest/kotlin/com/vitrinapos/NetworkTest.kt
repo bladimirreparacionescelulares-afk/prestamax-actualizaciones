@@ -54,6 +54,17 @@ class NetworkTest {
         other.repo.openCashSession(0)
         waitUntil("la caja abierta llega al equipo") { other.repo.openCash.value != null }
         val saleId = other.repo.recordSale(listOf(CartLine.of(cable, 2.0)), null, 0, PaymentMethods.CASH, 100000, null)
+
+        // Inventario 1.9 en red: la caja registra una compra con IMEI y vende ese equipo.
+        val phoneId = other.repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Galaxy A15", "", null, null, 0, 1_200_000, 0.0, 0.0, "und", true, true, null, "", serialized = true))
+        other.repo.savePurchase(null, "Cedecom", "", "B0100000999", 0, listOf(com.vitrinapos.data.PurchaseLine(phoneId, 1.0, 900_000, listOf("351111111111111"))), 0, "Contado", "")
+        waitUntil("el IMEI llega a la caja") { other.repo.availableUnits.value.any { it.serial == "351111111111111" } }
+        val phone = other.repo.db.productQueries.selectById(phoneId).executeAsOne()
+        val phoneSale = other.repo.recordSale(listOf(CartLine.of(phone, 1.0, listOf("351111111111111"))), null, 0, PaymentMethods.CARD, 0, null)
+        assertEquals(com.vitrinapos.data.UnitStatus.SOLD, main.repo.searchUnits("351111111111111").single().status)
+        waitUntil("la caja ve el equipo vendido") { other.repo.availableUnits.value.none { it.serial == "351111111111111" } }
+        waitUntil("la compra llega a la caja") { other.repo.purchases.value.any { it.ncf == "B0100000999" } }
+        main.repo.voidSale(phoneSale, "prueba")
         assertTrue(saleId > 0)
         assertEquals(cable.stock - 2, main.repo.db.productQueries.selectById(cable.id).executeAsOne().stock)
         assertEquals(other.repo.deviceId, main.repo.db.saleQueries.selectById(saleId).executeAsOne().deviceId)
@@ -72,10 +83,10 @@ class NetworkTest {
 
         main.becomeServer()
         waitUntil("se envía la venta pendiente") { other.repo.db.syncQueries.outboxCount().executeAsOne() == 0L }
-        waitUntil("el principal tiene las 2 ventas") { main.repo.db.saleQueries.selectRecent(10).executeAsList().size == 2 }
+        waitUntil("el principal tiene las 3 ventas") { main.repo.db.saleQueries.selectRecent(10).executeAsList().size == 3 }
         assertEquals(cable.stock - 3, main.repo.db.productQueries.selectById(cable.id).executeAsOne().stock)
         waitUntil("el equipo conectado ya no tiene ventas provisionales") {
-            other.repo.db.saleQueries.selectRecent(10).executeAsList().let { s -> s.size == 2 && s.all { it.id > 0 } }
+            other.repo.db.saleQueries.selectRecent(10).executeAsList().let { s -> s.size == 3 && s.all { it.id > 0 } }
         }
         waitUntil("stock igual en los dos") {
             other.repo.db.productQueries.selectById(cable.id).executeAsOne().stock == cable.stock - 3

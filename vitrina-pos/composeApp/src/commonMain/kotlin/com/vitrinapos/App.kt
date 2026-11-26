@@ -156,6 +156,8 @@ private fun MainShell(app: AppState) {
             else WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
             Row(Modifier.fillMaxSize().padding(pad).windowInsetsPadding(WindowInsets.safeDrawing.only(sides))) {
                 app.labelPrompt?.let { LabelPromptDialog(it) }
+                app.unitPicker?.let { com.vitrinapos.ui.screens.UnitPickerDialog(it) }
+                app.variantPicker?.let { com.vitrinapos.ui.screens.VariantPickerDialog(it) }
                 if (wide) SideBar(app)
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     AnimatedContent(
@@ -191,7 +193,7 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.FiscalDocs -> FiscalDocsScreen()
         is Screen.UserDetail -> UserDetailScreen(screen.id)
         is Screen.RepairDetail -> RepairDetailScreen(screen.id)
-        is Screen.ProductForm -> ProductFormScreen(screen.id, screen.presetCode)
+        is Screen.ProductForm -> ProductFormScreen(screen.id, screen.presetCode, screen.copyOf)
         Screen.Checkout -> CheckoutScreen()
         is Screen.SaleDetail -> SaleDetailScreen(screen.id)
         Screen.SalesHistory -> SalesHistoryScreen()
@@ -204,7 +206,16 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.Settings -> SettingsScreen()
         Screen.Reports -> ReportsScreen()
         Screen.Categories -> CategoriesScreen()
-        is Screen.StockEntry -> StockEntryScreen(screen.supplierId)
+        is Screen.StockEntry -> com.vitrinapos.ui.screens.PurchaseFormScreen(screen.supplierId)
+        Screen.Inventory -> com.vitrinapos.ui.screens.InventoryScreen()
+        Screen.Purchases -> com.vitrinapos.ui.screens.PurchasesScreen()
+        is Screen.PurchaseDetail -> com.vitrinapos.ui.screens.PurchaseDetailScreen(screen.id)
+        Screen.StockCount -> com.vitrinapos.ui.screens.StockCountScreen()
+        is Screen.StockCountDetail -> com.vitrinapos.ui.screens.StockCountDetailScreen(screen.id)
+        is Screen.Kardex -> com.vitrinapos.ui.screens.KardexScreen(screen.productId)
+        Screen.ImeiSearch -> com.vitrinapos.ui.screens.ImeiSearchScreen()
+        is Screen.ProductUnits -> com.vitrinapos.ui.screens.ProductUnitsScreen(screen.productId)
+        is Screen.SaleReturn -> com.vitrinapos.ui.screens.SaleReturnScreen(screen.saleId)
         Screen.Cash -> CashScreen()
         Screen.StockMoves -> StockMovesScreen()
         Screen.Network -> NetworkScreen()

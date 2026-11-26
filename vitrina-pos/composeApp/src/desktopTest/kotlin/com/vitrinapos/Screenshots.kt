@@ -143,6 +143,45 @@ class Screenshots {
         shoot(graph, File(outDir, "49-cobro-caja-cerrada.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); addCart(app, repo); app.open(Screen.Checkout) }
         runBlocking { repo.openCashSession(200000) }
 
+        // ---- Inventario 1.9 ----
+        val inv = runBlocking {
+            val sup = repo.suppliers.value.firstOrNull()
+            val phoneId = repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Samsung Galaxy A15", "", null, sup?.id, 0, 1_250_000, 0.0, 1.0, "und", true, true, null, "", serialized = true))
+            val cbl = repo.products.value.first { it.code == "CBL-001" }
+            val pid = repo.savePurchase(
+                sup, sup?.name ?: "Cedecom", "131234567", "B0100004521", com.vitrinapos.data.Time.now(),
+                listOf(
+                    com.vitrinapos.data.PurchaseLine(phoneId, 3.0, 950_000, listOf("356789104523311", "356789104523329", "356789104523337")),
+                    com.vitrinapos.data.PurchaseLine(cbl.id, 20.0, cbl.cost + 2_000),
+                ),
+                (3 * 950_000 + 20 * (cbl.cost + 2_000)) * 18 / 100, "Crédito", "",
+            )
+            val fundaA = repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Funda silicona iPhone 13", "", null, null, 15000, 45000, 6.0, 2.0, "und", true, true, null, "", variantName = "Negra"))
+            repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Funda silicona iPhone 13", "", null, null, 15000, 45000, 4.0, 2.0, "und", true, true, null, "", variantGroup = "g$fundaA", variantName = "Roja"))
+            repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "Funda silicona iPhone 13", "", null, null, 15000, 50000, 2.0, 2.0, "und", true, true, null, "", variantGroup = "g$fundaA", variantName = "Transparente MagSafe"))
+            val phone = repo.db.productQueries.selectById(phoneId).executeAsOne()
+            val sale = repo.recordSale(listOf(CartLine.of(phone, 1.0, listOf("356789104523311")), CartLine.of(cbl, 2.0)), null, 0, PaymentMethods.CASH, 2_000_000, null)
+            val item = repo.saleItems(sale).first { it.productId == cbl.id }
+            repo.returnSale(sale, listOf(com.vitrinapos.data.ReturnLine(item.id, 1.0)), "El cable vino defectuoso", PaymentMethods.CASH)
+            repo.stockLoss(cbl.id, 1.0, "Dañado", "Se cayó en el mostrador")
+            val ps3 = repo.products.value
+            repo.saveCountDraft(ps3.filter { it.trackStock == 1L && it.serialized == 0L }.take(5).mapIndexed { i, p -> p.id to ((p.stock + listOf(0, -1, 0, 2, 0)[i]).coerceAtLeast(0.0) to p.stock) }.toMap())
+            listOf(phoneId, pid, sale, fundaA, cbl.id)
+        }
+        val (phoneId, purchaseId, retSale, fundaA, cblId) = inv
+        Thread.sleep(500)
+        shoot(graph, File(outDir, "50-inventario.png"), 412, 1100, 2f) { it.selectTab(Screen.More); it.open(Screen.Inventory) }
+        shoot(graph, File(outDir, "51-compra.png"), 412, 1300, 2f) { it.selectTab(Screen.More); it.open(Screen.Purchases); it.open(Screen.PurchaseDetail(purchaseId)) }
+        shoot(graph, File(outDir, "52-conteo.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.StockCount) }
+        shoot(graph, File(outDir, "53-kardex.png"), 412, 1200, 2f) { it.selectTab(Screen.Catalog); it.open(Screen.Kardex(cblId)) }
+        shoot(graph, File(outDir, "54-imei-producto.png"), 412, 900, 2f) { it.selectTab(Screen.Catalog); it.open(Screen.ProductUnits(phoneId)) }
+        shoot(graph, File(outDir, "55-elegir-imei.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); app.clearCart(); app.unitPicker = phoneId }
+        shoot(graph, File(outDir, "56-variantes.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); app.clearCart(); app.variantPicker = "g$fundaA" }
+        shoot(graph, File(outDir, "57-devolucion.png"), 412, 1100, 2f) { it.selectTab(Screen.Home); it.open(Screen.SaleReturn(retSale)) }
+        shoot(graph, File(outDir, "58-venta-con-devolucion.png"), 412, 1500, 2f) { it.selectTab(Screen.Home); it.open(Screen.SaleDetail(retSale)) }
+        shoot(graph, File(outDir, "59-producto-imei.png"), 412, 1500, 2f) { it.selectTab(Screen.Catalog); it.open(Screen.ProductForm(phoneId)) }
+        shoot(graph, File(outDir, "60-reportes-19.png"), 412, 1400, 2f) { it.selectTab(Screen.More); it.open(Screen.Reports) }
+
         // ---- Trabajo en red y usuarios ----
         graph.becomeServer()
         runBlocking {

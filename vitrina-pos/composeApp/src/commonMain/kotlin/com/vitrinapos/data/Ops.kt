@@ -142,6 +142,36 @@ sealed class Op {
     @Serializable @SerialName("userPermissions")
     data class SetUserPermissions(val id: Long, val permissions: String) : Op()
 
+    // ---------- Inventario (1.9) ----------
+
+    /** Compra a un proveedor: suma existencias, recalcula el costo promedio y guarda el NCF. */
+    @Serializable @SerialName("purchase")
+    data class SavePurchase(
+        val supplierId: Long?, val supplierName: String, val supplierRnc: String, val ncf: String, val docDate: Long,
+        val lines: List<PurchaseLine>, val tax: Long, val paymentMethod: String, val note: String, val user: String,
+    ) : Op()
+
+    @Serializable @SerialName("purchaseVoid")
+    data class VoidPurchase(val id: Long, val reason: String, val user: String) : Op()
+
+    /** Merma: mercancía dañada, vencida, perdida o de uso interno. */
+    @Serializable @SerialName("stockLoss")
+    data class StockLoss(val productId: Long, val qty: Double, val reason: String, val note: String, val serials: List<String>, val user: String) : Op()
+
+    /** Conteo físico: ajusta cada producto contado a lo que se contó (descontando lo vendido mientras se contaba). */
+    @Serializable @SerialName("count")
+    data class ApplyCount(val lines: List<CountLine>, val note: String, val user: String) : Op()
+
+    /** Devolución de una venta, total o parcial. */
+    @Serializable @SerialName("saleReturn")
+    data class ReturnSale(
+        val saleId: Long, val lines: List<ReturnLine>, val reason: String, val refundMethod: String, val deviceId: String, val user: String,
+    ) : Op()
+
+    /** Registra los IMEI o números de serie de las unidades que ya están en existencia. */
+    @Serializable @SerialName("units")
+    data class AddUnits(val productId: Long, val serials: List<String>, val user: String) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 
@@ -174,12 +204,14 @@ enum class Permission(val title: String, val detail: String) {
     CHANGE_PRICES("Cambiar precios al vender", "Modificar el precio de un artículo en el carrito"),
     SELL_NO_STOCK("Vender sin existencias", "Vender aunque el sistema diga que no hay stock"),
     CATALOG_EDIT("Crear y editar productos", "Agregar productos, precios, fotos y categorías"),
-    ADJUST_STOCK("Inventario", "Ajustar existencias, entradas de mercancía y movimientos"),
+    ADJUST_STOCK("Inventario", "Ajustar existencias, conteo físico, mermas, IMEI y kardex"),
+    PURCHASES("Compras", "Registrar compras a proveedores con su NCF y su costo"),
     CLIENTS("Clientes", "Ver y registrar clientes"),
     SUPPLIERS("Proveedores", "Ver y registrar proveedores"),
     QUOTES("Cotizaciones", "Crear y enviar cotizaciones"),
     SALES_HISTORY("Historial de ventas", "Ver las ventas anteriores"),
     VOID_SALES("Anular ventas", "Anular ventas y emitir notas de crédito"),
+    RETURNS("Devoluciones", "Recibir devoluciones de una venta (todo o parte) y reembolsar"),
     CASH("Caja", "Abrir y cerrar la caja"),
     REPORTS("Reportes y ganancias", "Ver reportes, ganancias y costos"),
     WORKSHOP("Taller", "Recibir equipos y cambiar su estado"),

@@ -1,0 +1,199 @@
+-- Compras a proveedores (con NCF), unidades con IMEI o serie, devoluciones de ventas y conteos físicos.
+
+CREATE TABLE purchase (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  supplierId INTEGER,
+  supplierName TEXT NOT NULL DEFAULT '',
+  supplierRnc TEXT NOT NULL DEFAULT '',
+  ncf TEXT NOT NULL DEFAULT '',
+  docDate INTEGER NOT NULL,
+  subtotal INTEGER NOT NULL,
+  tax INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL,
+  paymentMethod TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'OK',
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX purchase_created ON purchase(createdAt);
+
+CREATE TABLE purchaseItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchaseId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  unitCost INTEGER NOT NULL,
+  serials TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX purchaseItem_purchase ON purchaseItem(purchaseId);
+
+CREATE TABLE productUnit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  productId INTEGER NOT NULL,
+  serial TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'DISPONIBLE',
+  cost INTEGER NOT NULL DEFAULT 0,
+  purchaseId INTEGER,
+  saleId INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX productUnit_serial ON productUnit(serial);
+CREATE INDEX productUnit_product ON productUnit(productId);
+
+CREATE TABLE saleReturn (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  saleId INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  tax INTEGER NOT NULL DEFAULT 0,
+  cost INTEGER NOT NULL DEFAULT 0,
+  method TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  deviceId TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX saleReturn_sale ON saleReturn(saleId);
+
+CREATE TABLE saleReturnItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  returnId INTEGER NOT NULL,
+  saleItemId INTEGER NOT NULL,
+  productId INTEGER,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  amount INTEGER NOT NULL,
+  restock INTEGER NOT NULL DEFAULT 1,
+  serials TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX saleReturnItem_return ON saleReturnItem(returnId);
+
+CREATE TABLE stockCount (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  products INTEGER NOT NULL DEFAULT 0,
+  diffQty REAL NOT NULL DEFAULT 0,
+  diffValue INTEGER NOT NULL DEFAULT 0,
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE TABLE stockCountItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  countId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  expected REAL NOT NULL,
+  counted REAL NOT NULL,
+  cost INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX stockCountItem_count ON stockCountItem(countId);
+
+-- ---------- Compras ----------
+
+insertPurchase:
+INSERT INTO purchase(number, supplierId, supplierName, supplierRnc, ncf, docDate, subtotal, tax, total, paymentMethod, status, note, userName, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK', ?, ?, ?);
+
+nextPurchaseNumber:
+SELECT COALESCE(MAX(number), 0) + 1 FROM purchase;
+
+insertPurchaseItem:
+INSERT INTO purchaseItem(purchaseId, productId, name, qty, unitCost, serials) VALUES (?, ?, ?, ?, ?, ?);
+
+purchases:
+SELECT * FROM purchase ORDER BY createdAt DESC LIMIT ?;
+
+purchasesBetween:
+SELECT * FROM purchase WHERE docDate >= ? AND docDate < ? AND status = 'OK' ORDER BY docDate;
+
+purchaseById:
+SELECT * FROM purchase WHERE id = ?;
+
+purchaseItems:
+SELECT * FROM purchaseItem WHERE purchaseId = ? ORDER BY id;
+
+purchaseByNcf:
+SELECT * FROM purchase WHERE ncf = ? AND supplierRnc = ? AND status = 'OK' LIMIT 1;
+
+setPurchaseStatus:
+UPDATE purchase SET status = ? WHERE id = ?;
+
+-- ---------- Unidades (IMEI / serie) ----------
+
+insertUnit:
+INSERT INTO productUnit(productId, serial, status, cost, purchaseId, saleId, note, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?);
+
+unitBySerial:
+SELECT * FROM productUnit WHERE serial = ? ORDER BY id DESC;
+
+availableUnit:
+SELECT * FROM productUnit WHERE serial = ? AND status = 'DISPONIBLE' LIMIT 1;
+
+unitsByProduct:
+SELECT * FROM productUnit WHERE productId = ? ORDER BY status, serial;
+
+availableUnits:
+SELECT * FROM productUnit WHERE status = 'DISPONIBLE' ORDER BY serial;
+
+countAvailable:
+SELECT COUNT(*) FROM productUnit WHERE productId = ? AND status = 'DISPONIBLE';
+
+setUnitStatus:
+UPDATE productUnit SET status = ?, saleId = ?, note = ?, updatedAt = ? WHERE id = ?;
+
+unitsBySale:
+SELECT * FROM productUnit WHERE saleId = ?;
+
+searchUnits:
+SELECT productUnit.*, product.name AS productName FROM productUnit
+JOIN product ON product.id = productUnit.productId
+WHERE productUnit.serial LIKE ('%' || ? || '%') ORDER BY productUnit.updatedAt DESC LIMIT 50;
+
+-- ---------- Devoluciones ----------
+
+insertReturn:
+INSERT INTO saleReturn(saleId, total, tax, cost, method, reason, deviceId, userName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertReturnItem:
+INSERT INTO saleReturnItem(returnId, saleItemId, productId, name, qty, amount, restock, serials) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+returnsBySale:
+SELECT * FROM saleReturn WHERE saleId = ? ORDER BY createdAt;
+
+returnItemsBySale:
+SELECT saleReturnItem.* FROM saleReturnItem JOIN saleReturn ON saleReturn.id = saleReturnItem.returnId WHERE saleReturn.saleId = ?;
+
+returnsBetween:
+SELECT * FROM saleReturn WHERE createdAt >= ? AND createdAt < ? ORDER BY createdAt DESC;
+
+-- ---------- Conteos ----------
+
+insertCount:
+INSERT INTO stockCount(number, note, products, diffQty, diffValue, userName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+nextCountNumber:
+SELECT COALESCE(MAX(number), 0) + 1 FROM stockCount;
+
+insertCountItem:
+INSERT INTO stockCountItem(countId, productId, name, expected, counted, cost) VALUES (?, ?, ?, ?, ?, ?);
+
+counts:
+SELECT * FROM stockCount ORDER BY createdAt DESC LIMIT 50;
+
+countItems:
+SELECT * FROM stockCountItem WHERE countId = ? ORDER BY name COLLATE NOCASE;
+
+lastId:
+SELECT last_insert_rowid();

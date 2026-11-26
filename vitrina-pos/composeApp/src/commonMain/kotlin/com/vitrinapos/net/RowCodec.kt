@@ -31,7 +31,7 @@ object RowCodec {
         t(
             "product", "id" to L, "name" to S, "code" to S, "categoryId" to L, "supplierId" to L, "cost" to L, "price" to L,
             "stock" to D, "minStock" to D, "unit" to S, "taxable" to L, "trackStock" to L, "imagePath" to S, "description" to S,
-            "active" to L, "createdAt" to L, "updatedAt" to L, "isService" to L,
+            "active" to L, "createdAt" to L, "updatedAt" to L, "isService" to L, "serialized" to L, "variantGroup" to S, "variantName" to S,
         ),
         t("client", "id" to L, "name" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
         t("supplier", "id" to L, "name" to S, "contact" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
@@ -40,13 +40,32 @@ object RowCodec {
             "costTotal" to L, "taxIncluded" to L, "paymentMethod" to S, "received" to L, "changeDue" to L, "status" to S, "quoteId" to L,
             "createdAt" to L, "deviceId" to S, "userId" to L, "userName" to S,
         ),
-        t("saleItem", "id" to L, "saleId" to L, "productId" to L, "name" to S, "code" to S, "qty" to D, "price" to L, "cost" to L, "taxable" to L),
+        t("saleItem", "id" to L, "saleId" to L, "productId" to L, "name" to S, "code" to S, "qty" to D, "price" to L, "cost" to L, "taxable" to L, "serials" to S),
         t(
             "quote", "id" to L, "number" to L, "clientId" to L, "clientName" to S, "gross" to L, "discount" to L, "tax" to L, "total" to L,
             "taxIncluded" to L, "validDays" to L, "notes" to S, "status" to S, "saleId" to L, "createdAt" to L, "updatedAt" to L, "userName" to S,
         ),
         t("quoteItem", "id" to L, "quoteId" to L, "productId" to L, "name" to S, "code" to S, "qty" to D, "price" to L, "taxable" to L, "imagePath" to S),
-        t("stockMove", "id" to L, "productId" to L, "type" to S, "qty" to D, "note" to S, "createdAt" to L, "userName" to S),
+        t("stockMove", "id" to L, "productId" to L, "type" to S, "qty" to D, "note" to S, "createdAt" to L, "userName" to S, "unitCost" to L, "balance" to D),
+        t(
+            "purchase", "id" to L, "number" to L, "supplierId" to L, "supplierName" to S, "supplierRnc" to S, "ncf" to S, "docDate" to L,
+            "subtotal" to L, "tax" to L, "total" to L, "paymentMethod" to S, "status" to S, "note" to S, "userName" to S, "createdAt" to L,
+        ),
+        t("purchaseItem", "id" to L, "purchaseId" to L, "productId" to L, "name" to S, "qty" to D, "unitCost" to L, "serials" to S),
+        t(
+            "productUnit", "id" to L, "productId" to L, "serial" to S, "status" to S, "cost" to L, "purchaseId" to L, "saleId" to L,
+            "note" to S, "createdAt" to L, "updatedAt" to L,
+        ),
+        t(
+            "saleReturn", "id" to L, "saleId" to L, "total" to L, "tax" to L, "cost" to L, "method" to S, "reason" to S, "deviceId" to S,
+            "userName" to S, "createdAt" to L,
+        ),
+        t(
+            "saleReturnItem", "id" to L, "returnId" to L, "saleItemId" to L, "productId" to L, "name" to S, "qty" to D, "amount" to L,
+            "restock" to L, "serials" to S,
+        ),
+        t("stockCount", "id" to L, "number" to L, "note" to S, "products" to L, "diffQty" to D, "diffValue" to L, "userName" to S, "createdAt" to L),
+        t("stockCountItem", "id" to L, "countId" to L, "productId" to L, "name" to S, "expected" to D, "counted" to D, "cost" to L),
         t(
             "cashSession", "id" to L, "openedAt" to L, "openingAmount" to L, "closedAt" to L, "expectedAmount" to L, "countedAmount" to L,
             "notes" to S, "deviceId" to S, "userName" to S,
@@ -94,7 +113,12 @@ object RowCodec {
         driver.execute(null, sql, t.cols.size) {
             t.cols.forEachIndexed { i, (name, type) ->
                 val v = row[name]
-                val p = if (v == null || v is JsonNull) null else v.jsonPrimitive
+                // Columna que no viene (equipo con una versión anterior): se usa el valor por defecto de la tabla.
+                if (v == null) {
+                    when (type) { T.L -> bindLong(i, 0); T.D -> bindDouble(i, 0.0); T.S -> bindString(i, "") }
+                    return@forEachIndexed
+                }
+                val p = if (v is JsonNull) null else v.jsonPrimitive
                 when (type) {
                     T.L -> bindLong(i, p?.longOrNull ?: p?.doubleOrNull?.toLong())
                     T.D -> bindDouble(i, p?.doubleOrNull)
