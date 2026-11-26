@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.AlertDialog
@@ -135,7 +136,11 @@ fun LabelsScreen() {
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Etiquetas", subtitle = "Elige qué productos etiquetar", onBack = if (app.stack.isNotEmpty()) ({ app.back() }) else null) {
-            if (scanner != null) SquareIconButton(Icons.Rounded.QrCodeScanner, "Escanear producto", primary = true) { scanner() }
+            if (scanner != null) SquareIconButton(Icons.Rounded.QrCodeScanner, "Escanear productos", primary = true) {
+                app.labelJob.clear()
+                app.labelJob.addAll(selected.map { (id, c) -> AppState.LabelItem(id, c) })
+                app.open(Screen.Scanner(ScanMode.LABELS))
+            }
         }
         SearchBox(query, { query = it }, "Buscar por nombre o código", Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -226,6 +231,25 @@ fun LabelDesignerScreen() {
     }
 
     fun content(p: Product) = app.labelContent(p, p.code.ifBlank { codes[p.id] ?: "" })
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val hasPrinter = saved.labelPrinterId.isNotBlank()
+
+    fun printNow() {
+        busy = true
+        app.requestPrinterPermission {
+            scope.launch {
+                try {
+                    app.repo.saveSettings(app.settingsNow.withLabelOptions(opts).copy(labelOutput = output))
+                    app.printLabels(opts, items.map { (p, n) -> content(p) to n }, measurer) { done, all -> progress = done to all }
+                    app.toast("$total etiquetas enviadas a ${app.settingsNow.labelPrinterName}")
+                } finally {
+                    busy = false
+                    progress = null
+                }
+            }
+        }
+    }
 
     fun create() {
         busy = true
@@ -323,12 +347,18 @@ fun LabelDesignerScreen() {
                         label = { Text(if (isCustom) "${fmt(opts.widthMm)} × ${fmt(opts.heightMm)}" else "Otro tamaño…") }, shape = RoundedCornerShape(12.dp),
                     )
                 }
-                AppCard(color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Text(
-                        "Se crea un PDF con una etiqueta por página, del tamaño exacto. Ábrelo e imprímelo con el driver de tu etiquetadora. " +
-                            "La impresión directa desde la app (Bluetooth o USB) llega en la próxima versión.",
-                        fontSize = 13.sp, color = AppTheme.extra.muted,
-                    )
+                AppCard(onClick = { app.open(Screen.LabelPrinter) }, color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (hasPrinter) saved.labelPrinterName else "Configurar la etiquetadora", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (hasPrinter) "${saved.labelPrinter.language.title} · ${saved.labelDpi} dpi · toca para cambiar"
+                                else "Elige la impresora y su lenguaje (TSPL, ZPL o ESC/POS)",
+                                fontSize = 12.sp, color = AppTheme.extra.muted,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null)
+                    }
                 }
             } else {
                 SheetPreset.all.forEachIndexed { i, sp ->
@@ -364,7 +394,20 @@ fun LabelDesignerScreen() {
             Text("El QR lleva el código del producto: al escanearlo en Vender, el producto se agrega a la venta.", fontSize = 13.sp, color = AppTheme.extra.muted)
         }
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
-            Button(
+          Column {
+            if (output == "roll" && hasPrinter) {
+                Button(
+                    onClick = ::printNow, enabled = !busy && total > 0,
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp).height(54.dp), shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.extra.cta, contentColor = AppTheme.extra.onCta),
+                ) {
+                    val pr = progress
+                    if (busy && pr != null) Text("Enviando ${pr.first} de ${pr.second} productos…", fontWeight = FontWeight.Bold)
+                    else if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = AppTheme.extra.onCta)
+                    else { Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(8.dp)); Text("Imprimir $total etiquetas", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                }
+                TextButton(onClick = ::create, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("o crear PDF") }
+            } else Button(
                 onClick = ::create, enabled = !busy && total > 0,
                 modifier = Modifier.fillMaxWidth().padding(16.dp).height(54.dp), shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AppTheme.extra.cta, contentColor = AppTheme.extra.onCta),
@@ -378,6 +421,7 @@ fun LabelDesignerScreen() {
                     )
                 }
             }
+          }
         }
     }
     if (custom) {

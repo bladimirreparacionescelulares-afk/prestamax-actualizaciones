@@ -194,6 +194,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.Users -> UsersScreen()
         Screen.Labels -> LabelsScreen()
         Screen.LabelDesigner -> LabelDesignerScreen()
+        Screen.LabelPrinter -> LabelPrinterScreen()
+        is Screen.Scanner -> ScannerScreen(screen.mode)
     }
 }
 

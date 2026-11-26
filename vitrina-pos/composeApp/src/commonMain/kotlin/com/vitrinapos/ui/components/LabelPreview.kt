@@ -36,18 +36,29 @@ class ComposeLabelPainter(
     private val ox: Float,
     private val oy: Float,
     private val ink: Color = Color.Black,
+    /** Puntos por mm cuando se dibuja para la impresora (para alinear el QR y las barras). */
+    override val dotsPerMm: Float = 0f,
 ) : LabelPainter {
+    private val density = androidx.compose.ui.unit.Density(scope.density, scope.fontScale)
+
     private fun style(sizeMm: Float, bold: Boolean) = with(scope) {
         TextStyle(fontSize = (sizeMm * pxPerMm).toSp(), fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, color = ink)
     }
 
     override fun rect(x: Float, y: Float, w: Float, h: Float) {
-        scope.drawRect(ink, Offset(ox + x * pxPerMm, oy + y * pxPerMm), Size(w * pxPerMm + 0.4f, h * pxPerMm + 0.4f))
+        if (dotsPerMm > 0f) {
+            // Para la impresora: bordes en puntos enteros, sin medios puntos grises.
+            val x1 = kotlin.math.round(ox + x * pxPerMm); val y1 = kotlin.math.round(oy + y * pxPerMm)
+            val x2 = kotlin.math.round(ox + (x + w) * pxPerMm); val y2 = kotlin.math.round(oy + (y + h) * pxPerMm)
+            scope.drawRect(ink, Offset(x1, y1), Size(maxOf(1f, x2 - x1), maxOf(1f, y2 - y1)))
+        } else {
+            scope.drawRect(ink, Offset(ox + x * pxPerMm, oy + y * pxPerMm), Size(w * pxPerMm + 0.4f, h * pxPerMm + 0.4f))
+        }
     }
 
     override fun text(x: Float, y: Float, text: String, sizeMm: Float, bold: Boolean, align: PdfCanvas.TextAlign) {
         if (text.isEmpty()) return
-        val r = measurer.measure(text, style(sizeMm, bold), softWrap = false, maxLines = 1)
+        val r = measurer.measure(text, style(sizeMm, bold), softWrap = false, maxLines = 1, density = density)
         val w = r.size.width.toFloat()
         val left = ox + x * pxPerMm - when (align) {
             PdfCanvas.TextAlign.Left -> 0f
@@ -58,7 +69,7 @@ class ComposeLabelPainter(
     }
 
     override fun textWidth(text: String, sizeMm: Float, bold: Boolean): Float =
-        measurer.measure(text, style(sizeMm, bold), softWrap = false, maxLines = 1).size.width / pxPerMm
+        measurer.measure(text, style(sizeMm, bold), softWrap = false, maxLines = 1, density = density).size.width / pxPerMm
 }
 
 /** Vista previa de una etiqueta sobre papel blanco, ajustada al espacio disponible. */

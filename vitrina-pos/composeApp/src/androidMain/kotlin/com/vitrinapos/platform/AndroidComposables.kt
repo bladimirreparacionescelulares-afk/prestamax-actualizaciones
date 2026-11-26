@@ -54,16 +54,26 @@ actual fun rememberImagePicker(onResult: (File?) -> Unit): ImagePicker {
         }
     }
     val hasCamera = remember { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
-    return remember(camera, gallery) {
+    val launchCamera = remember(camera) {
+        {
+            val f = File(File(context.cacheDir, "fotos").apply { mkdirs() }, "cam_${System.currentTimeMillis()}.jpg")
+            pending = f.path
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", f)
+            runCatching { camera.launch(uri) }.onFailure {
+                Toast.makeText(context, "No se encontró una app de cámara", Toast.LENGTH_LONG).show()
+            }
+            Unit
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) launchCamera() else Toast.makeText(context, "Se necesita el permiso de cámara para tomar la foto", Toast.LENGTH_LONG).show()
+    }
+    return remember(camera, gallery, launchCamera, cameraPermission) {
         object : ImagePicker {
             override val canTakePhoto = hasCamera
             override fun takePhoto() {
-                val f = File(File(context.cacheDir, "fotos").apply { mkdirs() }, "cam_${System.currentTimeMillis()}.jpg")
-                pending = f.path
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", f)
-                runCatching { camera.launch(uri) }.onFailure {
-                    Toast.makeText(context, "No se encontró una app de cámara", Toast.LENGTH_LONG).show()
-                }
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera()
+                else cameraPermission.launch(Manifest.permission.CAMERA)
             }
 
             override fun pickFromGallery() {

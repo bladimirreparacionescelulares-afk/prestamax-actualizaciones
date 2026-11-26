@@ -36,7 +36,22 @@ data class AppSettings(
     val labelOutput: String = "roll",
     val labelSheet: Int = 0,
     val labelAskOnSave: Boolean = true,
+    // Etiquetadora de este equipo
+    val labelPrinterId: String = "",
+    val labelPrinterName: String = "",
+    val labelLanguage: String = "TSPL",
+    val labelDpi: Int = 203,
+    val labelGap: Float = 2f,
+    val labelDarkness: Int = 8,
+    val labelOffX: Float = 0f,
+    val labelOffY: Float = 0f,
 ) {
+    val labelPrinter: com.vitrinapos.labels.LabelPrinterConfig
+        get() = com.vitrinapos.labels.LabelPrinterConfig(
+            language = runCatching { com.vitrinapos.labels.LabelLanguage.valueOf(labelLanguage) }.getOrDefault(com.vitrinapos.labels.LabelLanguage.TSPL),
+            dpi = labelDpi, gapMm = labelGap, darkness = labelDarkness, offsetXmm = labelOffX, offsetYmm = labelOffY,
+        )
+
     val labelOptions: com.vitrinapos.labels.LabelOptions
         get() = com.vitrinapos.labels.LabelOptions(
             template = runCatching { com.vitrinapos.labels.LabelTemplate.valueOf(labelTemplate) }.getOrDefault(com.vitrinapos.labels.LabelTemplate.PRICE_QR),
@@ -86,6 +101,14 @@ data class AppSettings(
         "labelOutput" to labelOutput,
         "labelSheet" to labelSheet.toString(),
         "labelAskOnSave" to labelAskOnSave.toString(),
+        "labelPrinterId" to labelPrinterId,
+        "labelPrinterName" to labelPrinterName,
+        "labelLanguage" to labelLanguage,
+        "labelDpi" to labelDpi.toString(),
+        "labelGap" to labelGap.toString(),
+        "labelDarkness" to labelDarkness.toString(),
+        "labelOffX" to labelOffX.toString(),
+        "labelOffY" to labelOffY.toString(),
     )
 
     companion object {
@@ -94,6 +117,7 @@ data class AppSettings(
             "printerId", "printerName", "paperWidthMm", "ticketAscii", "autoPrint", "openDrawer",
             "labelTemplate", "labelW", "labelH", "labelShowName", "labelShowPrice", "labelShowCode", "labelShowStore",
             "labelOutput", "labelSheet", "labelAskOnSave",
+            "labelPrinterId", "labelPrinterName", "labelLanguage", "labelDpi", "labelGap", "labelDarkness", "labelOffX", "labelOffY",
         )
 
         fun fromMap(m: Map<String, String>): AppSettings {
@@ -135,6 +159,14 @@ data class AppSettings(
                 labelOutput = s("labelOutput", d.labelOutput),
                 labelSheet = i("labelSheet", d.labelSheet),
                 labelAskOnSave = b("labelAskOnSave", d.labelAskOnSave),
+                labelPrinterId = s("labelPrinterId", d.labelPrinterId),
+                labelPrinterName = s("labelPrinterName", d.labelPrinterName),
+                labelLanguage = s("labelLanguage", d.labelLanguage),
+                labelDpi = i("labelDpi", d.labelDpi),
+                labelGap = m["labelGap"]?.toFloatOrNull() ?: d.labelGap,
+                labelDarkness = i("labelDarkness", d.labelDarkness),
+                labelOffX = m["labelOffX"]?.toFloatOrNull() ?: d.labelOffX,
+                labelOffY = m["labelOffY"]?.toFloatOrNull() ?: d.labelOffY,
             )
         }
     }

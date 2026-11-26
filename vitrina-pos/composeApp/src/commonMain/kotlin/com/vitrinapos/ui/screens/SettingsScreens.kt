@@ -327,6 +327,17 @@ fun SettingsScreen() {
                 Button(onClick = { app.print(Ticket.test(d.copy(taxRate = taxText.toDoubleOrNull() ?: d.taxRate)), d) }, enabled = d.printerId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Imprimir ticket de prueba") }
             }
+            AppCard(onClick = { app.open(Screen.LabelPrinter) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.QrCode2, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Etiquetadora", fontWeight = FontWeight.SemiBold)
+                        Text(saved.labelPrinterName.ifBlank { "Sin configurar" } + if (saved.labelPrinterId.isNotBlank()) " · ${saved.labelPrinter.language.title}" else "",
+                            fontSize = 12.sp, color = AppTheme.extra.muted)
+                    }
+                }
+            }
             SwitchRow("Imprimir al cobrar", "Imprime el ticket automáticamente en cada venta", d.autoPrint) { d = d.copy(autoPrint = it) }
             SwitchRow("Abrir gaveta de dinero", "Si tienes gaveta conectada a la impresora", d.openDrawer) { d = d.copy(openDrawer = it) }
             SwitchRow("Imprimir sin acentos", "Actívalo si tu impresora muestra símbolos raros en á, é, ñ", d.ticketAscii) { d = d.copy(ticketAscii = it) }
@@ -401,7 +412,7 @@ fun SettingsScreen() {
             }
             TextButton(onClick = { confirmSamples = true }) { Text("Cargar productos de ejemplo") }
             }
-            Text("Vitrina POS 1.2 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
+            Text("Vitrina POS 1.3 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
         }
     }
 

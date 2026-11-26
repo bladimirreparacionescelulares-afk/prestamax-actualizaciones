@@ -132,7 +132,7 @@ fun PosScreen(wide: Boolean) {
                 )
                 if (scanner != null) {
                     Spacer(Modifier.width(8.dp))
-                    SquareIconButton(Icons.Rounded.QrCodeScanner, "Escanear código", primary = true) { scanner() }
+                    SquareIconButton(Icons.Rounded.QrCodeScanner, "Escanear códigos", primary = true) { app.open(Screen.Scanner(ScanMode.SALE)) }
                 }
             }
             if (categories.isNotEmpty()) {

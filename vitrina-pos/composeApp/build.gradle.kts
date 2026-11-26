@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.2.0"
-val appVersionCode = 3
+val appVersionName = "1.3.0"
+val appVersionCode = 4
 
 kotlin {
     androidTarget {
@@ -47,6 +47,11 @@ kotlin {
             implementation("app.cash.sqldelight:android-driver:2.0.2")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
             implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+            // Escáner continuo con la cámara
+            implementation("androidx.camera:camera-camera2:1.3.4")
+            implementation("androidx.camera:camera-lifecycle:1.3.4")
+            implementation("androidx.camera:camera-view:1.3.4")
+            implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)

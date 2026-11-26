@@ -75,6 +75,9 @@ class Screenshots {
         )
         shoot(graph, File(outDir, "18-etiquetas.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.labelJob.addAll(job); app.open(Screen.Labels) }
         shoot(graph, File(outDir, "19-diseno-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.openLabelsFor(job) }
+        runBlocking { repo.saveSettings(repo.settings.value.copy(labelPrinterId = "net:192.168.1.50:9100", labelPrinterName = "Xprinter XP-365B")) }
+        shoot(graph, File(outDir, "23-etiquetadora.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.open(Screen.LabelPrinter) }
+        shoot(graph, File(outDir, "24-diseno-imprimir.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.openLabelsFor(job) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
 
         // ---- Trabajo en red y usuarios ----

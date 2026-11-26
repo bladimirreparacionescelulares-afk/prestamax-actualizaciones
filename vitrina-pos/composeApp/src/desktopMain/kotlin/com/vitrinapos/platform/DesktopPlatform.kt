@@ -124,6 +124,10 @@ class DesktopPlatform : Platform {
         }
     }
 
+    override fun scanFeedback(ok: Boolean) {
+        runCatching { Toolkit.getDefaultToolkit().beep() }
+    }
+
     override fun shareFile(file: File, mime: String, title: String) {
         // En Windows no hay hoja de compartir: se abre la carpeta para adjuntar el archivo donde se quiera.
         runCatching { Desktop.getDesktop().open(file.parentFile) }

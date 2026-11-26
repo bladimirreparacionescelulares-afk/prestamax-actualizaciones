@@ -160,6 +160,16 @@ class AndroidPlatform(private val context: Context) : Platform {
 
     private fun uriFor(file: File) = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
 
+    private val tone by lazy { runCatching { android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 90) }.getOrNull() }
+
+    override fun scanFeedback(ok: Boolean) {
+        runCatching { tone?.startTone(if (ok) android.media.ToneGenerator.TONE_PROP_BEEP else android.media.ToneGenerator.TONE_PROP_NACK, 120) }
+        runCatching {
+            val v = context.getSystemService(android.os.Vibrator::class.java)
+            v?.vibrate(android.os.VibrationEffect.createOneShot(if (ok) 40 else 160, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+    }
+
     override fun shareFile(file: File, mime: String, title: String) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = mime

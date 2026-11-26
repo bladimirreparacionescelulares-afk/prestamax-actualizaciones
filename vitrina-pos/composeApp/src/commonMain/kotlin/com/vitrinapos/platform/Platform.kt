@@ -40,6 +40,9 @@ interface Platform {
     /** Dibuja un PDF. Por omisión, A4 (595 x 842 puntos). */
     fun writePdf(file: File, widthPt: Float = 595f, heightPt: Float = 842f, draw: (PdfCanvas) -> Unit)
 
+    /** Pitido (y vibración en el celular) al escanear: [ok] = encontrado. */
+    fun scanFeedback(ok: Boolean)
+
     fun shareFile(file: File, mime: String, title: String)
     fun shareText(text: String, title: String)
     fun openFile(file: File)
@@ -88,3 +91,13 @@ expect fun rememberFileExchange(): FileExchange
 
 @Composable
 expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
+
+/**
+ * Vista del escáner continuo: en Android, la cámara leyendo códigos sin parar;
+ * en Windows, espera el lector USB. [onCode] se llama por cada código leído.
+ */
+@Composable
+expect fun ContinuousScanner(onCode: (String) -> Unit, modifier: androidx.compose.ui.Modifier)
+
+/** true si el escáner usa la cámara (Android); false si espera un lector USB (Windows). */
+expect val scannerUsesCamera: Boolean

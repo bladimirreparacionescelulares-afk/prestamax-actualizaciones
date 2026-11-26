@@ -51,6 +51,8 @@ sealed interface Screen {
     data object Users : Screen
     data object Labels : Screen
     data object LabelDesigner : Screen
+    data object LabelPrinter : Screen
+    data class Scanner(val mode: String) : Screen
 }
 
 val LocalAppState = staticCompositionLocalOf<AppState> { error("AppState no disponible") }
@@ -178,12 +180,39 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         requestPrinterPermission {
             scope.launch {
                 val result = runCatching {
-                    withContext(platform.io) {
-                        platform.printRaw(PrinterDevice(s.printerId, s.printerName), ticket.escPos(s.ticketAscii, s.openDrawer))
-                    }
+                    sendToPrinter(PrinterDevice(s.printerId, s.printerName), ticket.escPos(s.ticketAscii, s.openDrawer))
                 }
                 toast(result.fold({ "Ticket enviado a ${s.printerName.ifBlank { "la impresora" }}" }, { "No se pudo imprimir: ${it.message ?: "revisa la impresora"}" }))
             }
+        }
+    }
+
+    /** Envía bytes a una impresora: de red (IP), Bluetooth o instalada en Windows. */
+    suspend fun sendToPrinter(device: PrinterDevice, bytes: ByteArray) = withContext(platform.io) {
+        val net = com.vitrinapos.labels.NetworkPrinter.parse(device.id)
+        if (net != null) com.vitrinapos.labels.NetworkPrinter.send(net.first, net.second, bytes)
+        else platform.printRaw(device, bytes)
+    }
+
+    /**
+     * Imprime etiquetas en la etiquetadora de este equipo. Cada producto se dibuja una vez
+     * y la impresora repite las copias. [onProgress] recibe (hechas, total).
+     */
+    suspend fun printLabels(
+        options: com.vitrinapos.labels.LabelOptions,
+        labels: List<Pair<com.vitrinapos.labels.LabelContent, Int>>,
+        measurer: androidx.compose.ui.text.TextMeasurer,
+        settings: AppSettings = settingsNow,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ) {
+        require(settings.labelPrinterId.isNotBlank()) { "Elige la etiquetadora en Configuración → Etiquetadora" }
+        val cfg = settings.labelPrinter
+        val device = PrinterDevice(settings.labelPrinterId, settings.labelPrinterName)
+        // De a pocas etiquetas por envío para que la impresora no se quede sin memoria.
+        labels.chunked(6).forEachIndexed { i, chunk ->
+            val maps = chunk.map { (c, n) -> com.vitrinapos.labels.LabelRaster.render(options, c, cfg, measurer) to n }
+            sendToPrinter(device, com.vitrinapos.labels.LabelEncoder.encode(cfg, options, maps))
+            onProgress(minOf((i + 1) * 6, labels.size), labels.size)
         }
     }
 }
