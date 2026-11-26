@@ -95,7 +95,7 @@ class InventoryTest {
         assertTrue(failMessage { repo.recordSale(listOf(CartLine.of(phone, 1.0, listOf("356000000000011"))), null, 0, PaymentMethods.CASH, 5_000_000, null) }.contains("no está disponible"))
         // Devolución: el equipo vuelve a la existencia y el dinero sale de la caja.
         val item = repo.saleItems(sale).first()
-        repo.returnSale(sale, listOf(ReturnLine(item.id, 1.0, true, listOf("356000000000011"))), "No le gustó", PaymentMethods.CASH)
+        repo.returnSale(sale, listOf(ReturnLine(item.id, 1.0, true, listOf("356000000000011"))), "No le gustó", PaymentMethods.CASH, authorizedBy = "Admin")
         assertEquals(UnitStatus.AVAILABLE, repo.searchUnits("0000011").first().status)
         assertEquals(2.0, g.productById(phoneId).stock)
         val session = repo.db.cashSessionQueries.selectOpen(repo.deviceId).executeAsOne()
@@ -106,7 +106,7 @@ class InventoryTest {
         repo.addUnits(phoneId, listOf("356000000000037"))
         assertEquals(3.0, g.productById(phoneId).stock)
         // Merma de una unidad por su IMEI.
-        repo.stockLoss(phoneId, 1.0, "Dañado", "Pantalla rota", listOf("356000000000037"))
+        repo.stockLoss(phoneId, 1.0, "Dañado", "Pantalla rota", listOf("356000000000037"), authorizedBy = "Admin")
         assertEquals(UnitStatus.LOST, repo.searchUnits("0000037").first().status)
         assertEquals(2.0, g.productById(phoneId).stock)
         g.repo.close()

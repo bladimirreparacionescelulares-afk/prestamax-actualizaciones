@@ -19,7 +19,8 @@ CREATE TABLE product (
   isService INTEGER NOT NULL DEFAULT 0,
   serialized INTEGER NOT NULL DEFAULT 0,
   variantGroup TEXT NOT NULL DEFAULT '',
-  variantName TEXT NOT NULL DEFAULT ''
+  variantName TEXT NOT NULL DEFAULT '',
+  altCodes TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX product_code ON product(code);
@@ -67,6 +68,12 @@ UPDATE product SET serialized = ?, variantGroup = ?, variantName = ? WHERE id = 
 
 joinGroup:
 UPDATE product SET variantGroup = ? WHERE id = ? AND variantGroup = '';
+
+setAltCodes:
+UPDATE product SET altCodes = ? WHERE id = ?;
+
+selectByAltCode:
+SELECT * FROM product WHERE active = 1 AND altCodes != '' AND (',' || altCodes || ',') LIKE ('%,' || ? || ',%') LIMIT 1;
 
 setCostOnly:
 UPDATE product SET cost = ? WHERE id = ?;

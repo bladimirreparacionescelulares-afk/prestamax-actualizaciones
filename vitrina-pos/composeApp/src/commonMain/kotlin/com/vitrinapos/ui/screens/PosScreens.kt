@@ -106,7 +106,7 @@ import kotlin.math.ceil
 fun AppState.addByCode(code: String, products: List<Product>): Boolean {
     val c = code.trim()
     if (c.isEmpty()) return false
-    val p = products.firstOrNull { it.code.equals(c, ignoreCase = true) }
+    val p = repo.productForCode(c, products)
     if (p == null) {
         // ¿Es el IMEI de un equipo en existencia?
         val u = repo.availableUnits.value.firstOrNull { it.serial.equals(c, ignoreCase = true) } ?: return false
@@ -127,7 +127,7 @@ fun PosScreen(wide: Boolean) {
     var category by remember { mutableStateOf<Long?>(null) }
     val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val scanner = rememberBarcodeScanner { code ->
-        if (com.vitrinapos.data.parseRepairCode(code) != null && products.none { it.code.equals(code, true) }) {
+        if (app.settingsNow.modTaller && com.vitrinapos.data.parseRepairCode(code) != null && products.none { it.code.equals(code, true) }) {
             scope.launch { app.openRepairByCode(code) }
         } else if (!app.addByCode(code, products)) {
             app.toast("No hay producto con el código $code")
@@ -147,7 +147,7 @@ fun PosScreen(wide: Boolean) {
                     query, { query = it }, if (scanner != null) "Buscar por nombre o código" else "Buscar o escanear código (lector USB)",
                     Modifier.weight(1f),
                     onSubmit = {
-                        if (com.vitrinapos.data.parseRepairCode(query) != null && products.none { it.code.equals(query.trim(), true) }) {
+                        if (app.settingsNow.modTaller && com.vitrinapos.data.parseRepairCode(query) != null && products.none { it.code.equals(query.trim(), true) }) {
                             val q = query; query = ""
                             scope.launch { app.openRepairByCode(q) }
                         } else if (app.addByCode(query, products)) query = ""

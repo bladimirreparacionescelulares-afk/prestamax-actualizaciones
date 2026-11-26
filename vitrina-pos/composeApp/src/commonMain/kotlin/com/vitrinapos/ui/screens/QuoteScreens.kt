@@ -102,6 +102,8 @@ fun QuoteRow(q: Quote, onClick: () -> Unit) {
                     Text(QuotePdf.quoteCode(q.number), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(8.dp))
                     QuoteStatusPill(q.status)
+                    val expired = q.status != com.vitrinapos.data.QuoteStatus.SOLD && q.validDays > 0 && Time.now() > q.createdAt + q.validDays * 86_400_000L
+                    if (expired) { Spacer(Modifier.width(6.dp)); com.vitrinapos.ui.components.Pill("Vencida", AppTheme.extra.danger, AppTheme.extra.dangerSoft) }
                 }
                 Text("${q.clientName} · ${Time.shortDate(q.createdAt)}", fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

@@ -35,6 +35,24 @@ data class AppSettings(
     val maxDiscountPct: Int = 10,
     /** El administrador (o la tienda sin usuarios) puede vender sin existencias. Apagado por defecto. */
     val adminNoStock: Boolean = false,
+    // Tipo de negocio y módulos (las instalaciones anteriores quedan con todo encendido)
+    val businessType: String = "",
+    val modTaller: Boolean = true,
+    val modImei: Boolean = true,
+    val modVariants: Boolean = true,
+    val modQuotes: Boolean = true,
+    val modLabels: Boolean = true,
+    // Seguridad
+    /** Minutos sin uso para bloquear (0 = nunca). Solo aplica con usuarios. */
+    val lockMinutes: Int = 5,
+    /** Cierre de caja a ciegas: quien no es administrador cuenta antes de ver lo esperado. */
+    val blindClose: Boolean = true,
+    /** Diferencia de caja (en centavos) a partir de la cual se pide un administrador. */
+    val cashDiffLimit: Long = 10000,
+    /** Días máximos para devolver una venta sin autorización. */
+    val returnMaxDays: Int = 30,
+    /** Monto (centavos) de una devolución o merma a partir del cual se pide un administrador. */
+    val approvalAmount: Long = 500000,
     // Facturación electrónica (e-CF)
     val fiscalEnabled: Boolean = false,
     val fiscalEnv: String = "TEST",
@@ -116,6 +134,17 @@ data class AppSettings(
         "pin" to pin,
         "lastBackupAt" to lastBackupAt.toString(),
         "onboarded" to onboarded.toString(),
+        "businessType" to businessType,
+        "modTaller" to modTaller.toString(),
+        "modImei" to modImei.toString(),
+        "modVariants" to modVariants.toString(),
+        "modQuotes" to modQuotes.toString(),
+        "modLabels" to modLabels.toString(),
+        "lockMinutes" to lockMinutes.toString(),
+        "blindClose" to blindClose.toString(),
+        "cashDiffLimit" to cashDiffLimit.toString(),
+        "returnMaxDays" to returnMaxDays.toString(),
+        "approvalAmount" to approvalAmount.toString(),
         "repairDiagnosisFee" to repairDiagnosisFee.toString(),
         "repairWarrantyDays" to repairWarrantyDays.toString(),
         "repairAbandonDays" to repairAbandonDays.toString(),
@@ -203,6 +232,17 @@ data class AppSettings(
                 requireCash = b("requireCash", d.requireCash),
                 maxDiscountPct = i("maxDiscountPct", d.maxDiscountPct),
                 adminNoStock = b("adminNoStock", d.adminNoStock),
+                businessType = s("businessType", d.businessType),
+                modTaller = b("modTaller", d.modTaller),
+                modImei = b("modImei", d.modImei),
+                modVariants = b("modVariants", d.modVariants),
+                modQuotes = b("modQuotes", d.modQuotes),
+                modLabels = b("modLabels", d.modLabels),
+                lockMinutes = i("lockMinutes", d.lockMinutes),
+                blindClose = b("blindClose", d.blindClose),
+                cashDiffLimit = m["cashDiffLimit"]?.toLongOrNull() ?: d.cashDiffLimit,
+                returnMaxDays = i("returnMaxDays", d.returnMaxDays),
+                approvalAmount = m["approvalAmount"]?.toLongOrNull() ?: d.approvalAmount,
                 fiscalEnabled = b("fiscalEnabled", d.fiscalEnabled),
                 fiscalEnv = s("fiscalEnv", d.fiscalEnv),
                 fiscalKind = s("fiscalKind", d.fiscalKind),
@@ -236,5 +276,23 @@ data class AppSettings(
                 labelOffY = m["labelOffY"]?.toFloatOrNull() ?: d.labelOffY,
             )
         }
+    }
+}
+
+/** Tipos de negocio y los módulos que traen encendidos. */
+enum class BusinessType(val title: String, val detail: String, val taller: Boolean, val imei: Boolean, val variants: Boolean, val quotes: Boolean, val labels: Boolean) {
+    PHONES("Celulares y accesorios", "Con taller de reparación", true, true, true, true, true),
+    REPAIR("Taller de reparación", "Equipos, órdenes y garantía", true, true, false, true, true),
+    COLMADO("Colmado o minimarket", "Venta rápida del día a día", false, false, false, false, true),
+    SUPER("Supermercado", "Muchos productos y varias cajas", false, false, false, false, true),
+    HARDWARE("Ferretería", "Cotizaciones y unidades", false, false, true, true, true),
+    CLOTHES("Ropa y calzado", "Tallas y colores", false, false, true, false, true),
+    PHARMACY("Farmacia", "Medicamentos y productos", false, false, false, false, true),
+    OTHER("Otro", "Tú eliges los módulos", false, false, false, true, true);
+
+    fun apply(s: AppSettings) = s.copy(businessType = name, modTaller = taller, modImei = imei, modVariants = variants, modQuotes = quotes, modLabels = labels)
+
+    companion object {
+        fun of(name: String) = entries.firstOrNull { it.name == name }
     }
 }

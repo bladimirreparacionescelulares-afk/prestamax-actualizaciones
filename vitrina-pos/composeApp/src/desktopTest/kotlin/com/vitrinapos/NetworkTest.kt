@@ -64,6 +64,8 @@ class NetworkTest {
         assertEquals(com.vitrinapos.data.UnitStatus.SOLD, main.repo.searchUnits("351111111111111").single().status)
         waitUntil("la caja ve el equipo vendido") { other.repo.availableUnits.value.none { it.serial == "351111111111111" } }
         waitUntil("la compra llega a la caja") { other.repo.purchases.value.any { it.ncf == "B0100000999" } }
+        // La actividad la anota el principal, con el nombre del equipo que hizo la compra.
+        assertTrue(main.repo.activity(0, Long.MAX_VALUE).any { it.action == "Registró una compra" && it.device.isNotBlank() })
         main.repo.voidSale(phoneSale, "prueba")
         assertTrue(saleId > 0)
         assertEquals(cable.stock - 2, main.repo.db.productQueries.selectById(cable.id).executeAsOne().stock)

@@ -127,7 +127,7 @@ fun InventoryScreen() {
     }
     val counts by produceState(emptyList<com.vitrinapos.db.StockCount>(), products) { value = app.repo.counts() }
     val tracked = products.filter { it.trackStock == 1L }
-    val low = tracked.filter { it.stock <= it.minStock }.sortedBy { it.stock }
+    val low = tracked.filter { it.stock >= 0 && it.stock <= it.minStock }.sortedBy { it.stock }
     val canStock = app.can(Permission.ADJUST_STOCK)
     val canBuy = app.can(Permission.PURCHASES)
 
@@ -151,9 +151,24 @@ fun InventoryScreen() {
                 if (canBuy) add(Triple(Icons.Rounded.ReceiptLong, "Compras", "${purchases.count { it.status == SaleStatus.OK }} registradas") to { app.open(Screen.Purchases) })
                 if (canStock) add(Triple(Icons.Rounded.Checklist, "Conteo físico", if (app.repo.countDraft().isNotEmpty()) "Hay un conteo en curso" else "Cuenta con el escáner") to { app.open(Screen.StockCount) })
                 if (canStock) add(Triple(Icons.Rounded.RemoveShoppingCart, "Merma", "Dañado, vencido, pérdida…") to { loss = true })
-                add(Triple(Icons.Rounded.PhoneAndroid, "Buscar IMEI", "En existencia o vendido") to { app.open(Screen.ImeiSearch) })
+                if (app.settings.modImei) add(Triple(Icons.Rounded.PhoneAndroid, "Buscar IMEI", "En existencia o vendido") to { app.open(Screen.ImeiSearch) })
                 if (canStock) add(Triple(Icons.Rounded.History, "Movimientos", "Todo lo que entra y sale") to { app.open(Screen.StockMoves) })
             })
+            val negative = tracked.filter { it.stock < 0 }
+            if (negative.isNotEmpty()) {
+                SectionTitle("Revisar · ${negative.size} en negativo")
+                AppCard(color = AppTheme.extra.dangerSoft, padding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                    Text("Se vendió más de lo que el sistema tenía (por ejemplo, ventas hechas sin conexión). Corrígelo con una compra, un conteo o un ajuste.",
+                        fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    negative.forEach { p ->
+                        Divider()
+                        Row(Modifier.fillMaxWidth().clickable { app.open(Screen.Kardex(p.id)) }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(p.fullName, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(p.stock.fmtQty(), color = AppTheme.extra.danger, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
             if (low.isNotEmpty()) {
                 SectionTitle("Stock bajo · ${low.size}")
                 AppCard(padding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)) {
@@ -253,13 +268,14 @@ fun PurchaseFormScreen(supplierId: Long?) {
         if (p.serialized == 1L) imeiFor = lines.indexOfFirst { it.product.id == p.id }
     }
     val scanner = rememberBarcodeScanner { code ->
-        products.firstOrNull { it.code.equals(code, true) }?.let { add(it) } ?: app.toast("No hay producto con el código $code")
+        app.repo.productForCode(code, products)?.let { add(it) } ?: app.toast("No hay producto con el código $code")
     }
     val pickable = products.filter { it.isService == 0L }.let { list -> supplier?.let { sp -> list.sortedByDescending { it.supplierId == sp.id } } ?: list }
     val subtotal = lines.sumOf { ((it.qty ?: 0.0) * (it.cost ?: 0)).roundToLong() }
     val ncfError = ncfProblem(ncf)
     val docDate = parseDate(date)
     val missingImei = lines.firstOrNull { it.product.serialized == 1L && it.serials.isEmpty() }
+    com.vitrinapos.ui.components.TrackUnsaved(lines.isNotEmpty() || ncf.isNotBlank() || note.isNotBlank())
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Nueva compra", subtitle = "Suma existencias y recalcula el costo promedio", onBack = { app.back() })
@@ -528,6 +544,21 @@ fun StockLossDialog(productId: Long?, serial: String?, onDone: () -> Unit) {
     val serialized = p.serialized == 1L
     val mine = units.filter { it.productId == p.id }
     val n = if (serialized) chosen.size.toDouble() else qty ?: 0.0
+    var needAuth by remember { mutableStateOf(false) }
+    if (needAuth) {
+        com.vitrinapos.ui.components.AdminAuthDialog(
+            "Merma grande", "${n.fmtQty()} ${p.fullName}: ${Money.format((n * p.cost).roundToLong(), app.settings.currencySymbol)} a costo.",
+            onAuthorized = { name ->
+                needAuth = false
+                scope.launch {
+                    runCatching { app.repo.stockLoss(p.id, n, reason ?: "", note, chosen.toList(), name) }
+                        .onSuccess { app.toast("Merma registrada"); onDone() }.onFailure { app.toast(it.message ?: "No se pudo guardar") }
+                }
+            },
+            onDismiss = { needAuth = false },
+        )
+        return
+    }
     AlertDialog(
         onDismissRequest = onDone,
         title = { Text("Registrar merma") },
@@ -562,8 +593,11 @@ fun StockLossDialog(productId: Long?, serial: String?, onDone: () -> Unit) {
         confirmButton = {
             TextButton(enabled = n > 0 && reason != null, onClick = {
                 val r = reason ?: return@TextButton
+                val limit = app.settingsNow.approvalAmount
+                if (limit > 0 && n * p.cost > limit && app.needsAdminAuth) { needAuth = true; return@TextButton }
+                val by = if (limit > 0 && n * p.cost > limit) app.repo.currentUser.value?.name ?: "Administrador" else ""
                 scope.launch {
-                    runCatching { app.repo.stockLoss(p.id, n, r, note, chosen.toList()) }
+                    runCatching { app.repo.stockLoss(p.id, n, r, note, chosen.toList(), by) }
                         .onSuccess { app.toast("Merma registrada"); onDone() }.onFailure { app.toast(it.message ?: "No se pudo guardar") }
                 }
             }) { Text("Registrar") }
@@ -595,7 +629,7 @@ fun StockCountScreen() {
         save()
     }
     fun bumpCode(code: String): Boolean {
-        val p = countable.firstOrNull { it.code.equals(code.trim(), true) }
+        val p = app.repo.productForCode(code, countable)
         if (p == null) {
             app.toast(if (products.any { it.code.equals(code.trim(), true) && it.serialized == 1L }) "Los equipos con IMEI se revisan en su ficha" else "No hay producto con el código $code")
             return false
@@ -1006,6 +1040,25 @@ fun SaleReturnScreen(saleId: Long) {
     fun left(it: com.vitrinapos.db.SaleItem) = it.qty - d.returned.filter { r -> r.saleItemId == it.id }.sumOf { r -> r.qty }
     val amount = d.items.sumOf { (((qty[it.id] ?: 0.0) * it.price * ratio)).roundToLong() }
     val anything = qty.values.any { it > 0 }
+    val rules = app.settings
+    val tooOld = rules.returnMaxDays > 0 && Time.now() - d.sale.createdAt > rules.returnMaxDays * 86_400_000L
+    val tooBig = rules.approvalAmount > 0 && amount > rules.approvalAmount
+    var needAuth by remember { mutableStateOf(false) }
+    fun send(by: String) {
+        busy = true
+        scope.launch {
+            runCatching {
+                app.repo.returnSale(saleId, d.items.filter { (qty[it.id] ?: 0.0) > 0 }.map {
+                    ReturnLine(it.id, qty[it.id] ?: 0.0, restock[it.id] != false, serials[it.id] ?: emptyList())
+                }, reason, method, by)
+            }.onSuccess { app.toast("Devolución registrada"); app.back() }.onFailure { busy = false; app.toast(it.message ?: "No se pudo registrar") }
+        }
+    }
+    if (needAuth) com.vitrinapos.ui.components.AdminAuthDialog(
+        "Devolución que pide autorización",
+        listOfNotNull(if (tooOld) "La venta tiene más de ${rules.returnMaxDays} días." else null, if (tooBig) "Se devuelven ${Money.format(amount, sym)}." else null).joinToString(" "),
+        onAuthorized = { name -> needAuth = false; send(name) }, onDismiss = { needAuth = false },
+    )
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Devolución", subtitle = "${d.sale.let { if (it.number < 0) "Venta pendiente" else "Venta #${it.number}" }} · ${Time.date(d.sale.createdAt)}", onBack = { app.back() })
         Column(
@@ -1013,6 +1066,7 @@ fun SaleReturnScreen(saleId: Long) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Elige qué devuelve el cliente.", color = AppTheme.extra.muted)
+            if (tooOld) AppCard(color = AppTheme.extra.warnSoft) { Text("La venta tiene más de ${rules.returnMaxDays} días: la devolución la autoriza un administrador.", fontSize = 13.sp) }
             d.items.forEach { item ->
                 val max = left(item)
                 val sold = item.serials.split(',').filter { it.isNotBlank() }
@@ -1056,13 +1110,10 @@ fun SaleReturnScreen(saleId: Long) {
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
             Button(
                 onClick = {
-                    busy = true
-                    scope.launch {
-                        runCatching {
-                            app.repo.returnSale(saleId, d.items.filter { (qty[it.id] ?: 0.0) > 0 }.map {
-                                ReturnLine(it.id, qty[it.id] ?: 0.0, restock[it.id] != false, serials[it.id] ?: emptyList())
-                            }, reason, method)
-                        }.onSuccess { app.toast("Devolución registrada"); app.back() }.onFailure { busy = false; app.toast(it.message ?: "No se pudo registrar") }
+                    when {
+                        (tooOld || tooBig) && app.needsAdminAuth -> needAuth = true
+                        tooOld || tooBig -> send(app.repo.currentUser.value?.name ?: "Administrador")
+                        else -> send("")
                     }
                 },
                 enabled = anything && reason.isNotBlank() && !busy,

@@ -550,10 +550,15 @@ fun ProductPickerDialog(products: List<Product>, onPick: (Product) -> Unit, onDi
     }
 }
 
+/** Texto sin acentos y en minúsculas, para buscar ("cafe" encuentra "Café"). */
+fun String.plain(): String = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
+
+/** Busca por nombre, variante, código (y códigos de productos unidos) o descripción; cada palabra debe aparecer. */
 fun Product.matches(q: String): Boolean {
-    val t = q.trim()
-    if (t.isEmpty()) return true
-    return name.contains(t, ignoreCase = true) || code.contains(t, ignoreCase = true) || description.contains(t, ignoreCase = true)
+    val words = q.trim().plain().split(' ').filter { it.isNotBlank() }
+    if (words.isEmpty()) return true
+    val hay = "$name $variantName $code $altCodes $description".plain()
+    return words.all { hay.contains(it) }
 }
 
 @Composable
@@ -613,4 +618,13 @@ fun AdminAuthDialog(title: String, message: String, onAuthorized: (String) -> Un
         },
         dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+/** Marca la pantalla con cambios sin guardar: al volver atrás se pregunta antes de perderlos. */
+@Composable
+fun TrackUnsaved(dirty: Boolean) {
+    val app = LocalAppState.current
+    val screen = remember { app.current }
+    androidx.compose.runtime.SideEffect { if (dirty) app.unsaved = screen else if (app.unsaved == screen) app.unsaved = null }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (app.unsaved == screen) app.unsaved = null } }
 }

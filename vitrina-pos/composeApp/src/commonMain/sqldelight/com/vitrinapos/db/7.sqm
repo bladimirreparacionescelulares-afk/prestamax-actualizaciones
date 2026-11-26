@@ -1,0 +1,16 @@
+-- Versión 7 -> 8: registro de actividad, códigos alternos (productos unidos) y claves de desbloqueo.
+CREATE TABLE auditLog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  device TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX auditLog_created ON auditLog(createdAt);
+
+ALTER TABLE product ADD COLUMN altCodes TEXT NOT NULL DEFAULT '';
+
+-- La clave del celular del cliente no se guarda después de entregarlo.
+UPDATE repairOrder SET unlockCode = '' WHERE deliveredAt IS NOT NULL;

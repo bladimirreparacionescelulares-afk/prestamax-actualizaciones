@@ -326,12 +326,20 @@ class Repository(val platform: Platform) {
 
     private fun JsonElement.asId(): Long = jsonPrimitive.long
 
-    /** Aplica una operación en la base de datos de este equipo (solo o principal). */
-    fun applyLocal(op: Op): JsonElement {
+    /** Nombre de este equipo (para la actividad). */
+    private val localDeviceName: String get() = meta.value["deviceName"] ?: metaGet("deviceName") ?: platform.defaultDeviceName
+
+    /**
+     * Aplica una operación en la base de datos de este equipo (solo o principal).
+     * [actor] y [device]: quién la hizo y desde qué equipo (por defecto, el usuario y el equipo de aquí).
+     */
+    fun applyLocal(op: Op, actor: String? = null, device: String? = null): JsonElement {
         val result = synchronized(writeLock) {
             val now = Time.now()
             db.transactionWithResult<JsonElement> {
-                when (op) {
+                // Se describe antes de aplicar, para ver los valores anteriores (precio viejo, nombre de lo que se borra…).
+                val audit = runCatching { describe(op) }.getOrNull()
+                val r = when (op) {
                     is Op.SaveSettings -> { op.values.forEach { (k, v) -> db.settingQueries.upsert(k, v) }; JsonNull }
                     is Op.SaveCategory -> JsonPrimitive(
                         if (op.id == null) {
@@ -345,7 +353,7 @@ class Repository(val platform: Platform) {
                         if (d.serialized) d = d.copy(trackStock = true, isService = false)
                         if (d.price <= 0) throw RuleException("El precio de venta debe ser mayor que cero")
                         if (d.cost < 0) throw RuleException("El costo no puede ser negativo")
-                        db.productQueries.selectByCode(d.code.trim()).executeAsList()
+                        (db.productQueries.selectByCode(d.code.trim()).executeAsList() + db.productQueries.selectByAltCode(d.code.trim()).executeAsList())
                             .firstOrNull { it.active == 1L && it.id != d.id }
                             ?.let { throw RuleException("El código ${d.code.trim()} ya lo tiene \"${it.name}\"") }
                         if (d.id == null) {
@@ -503,7 +511,19 @@ class Repository(val platform: Platform) {
                     }
                     is Op.CloseCash -> {
                         val s = db.cashSessionQueries.selectById(op.sessionId).executeAsOneOrNull()
-                        if (s != null && s.closedAt == null) db.cashSessionQueries.close(now, expectedCashSync(s), op.counted, op.notes, s.id)
+                        if (s != null && s.closedAt == null) {
+                            if (op.counted < 0) throw RuleException("El efectivo contado no puede ser negativo")
+                            val expected = expectedCashSync(s)
+                            val diff = op.counted - expected
+                            // Una diferencia grande solo se cierra con un administrador y con nota.
+                            if (kotlin.math.abs(diff) > currentSettings().cashDiffLimit) {
+                                if (op.authorizedBy.isBlank()) throw RuleException("La diferencia es grande: hace falta un administrador")
+                                if (op.notes.isBlank()) throw RuleException("Escribe por qué no cuadra la caja")
+                            }
+                            val notes = listOf(op.notes.trim(), op.authorizedBy.takeIf { it.isNotBlank() && it != op.user }?.let { "Autorizó: $it" } ?: "")
+                                .filter { it.isNotBlank() }.joinToString(" · ")
+                            db.cashSessionQueries.close(now, expected, op.counted, notes, s.id)
+                        }
                         JsonNull
                     }
                     is Op.SaveRepair -> JsonPrimitive(saveRepairLocal(op, now))
@@ -541,6 +561,8 @@ class Repository(val platform: Platform) {
                     is Op.ApplyCount -> JsonPrimitive(applyCountLocal(op, now))
                     is Op.ReturnSale -> JsonPrimitive(returnSaleLocal(op, now))
                     is Op.AddUnits -> { addUnitsLocal(op, now); JsonNull }
+                    is Op.MergeProducts -> { mergeLocal(op, now); JsonNull }
+                    is Op.LogEvent -> JsonNull
                     is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
@@ -553,6 +575,8 @@ class Repository(val platform: Platform) {
                         },
                     )
                 }
+                if (audit != null) db.auditQueries.insert(audit.first, audit.second.take(400), actor ?: userName, device ?: localDeviceName, now)
+                r
             }
         }
         changeSignal.value = db.syncQueries.maxSeq().executeAsOne()
@@ -659,6 +683,9 @@ class Repository(val platform: Platform) {
         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull() ?: throw RuleException("El producto no existe")
         if (p.trackStock != 1L) throw RuleException("Este producto no lleva existencias")
         if (op.qty > p.stock + 1e-9) throw RuleException("De ${p.fullName} solo hay ${p.stock.fmtQty()}")
+        val limit = currentSettings().approvalAmount
+        if (limit > 0 && op.qty * p.cost > limit && op.authorizedBy.isBlank())
+            throw RuleException("Una merma de ${Money.format((op.qty * p.cost).roundToLong(), currentSettings().currencySymbol)} necesita un administrador")
         val text = listOf(op.reason.trim(), op.note.trim()).filter { it.isNotBlank() }.joinToString(" · ")
         if (p.serialized == 1L) {
             val sn = cleanSerials(op.serials)
@@ -707,6 +734,9 @@ class Repository(val platform: Platform) {
         val sale = db.saleQueries.selectById(op.saleId).executeAsOneOrNull() ?: throw RuleException("La venta no existe")
         if (sale.status == SaleStatus.VOID) throw RuleException("Esta venta está anulada")
         if (op.reason.isBlank()) throw RuleException("Escribe el motivo de la devolución")
+        val rules = currentSettings()
+        if (rules.returnMaxDays > 0 && op.authorizedBy.isBlank() && now - sale.createdAt > rules.returnMaxDays * 86_400_000L)
+            throw RuleException("La venta tiene más de ${rules.returnMaxDays} días: hace falta un administrador")
         val lines = op.lines.filter { it.qty > 0 }
         if (lines.isEmpty()) throw RuleException("Elige qué se devuelve")
         val items = db.saleQueries.itemsBySale(op.saleId).executeAsList()
@@ -741,6 +771,8 @@ class Repository(val platform: Platform) {
             total = note.total
         }
         total = total.coerceAtMost(sale.total - already).coerceAtLeast(0)
+        if (rules.approvalAmount > 0 && total > rules.approvalAmount && op.authorizedBy.isBlank())
+            throw RuleException("Una devolución de ${Money.format(total, rules.currencySymbol)} necesita un administrador")
         val tax = if (sale.total == 0L) 0 else (sale.tax * total.toDouble() / sale.total).roundToLong()
         val cost = rows.sumOf { (it.line.qty * it.item.cost).roundToLong() }
         // Reembolso en efectivo: sale de la caja abierta de este equipo.
@@ -748,7 +780,7 @@ class Repository(val platform: Platform) {
             val session = db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull()
                 ?: throw RuleException("Para devolver en efectivo abre la caja de este equipo")
             if (total > expectedCashSync(session)) throw RuleException("No hay suficiente efectivo en la caja para devolver")
-            db.cashSessionQueries.insertMove(session.id, CashMoveType.REFUND, total, "Devolución venta #${sale.number}", op.user, now)
+            db.cashSessionQueries.insertMove(session.id, CashMoveType.REFUND, total, "Venta #${sale.number} · ${op.reason.trim()}", op.user, now)
         }
         db.inventoryQueries.insertReturn(op.saleId, total, tax, cost, op.refundMethod, op.reason.trim(), op.deviceId, op.user, now)
         val id = db.inventoryQueries.lastId().executeAsOne()
@@ -770,6 +802,117 @@ class Repository(val platform: Platform) {
             }
         }
         return id
+    }
+
+    /** Une productos repetidos (por ejemplo, el mismo artículo creado una vez por proveedor). */
+    private fun mergeLocal(op: Op.MergeProducts, now: Long) {
+        val keep = db.productQueries.selectById(op.keepId).executeAsOneOrNull()?.takeIf { it.active == 1L } ?: throw RuleException("El producto no existe")
+        val others = op.mergeIds.distinct().filter { it != keep.id }.mapNotNull { db.productQueries.selectById(it).executeAsOneOrNull()?.takeIf { p -> p.active == 1L } }
+        if (others.isEmpty()) throw RuleException("Elige qué productos se unen")
+        if (others.any { it.serialized != keep.serialized }) throw RuleException("No se puede unir un producto con IMEI con uno sin IMEI")
+        val all = listOf(keep) + others
+        val units = all.sumOf { it.stock.coerceAtLeast(0.0) }
+        val cost = if (units > 0) (all.sumOf { it.stock.coerceAtLeast(0.0) * it.cost } / units).roundToLong() else keep.cost
+        for (o in others) {
+            for (t in listOf("saleItem", "stockMove", "purchaseItem", "productUnit", "quoteItem", "stockCountItem", "saleReturnItem")) {
+                driver.execute(null, "UPDATE $t SET productId = ? WHERE productId = ?", 2) { bindLong(0, keep.id); bindLong(1, o.id) }
+            }
+            db.productQueries.deactivate(now, o.id)
+        }
+        val codes = (keep.altCodes.split(',') + others.flatMap { it.altCodes.split(',') + it.code })
+            .map { it.trim() }.filter { it.isNotBlank() && !it.equals(keep.code, true) }.distinct()
+        db.productQueries.setAltCodes(codes.joinToString(","), keep.id)
+        db.productQueries.setStock(all.sumOf { it.stock }, now, keep.id)
+        db.productQueries.setCost(cost, now, keep.id)
+        if (keep.trackStock == 0L && others.any { it.trackStock == 1L })
+            driver.execute(null, "UPDATE product SET trackStock = 1 WHERE id = ?", 1) { bindLong(0, keep.id) }
+        op.name.trim().takeIf { it.isNotBlank() && it != keep.name }?.let { n ->
+            driver.execute(null, "UPDATE product SET name = ? WHERE id = ?", 2) { bindString(0, n); bindLong(1, keep.id) }
+        }
+        // El kardex queda con el saldo acumulado de todos los movimientos unidos.
+        var bal = 0.0
+        db.stockMoveQueries.kardex(keep.id, 0, Long.MAX_VALUE).executeAsList().forEach { m ->
+            bal += m.qty
+            driver.execute(null, "UPDATE stockMove SET balance = ? WHERE id = ?", 2) { bindDouble(0, bal); bindLong(1, m.id) }
+        }
+        logMove(keep.id, MoveType.ADJUST, 0.0, "Unido con " + others.joinToString(", ") { it.fullName }, now, "")
+    }
+
+    /** Qué se anota en la actividad para cada operación (null = nada). Se llama antes de aplicarla. */
+    private fun describe(op: Op): Pair<String, String>? {
+        val sym = currentSettings().currencySymbol
+        fun m(c: Long) = Money.format(c, sym)
+        fun prod(id: Long) = db.productQueries.selectById(id).executeAsOneOrNull()
+        fun join(vararg p: String?) = p.filterNotNull().filter { it.isNotBlank() }.joinToString(" · ")
+        return when (op) {
+            is Op.SaveProduct -> {
+                val d = op.draft
+                val old = d.id?.let { prod(it) }
+                when {
+                    old == null -> "Creó un producto" to join(d.name.trim(), m(d.price))
+                    old.price != d.price && old.cost != d.cost -> "Cambió precio y costo" to "${old.fullName}: precio ${m(old.price)} → ${m(d.price)}, costo ${m(old.cost)} → ${m(d.cost)}"
+                    old.price != d.price -> "Cambió el precio" to "${old.fullName}: ${m(old.price)} → ${m(d.price)}"
+                    old.cost != d.cost -> "Cambió el costo" to "${old.fullName}: ${m(old.cost)} → ${m(d.cost)}"
+                    old.name != d.name.trim() -> "Cambió el nombre" to "${old.name} → ${d.name.trim()}"
+                    else -> null
+                }
+            }
+            is Op.DeleteProduct -> prod(op.id)?.let { "Borró un producto" to it.fullName }
+            is Op.AdjustStock -> prod(op.productId)?.let { "Ajustó existencias" to join("${it.fullName}: ${it.stock.fmtQty()} → ${op.newStock.fmtQty()}", op.note) }
+            is Op.VoidSale -> db.saleQueries.selectById(op.saleId).executeAsOneOrNull()?.let { "Anuló la venta #${it.number}" to join(m(it.total), op.reason) }
+            is Op.ReturnSale -> db.saleQueries.selectById(op.saleId).executeAsOneOrNull()?.let {
+                "Devolución de la venta #${it.number}" to join(op.refundMethod, op.reason, op.authorizedBy.takeIf { a -> a.isNotBlank() && a != op.user }?.let { a -> "autorizó $a" })
+            }
+            is Op.StockLoss -> prod(op.productId)?.let {
+                "Registró una merma" to join("${op.qty.fmtQty()} ${it.fullName}", op.reason, m((op.qty * it.cost).roundToLong()), op.authorizedBy.takeIf { a -> a.isNotBlank() && a != op.user }?.let { a -> "autorizó $a" })
+            }
+            is Op.ApplyCount -> "Aplicó un conteo físico" to "${op.lines.size} productos"
+            is Op.SavePurchase -> "Registró una compra" to join(op.supplierName, op.ncf, "${op.lines.size} productos")
+            is Op.VoidPurchase -> db.inventoryQueries.purchaseById(op.id).executeAsOneOrNull()?.let { "Anuló la compra #${it.number}" to join(m(it.total), op.reason) }
+            is Op.OpenCash -> "Abrió la caja" to m(op.amount)
+            is Op.CloseCash -> db.cashSessionQueries.selectById(op.sessionId).executeAsOneOrNull()?.let {
+                val diff = op.counted - expectedCashSync(it)
+                "Cerró la caja" to join("contado ${m(op.counted)}", if (diff == 0L) "cuadra" else if (diff > 0) "sobran ${m(diff)}" else "faltan ${m(-diff)}",
+                    op.authorizedBy.takeIf { a -> a.isNotBlank() && a != op.user }?.let { a -> "autorizó $a" })
+            }
+            is Op.CashMove -> "${CashMoveType.label(op.kind)} de caja" to join(m(op.amount), op.note)
+            is Op.SetUserPermissions -> db.appUserQueries.selectById(op.id).executeAsOneOrNull()?.let { "Cambió permisos" to it.name }
+            is Op.SaveUser -> {
+                val old = op.id?.let { db.appUserQueries.selectById(it).executeAsOneOrNull() }
+                when {
+                    old == null -> "Creó un usuario" to join(op.name.trim(), Roles.label(op.role))
+                    old.role != op.role -> "Cambió el rol" to "${old.name}: ${Roles.label(old.role)} → ${Roles.label(op.role)}"
+                    (old.active == 1L) != op.active -> (if (op.active) "Activó un usuario" else "Desactivó un usuario") to old.name
+                    old.name != op.name.trim() -> "Cambió el nombre de un usuario" to "${old.name} → ${op.name.trim()}"
+                    op.pinHash != null && !Crypto.isLegacyPin(old.pinHash) -> "Cambió el PIN" to old.name
+                    else -> null
+                }
+            }
+            is Op.SaveSettings -> {
+                val keys = op.values.keys - setOf("lastBackupAt", "fiscalSteps", "onboarded")
+                if (keys.isEmpty()) null else "Cambió la configuración" to keys.joinToString(", ") { settingLabel(it) }
+            }
+            is Op.DeleteClient -> db.clientQueries.selectById(op.id).executeAsOneOrNull()?.let { "Borró un cliente" to it.name }
+            is Op.DeleteSupplier -> db.supplierQueries.selectById(op.id).executeAsOneOrNull()?.let { "Borró un proveedor" to it.name }
+            is Op.DeleteCategory -> "Borró una categoría" to (categories.value.firstOrNull { it.id == op.id }?.name ?: "")
+            is Op.DeleteQuote -> db.quoteQueries.selectById(op.id).executeAsOneOrNull()?.let { "Borró una cotización" to "#${it.number} · ${it.clientName}" }
+            is Op.SaveFiscalRange -> "Registró números e-NCF" to "E${op.ecfType}: ${op.fromNo} a ${op.toNo}"
+            is Op.DeleteFiscalRange -> "Borró un rango de e-NCF" to ""
+            is Op.AddUnits -> prod(op.productId)?.let { "Registró IMEI" to "${op.serials.size} · ${it.fullName}" }
+            is Op.MergeProducts -> "Unió productos" to (listOf(op.keepId) + op.mergeIds).mapNotNull { prod(it)?.fullName }.joinToString(" + ")
+            is Op.LogEvent -> op.action to op.detail
+            else -> null
+        }
+    }
+
+    private fun settingLabel(k: String) = when (k) {
+        "businessName" -> "nombre del negocio"; "taxRate" -> "ITBIS"; "pricesIncludeTax" -> "precios con ITBIS"; "currencySymbol" -> "moneda"
+        "requireCash" -> "exigir caja"; "maxDiscountPct" -> "descuento máximo"; "adminNoStock" -> "vender sin existencias"
+        "modTaller" -> "módulo Taller"; "modImei" -> "módulo IMEI"; "modVariants" -> "módulo Variantes"; "modQuotes" -> "módulo Cotizaciones"
+        "modLabels" -> "módulo Etiquetas"; "businessType" -> "tipo de negocio"; "lockMinutes" -> "bloqueo por inactividad"
+        "blindClose" -> "cierre a ciegas"; "cashDiffLimit" -> "tope de diferencia de caja"; "returnMaxDays" -> "días para devolver"
+        "approvalAmount" -> "tope de devolución o merma"; "fiscalEnabled" -> "facturación electrónica"; "fiscalEnv" -> "ambiente DGII"
+        else -> k
     }
 
     private fun addUnitsLocal(op: Op.AddUnits, now: Long) {
@@ -1153,8 +1296,8 @@ class Repository(val platform: Platform) {
 
     suspend fun purchasesBetween(from: Long, to: Long) = withContext(io) { db.inventoryQueries.purchasesBetween(from, to).executeAsList() }
 
-    suspend fun stockLoss(productId: Long, qty: Double, reason: String, note: String, serials: List<String> = emptyList()) {
-        run(Op.StockLoss(productId, qty, reason, note, serials, userName))
+    suspend fun stockLoss(productId: Long, qty: Double, reason: String, note: String, serials: List<String> = emptyList(), authorizedBy: String = "") {
+        run(Op.StockLoss(productId, qty, reason, note, serials, userName, authorizedBy))
     }
 
     suspend fun lossesBetween(from: Long, to: Long) = withContext(io) { db.stockMoveQueries.lossesBetween(from, to).executeAsList() }
@@ -1173,9 +1316,9 @@ class Repository(val platform: Platform) {
 
     fun saveCountDraft(d: Map<Long, Pair<Double, Double>>) = metaPut("count.draft", d.entries.joinToString(";") { "${it.key}:${it.value.first}:${it.value.second}" })
 
-    suspend fun returnSale(saleId: Long, lines: List<ReturnLine>, reason: String, refundMethod: String): Long {
+    suspend fun returnSale(saleId: Long, lines: List<ReturnLine>, reason: String, refundMethod: String, authorizedBy: String = ""): Long {
         if (saleId < 0) throw OfflineException("Esta venta todavía no llega al equipo principal.")
-        return run(Op.ReturnSale(saleId, lines, reason, refundMethod, deviceId, userName)).asId()
+        return run(Op.ReturnSale(saleId, lines, reason, refundMethod, deviceId, userName, authorizedBy)).asId()
     }
 
     suspend fun returnsBySale(saleId: Long) = withContext(io) { db.inventoryQueries.returnsBySale(saleId).executeAsList() }
@@ -1185,6 +1328,20 @@ class Repository(val platform: Platform) {
     suspend fun returnsBetween(from: Long, to: Long) = withContext(io) { db.inventoryQueries.returnsBetween(from, to).executeAsList() }
 
     suspend fun addUnits(productId: Long, serials: List<String>) { run(Op.AddUnits(productId, serials, userName)) }
+
+    suspend fun mergeProducts(keepId: Long, mergeIds: List<Long>, name: String) { run(Op.MergeProducts(keepId, mergeIds, name)) }
+
+    /** Anota algo en la actividad (si falla, no detiene lo que se estaba haciendo). */
+    suspend fun logEvent(action: String, detail: String) { runCatching { run(Op.LogEvent(action, detail)) } }
+
+    suspend fun activity(from: Long, to: Long) = withContext(io) { db.auditQueries.between(from, to).executeAsList() }
+
+    /** Producto por su código o por uno de sus códigos alternos (productos unidos). */
+    fun productForCode(code: String, list: List<Product> = products.value): Product? {
+        val c = code.trim()
+        if (c.isEmpty()) return null
+        return list.firstOrNull { it.code.equals(c, true) } ?: list.firstOrNull { p -> p.altCodes.split(',').any { it.trim().equals(c, true) } }
+    }
 
     suspend fun unitsOf(productId: Long) = withContext(io) { db.inventoryQueries.unitsByProduct(productId).executeAsList() }
 
@@ -1346,7 +1503,9 @@ class Repository(val platform: Platform) {
     /** Efectivo esperado en la caja de este equipo: monto inicial + ventas en efectivo desde la apertura. */
     suspend fun expectedCash(session: CashSession): Long = withContext(io) { expectedCashSync(session) }
 
-    suspend fun closeCashSession(session: CashSession, counted: Long, notes: String) { run(Op.CloseCash(session.id, counted, notes)) }
+    suspend fun closeCashSession(session: CashSession, counted: Long, notes: String, authorizedBy: String = "") {
+        run(Op.CloseCash(session.id, counted, notes, authorizedBy, userName))
+    }
 
     suspend fun cashHistory(): List<CashSession> = withContext(io) { db.cashSessionQueries.selectRecent(deviceId).executeAsList() }
 

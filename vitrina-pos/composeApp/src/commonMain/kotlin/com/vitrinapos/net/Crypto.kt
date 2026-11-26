@@ -34,6 +34,12 @@ object Crypto {
         return iv + c.doFinal(plain)
     }
 
+    /** Llave para cifrar un respaldo con la contraseña que escribe el dueño. */
+    fun keyFromPassword(password: String, salt: ByteArray): ByteArray {
+        val spec = PBEKeySpec(password.toCharArray(), salt, 120_000, 256)
+        return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+    }
+
     /** Lanza una excepción si la llave no es la correcta o los datos fueron alterados. */
     fun open(key: ByteArray, data: ByteArray): ByteArray {
         require(data.size > 28) { "Datos incompletos" }

@@ -200,6 +200,42 @@ class Ticket(val width: Int) {
         }
 
         /** Comprobante de recepción de un equipo en el taller. */
+        /** Corte de caja al cerrar. */
+        fun forCashClose(
+            s: AppSettings, opened: Long, closed: Long, sm: com.vitrinapos.data.Repository.CashSummary, counted: Long,
+            user: String, notes: String, bills: List<Pair<Long, Int>> = emptyList(),
+        ): Ticket {
+            val t = Ticket(s.ticketChars)
+            header(t, s)
+            t.separator()
+            t.center("CORTE DE CAJA", Style.Bold)
+            t.pair("Apertura", Time.dateTime(opened))
+            t.pair("Cierre", Time.dateTime(closed))
+            if (user.isNotBlank()) t.left("Cerró: $user")
+            t.separator()
+            t.pair("Efectivo inicial", Money.plain(sm.opening))
+            t.pair("Ventas en efectivo", Money.plain(sm.cashSales))
+            if (sm.ins > 0) t.pair("Entradas", Money.plain(sm.ins))
+            if (sm.outs > 0) t.pair("Gastos y retiros", "-" + Money.plain(sm.outs))
+            if (sm.refunds > 0) t.pair("Devoluciones", "-" + Money.plain(sm.refunds))
+            t.pair("Debe haber", Money.plain(sm.expected), Style.Bold)
+            t.separator()
+            if (bills.isNotEmpty()) {
+                bills.filter { it.second > 0 }.forEach { (v, n) -> t.pair("   ${Money.plain(v)} x $n", Money.plain(v * n)) }
+            }
+            t.pair("Contado", Money.plain(counted), Style.Bold)
+            val diff = counted - sm.expected
+            t.pair(if (diff == 0L) "Cuadra" else if (diff > 0) "Sobrante" else "Faltante", Money.plain(kotlin.math.abs(diff)), Style.Bold)
+            t.separator()
+            t.pair("Tarjeta", Money.plain(sm.cardSales))
+            t.pair("Transferencia", Money.plain(sm.transferSales))
+            if (notes.isNotBlank()) { t.separator(); t.left("Nota: $notes") }
+            t.blank(); t.blank()
+            t.center("______________________________".take(t.width - 4))
+            t.center("Firma")
+            return t
+        }
+
         fun forRepair(s: AppSettings, r: com.vitrinapos.db.RepairOrder): Ticket {
             val t = Ticket(s.ticketChars)
             val sym = s.currencySymbol

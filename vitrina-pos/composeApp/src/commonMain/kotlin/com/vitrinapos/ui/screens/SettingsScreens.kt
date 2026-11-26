@@ -126,6 +126,7 @@ fun MoreScreen() {
         add(MoreItem(Icons.Rounded.QrCode2, "Etiquetas", "QR y precio para tus productos", Screen.Labels))
         add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
         add(MoreItem(Icons.Rounded.Inventory2, "Inventario", "Compras, conteo, mermas, IMEI y kardex", Screen.Inventory))
+        add(MoreItem(Icons.Rounded.History, "Actividad", "Quién hizo qué y cuándo", Screen.Activity))
         val fiscalScreen = if (app.allows(Screen.Fiscal)) Screen.Fiscal else Screen.FiscalDocs
         if (fiscalScreen == Screen.Fiscal || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", fiscalScreen))
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
@@ -198,6 +199,8 @@ fun SettingsScreen() {
     var searching by remember { mutableStateOf(false) }
     var pinDialog by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
+    var backupDialog by remember { mutableStateOf(false) }
+    var restoreDialog by remember { mutableStateOf(false) }
     var confirmSamples by remember { mutableStateOf(false) }
     val files = rememberFileExchange()
     val logoPicker = rememberImagePicker { temp ->
@@ -360,7 +363,32 @@ fun SettingsScreen() {
             SwitchRow("El administrador puede vender sin existencias", "Apagado: nadie vende más de lo que hay en stock. A otros usuarios se les da el permiso en Más → Usuarios", d.adminNoStock) { d = d.copy(adminNoStock = it) }
             Text("Vender sin stock o cambiar precios se permite por usuario en Más → Usuarios.", fontSize = 12.sp, color = AppTheme.extra.muted)
 
+            // ---- Seguridad y controles ----
+            SectionTitle("Seguridad y controles")
+            TextInput(d.lockMinutes.toString(), { d = d.copy(lockMinutes = it.filter(Char::isDigit).take(3).toIntOrNull() ?: 0) },
+                "Bloquear tras minutos sin uso (0 = nunca)", keyboard = KeyboardType.Number)
+            SwitchRow("Cierre de caja a ciegas", "Quien no es administrador cuenta el efectivo antes de ver lo que debía haber", d.blindClose) { d = d.copy(blindClose = it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                com.vitrinapos.ui.components.MoneyInput(d.cashDiffLimit, { d = d.copy(cashDiffLimit = it ?: 0) }, "Diferencia de caja que pide administrador", Modifier.weight(1f))
+                com.vitrinapos.ui.components.MoneyInput(d.approvalAmount, { d = d.copy(approvalAmount = it ?: 0) }, "Devolución o merma que pide administrador", Modifier.weight(1f))
+            }
+            TextInput(d.returnMaxDays.toString(), { d = d.copy(returnMaxDays = it.filter(Char::isDigit).take(4).toIntOrNull() ?: 0) },
+                "Días para devolver sin autorización", keyboard = KeyboardType.Number)
+
+            // ---- Módulos ----
+            SectionTitle("Módulos del negocio")
+            Text("Apagar un módulo solo lo esconde: sus datos se conservan y vuelven al encenderlo. Aplica a todos los equipos.", fontSize = 12.sp, color = AppTheme.extra.muted)
+            com.vitrinapos.ui.components.DropdownField("Tipo de negocio", com.vitrinapos.data.BusinessType.of(d.businessType), com.vitrinapos.data.BusinessType.entries.toList(), { it.title },
+                { t -> d = if (t != null) t.apply(d) else d.copy(businessType = "") }, noneLabel = "Sin elegir")
+            val openRepairs = app.repo.repairs.collectAsState().value.count { !com.vitrinapos.data.RepairStatus.isClosed(it.status) }
+            SwitchRow("Taller de reparación", if (!d.modTaller && openRepairs > 0) "Hay $openRepairs órdenes abiertas: se esconden, no se borran" else "Recibir equipos, órdenes, entregas y garantía", d.modTaller) { d = d.copy(modTaller = it) }
+            SwitchRow("IMEI y número de serie", "Celulares y equipos que se venden por unidad", d.modImei) { d = d.copy(modImei = it) }
+            SwitchRow("Variantes", "Color, capacidad o talla del mismo producto", d.modVariants) { d = d.copy(modVariants = it) }
+            SwitchRow("Cotizaciones", "Presupuestos en PDF para clientes", d.modQuotes) { d = d.copy(modQuotes = it) }
+            SwitchRow("Etiquetas", "QR y precio para los productos", d.modLabels) { d = d.copy(modLabels = it) }
+
             // ---- Taller ----
+            if (d.modTaller) {
             SectionTitle("Taller de reparación")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 com.vitrinapos.ui.components.MoneyInput(d.repairDiagnosisFee, { d = d.copy(repairDiagnosisFee = it ?: 0) }, "Costo de diagnóstico", Modifier.weight(1f))
@@ -377,6 +405,7 @@ fun SettingsScreen() {
                     }
                     Text("Editar", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 }
+            }
             }
             }
 
@@ -430,10 +459,7 @@ fun SettingsScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = {
-                            val name = "vitrina-respaldo-${Time.date(Time.now()).replace('/', '-')}.zip"
-                            files.saveAs(name, "application/zip", { out -> app.graph.exportBackup(out) }) { ok ->
-                                if (ok) scope.launch { app.repo.updateSettings { it.copy(lastBackupAt = Time.now()) }; app.toast("Respaldo guardado") }
-                            }
+                            backupDialog = true
                         },
                         modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
                     ) { Text("Crear respaldo") }
@@ -442,7 +468,7 @@ fun SettingsScreen() {
             }
             TextButton(onClick = { confirmSamples = true }) { Text("Cargar productos de ejemplo") }
             }
-            Text("Vitrina POS 1.3 · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
+            Text("Vitrina POS ${com.vitrinapos.AppInfo.VERSION} · equipo: ${app.graph.deviceName}", fontSize = 12.sp, color = AppTheme.extra.muted)
         }
     }
 
@@ -458,15 +484,37 @@ fun SettingsScreen() {
             "Se reemplazan TODOS los datos de este equipo (productos, ventas, clientes, fotos) por los del respaldo. Haz un respaldo antes si no estás seguro.",
             "Elegir archivo",
             onConfirm = {
-                files.open(arrayOf("application/zip", "application/octet-stream"), { input -> app.graph.importBackup(input) }) { ok ->
-                    ImageCache.clear()
-                    app.clearCart()
-                    app.toast(if (ok) "Respaldo restaurado" else "No se pudo restaurar: el archivo no es un respaldo válido")
-                    if (ok) app.selectTab(Screen.Home)
-                }
+                restoreDialog = true
             },
             onDismiss = { confirmRestore = false }, destructive = true,
         )
+    }
+    if (backupDialog) BackupPasswordDialog(
+        "Contraseña del respaldo",
+        "El respaldo va cifrado con esta contraseña (y lleva el certificado de facturación si lo tienes). Guárdala bien: sin ella no se puede abrir.",
+        confirm = true, onDismiss = { backupDialog = false },
+    ) { pw ->
+        backupDialog = false
+        val name = "vitrina-respaldo-${Time.date(Time.now()).replace('/', '-')}.zip"
+        files.saveAs(name, "application/zip", { out -> app.graph.exportBackup(out, pw) }) { ok ->
+            if (ok) scope.launch { app.repo.updateSettings { it.copy(lastBackupAt = Time.now()) }; app.repo.logEvent("Creó un respaldo", ""); app.toast("Respaldo guardado") }
+        }
+    }
+    if (restoreDialog) BackupPasswordDialog(
+        "Restaurar respaldo",
+        "Escribe la contraseña con que se creó. Los respaldos de versiones anteriores no tienen: déjala vacía.",
+        confirm = false, onDismiss = { restoreDialog = false },
+    ) { pw ->
+        restoreDialog = false
+        var error: String? = null
+        files.open(arrayOf("application/zip", "application/octet-stream"), { input ->
+            runCatching { app.graph.importBackup(input, pw) }.onFailure { error = it.message }.getOrThrow()
+        }) { ok ->
+            ImageCache.clear()
+            app.clearCart()
+            app.toast(if (ok) "Respaldo restaurado" else "No se pudo restaurar: " + (error ?: "el archivo no es un respaldo válido"))
+            if (ok) app.selectTab(Screen.Home)
+        }
     }
     if (confirmSamples) {
         ConfirmDialog("Productos de ejemplo", "Se agregan 11 productos, 6 categorías, 2 proveedores y 3 clientes de ejemplo. Puedes borrarlos después.", "Agregar",
@@ -510,5 +558,28 @@ private fun PinDialog(hasPin: Boolean, onDismiss: () -> Unit, onSave: (String) -
                 TextButton(onClick = onDismiss) { Text("Cancelar") }
             }
         },
+    )
+}
+
+/** Pide la contraseña de un respaldo (al crearlo, dos veces). */
+@Composable
+private fun BackupPasswordDialog(title: String, message: String, confirm: Boolean, onDismiss: () -> Unit, onOk: (String) -> Unit) {
+    var pw by remember { mutableStateOf("") }
+    var pw2 by remember { mutableStateOf("") }
+    val ok = if (confirm) pw.length >= 6 && pw == pw2 else true
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(message, fontSize = 14.sp)
+                TextInput(pw, { pw = it.take(64) }, if (confirm) "Contraseña (mínimo 6)" else "Contraseña",
+                    visual = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                if (confirm) TextInput(pw2, { pw2 = it.take(64) }, "Repite la contraseña", visual = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    error = if (pw2.isNotEmpty() && pw != pw2) "No coinciden" else null)
+            }
+        },
+        confirmButton = { TextButton(enabled = ok, onClick = { onOk(pw) }) { Text(if (confirm) "Crear respaldo" else "Elegir archivo") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

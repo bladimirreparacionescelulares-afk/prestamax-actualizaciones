@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -131,7 +133,30 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
                     !settings.onboarded -> WelcomeScreen(onConnect = { connecting = true })
                     activeUsers.isNotEmpty() && current == null -> LoginScreen(activeUsers)
                     activeUsers.isEmpty() && settings.pin.isNotBlank() && !unlocked -> LockScreen(settings.pin) { unlocked = true }
-                    else -> MainShell(app)
+                    else -> {
+                        // Bloqueo por inactividad (solo con usuarios): cualquier toque o tecla cuenta como uso.
+                        LaunchedEffect(settings.lockMinutes, current?.id) {
+                            app.lastActivity = com.vitrinapos.data.Time.now()
+                            while (true) {
+                                kotlinx.coroutines.delay(10_000)
+                                val mins = app.settingsNow.lockMinutes
+                                if (mins > 0 && app.repo.currentUser.value != null &&
+                                    com.vitrinapos.data.Time.now() - app.lastActivity > mins * 60_000L) app.lockNow()
+                            }
+                        }
+                        Box(
+                            Modifier.fillMaxSize()
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                            app.lastActivity = com.vitrinapos.data.Time.now()
+                                        }
+                                    }
+                                }
+                                .onPreviewKeyEvent { app.lastActivity = com.vitrinapos.data.Time.now(); false },
+                        ) { MainShell(app) }
+                    }
                 }
             }
         }
@@ -156,6 +181,10 @@ private fun MainShell(app: AppState) {
             else WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
             Row(Modifier.fillMaxSize().padding(pad).windowInsetsPadding(WindowInsets.safeDrawing.only(sides))) {
                 app.labelPrompt?.let { LabelPromptDialog(it) }
+                if (app.confirmLeave) com.vitrinapos.ui.components.ConfirmDialog(
+                    "Salir sin guardar", "Tienes cambios sin guardar en esta pantalla. Si sales, se pierden.", "Salir sin guardar",
+                    onConfirm = { app.confirmLeave = true; app.back() }, onDismiss = { app.confirmLeave = false }, destructive = true,
+                )
                 app.unitPicker?.let { com.vitrinapos.ui.screens.UnitPickerDialog(it) }
                 app.variantPicker?.let { com.vitrinapos.ui.screens.VariantPickerDialog(it) }
                 if (wide) SideBar(app)
@@ -208,6 +237,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.Categories -> CategoriesScreen()
         is Screen.StockEntry -> com.vitrinapos.ui.screens.PurchaseFormScreen(screen.supplierId)
         Screen.Inventory -> com.vitrinapos.ui.screens.InventoryScreen()
+        Screen.Activity -> com.vitrinapos.ui.screens.ActivityScreen()
+        is Screen.MergeProducts -> com.vitrinapos.ui.screens.MergeProductsScreen(screen.productId)
         Screen.Purchases -> com.vitrinapos.ui.screens.PurchasesScreen()
         is Screen.PurchaseDetail -> com.vitrinapos.ui.screens.PurchaseDetailScreen(screen.id)
         Screen.StockCount -> com.vitrinapos.ui.screens.StockCountScreen()
@@ -235,7 +266,8 @@ private fun BottomBar(app: AppState) {
             Modifier.fillMaxWidth().navigationBarsPadding().height(70.dp).padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            bottomItems.filter { app.allows(it.screen) }.forEach { item ->
+            val mods = app.settings // se vuelve a dibujar al cambiar los módulos
+            bottomItems.filter { (mods.modTaller || it.screen != Screen.Taller) && app.allows(it.screen) }.forEach { item ->
                 val selected = app.tab == item.screen && app.stack.isEmpty()
                 val isSell = item.screen == Screen.Pos
                 Column(
@@ -292,7 +324,7 @@ private fun SideBar(app: AppState) {
                     Text(s.businessName, style = MaterialTheme.typography.bodySmall, color = ex.muted, maxLines = 1)
                 }
             }
-            sideItems.filter { app.allows(it.screen) }.forEach { item ->
+            sideItems.filter { (s.modTaller || it.screen != Screen.Taller) && (s.modQuotes || it.screen != Screen.Quotes) && (s.modLabels || it.screen != Screen.Labels) && app.allows(it.screen) }.forEach { item ->
                 val selected = app.tab == item.screen
                 val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else ex.muted
                 Row(

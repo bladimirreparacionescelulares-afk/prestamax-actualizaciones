@@ -112,11 +112,11 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
         val req = runCatching { json.decodeFromString(ApiRequest.serializer(), String(Crypto.open(key, body))) }
             .getOrElse { return 401 to "No se pudo leer el pedido".toByteArray() }
         synchronized(repo.writeLock) { repo.db.syncQueries.deviceSeen(Time.now(), deviceId) }
-        val resp = runCatching { answer(req) }.getOrElse { ApiResponse(ok = false, error = it.message ?: "Error en el equipo principal") }
+        val resp = runCatching { answer(req, deviceId) }.getOrElse { ApiResponse(ok = false, error = it.message ?: "Error en el equipo principal") }
         return 200 to Crypto.seal(key, json.encodeToString(ApiResponse.serializer(), resp).toByteArray())
     }
 
-    private fun answer(req: ApiRequest): ApiResponse = when (req.type) {
+    private fun answer(req: ApiRequest, deviceId: String = ""): ApiResponse = when (req.type) {
         "ping" -> ApiResponse(epoch = epoch, last = repo.maxSeq())
         "changes" -> changes(req.since)
         "wait" -> {
@@ -131,7 +131,8 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
             if (previous != null) {
                 ApiResponse(result = Json.parseToJsonElement(previous))
             } else {
-                val result = repo.applyLocal(op)
+                val device = repo.db.syncQueries.deviceGet(deviceId).executeAsOneOrNull()?.name ?: ""
+                val result = repo.applyLocal(op, req.user, device)
                 if (req.opId.isNotBlank()) repo.saveAppliedResult(req.opId, result.toString())
                 ApiResponse(result = result, last = repo.maxSeq())
             }

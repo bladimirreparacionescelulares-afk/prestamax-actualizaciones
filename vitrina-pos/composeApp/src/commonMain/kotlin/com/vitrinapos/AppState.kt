@@ -47,6 +47,8 @@ sealed interface Screen {
     // Pantallas secundarias
     data class ProductForm(val id: Long? = null, val presetCode: String? = null, val key: Long = 0, val copyOf: Long? = null) : Screen
     data object Inventory : Screen
+    data object Activity : Screen
+    data class MergeProducts(val productId: Long) : Screen
     data object Purchases : Screen
     data class PurchaseDetail(val id: Long) : Screen
     data object StockCount : Screen
@@ -104,8 +106,36 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         return com.vitrinapos.data.can(u.role, p, u.permissions)
     }
 
+    // ---------- Bloqueo por inactividad ----------
+
+    /** Usuario cuya sesión se bloqueó por inactividad (vuelve a entrar con su PIN y conserva el carrito). */
+    var lockedUserId by mutableStateOf<Long?>(null)
+
+    /** Último toque o tecla. */
+    @Volatile var lastActivity: Long = com.vitrinapos.data.Time.now()
+
+    /** Bloquea la sesión: pide el PIN otra vez. */
+    fun lockNow() {
+        val u = repo.currentUser.value ?: return
+        lockedUserId = u.id
+        repo.currentUser.value = null
+    }
+
+    /** Si el módulo de la pantalla está encendido en Configuración → Módulos. */
+    fun moduleOn(screen: Screen): Boolean {
+        val s = repo.settings.value
+        return when (screen) {
+            Screen.Taller, is Screen.RepairReceive, is Screen.RepairDetail, is Screen.RepairDeliver, Screen.RepairStatuses -> s.modTaller
+            Screen.Quotes, is Screen.QuoteEditor -> s.modQuotes
+            Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> s.modLabels
+            is Screen.ProductUnits, Screen.ImeiSearch -> s.modImei
+            else -> true
+        }
+    }
+
     /** Si el usuario que entró puede abrir esta pantalla. */
     fun allows(screen: Screen): Boolean {
+        if (!moduleOn(screen)) return false
         val needed = requiredPermission(screen)
         return needed.isEmpty() || needed.any { can(it) }
     }
@@ -126,19 +156,26 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     fun open(s: Screen) { stack.add(s) }
 
+    /** La pantalla actual tiene cambios sin guardar: al volver se pregunta antes de perderlos. */
+    var unsaved by mutableStateOf<Screen?>(null)
+    var confirmLeave by mutableStateOf(false)
+
     fun back(): Boolean {
-        if (stack.isNotEmpty()) { stack.removeAt(stack.lastIndex); return true }
+        if (stack.isNotEmpty() && unsaved == stack.last() && !confirmLeave) { confirmLeave = true; return true }
+        confirmLeave = false
+        if (stack.isNotEmpty()) { val s = stack.removeAt(stack.lastIndex); if (unsaved == s) unsaved = null; return true }
         if (tab != Screen.Home) { tab = Screen.Home; return true }
         return false
     }
 
-    fun selectTab(t: Screen) { stack.clear(); tab = t }
+    fun selectTab(t: Screen) { stack.clear(); unsaved = null; tab = t }
 
     /** Filtro inicial del catálogo cuando se llega desde otra pantalla (por ejemplo "low" = stock bajo). */
     var catalogPreset by mutableStateOf<String?>(null)
 
     /** Reemplaza la pantalla actual (por ejemplo, de cobro a detalle de venta). */
     fun replace(s: Screen) {
+        unsaved = null
         if (stack.isNotEmpty()) stack[stack.lastIndex] = s else stack.add(s)
     }
 
@@ -329,6 +366,8 @@ fun requiredPermission(screen: Screen): List<com.vitrinapos.data.Permission> {
         Screen.StockMoves, Screen.StockCount, is Screen.StockCountDetail, is Screen.Kardex, is Screen.ProductUnits -> listOf(Permission.ADJUST_STOCK)
         is Screen.StockEntry, Screen.Purchases, is Screen.PurchaseDetail -> listOf(Permission.PURCHASES)
         Screen.Inventory -> listOf(Permission.ADJUST_STOCK, Permission.PURCHASES)
+        Screen.Activity -> listOf(Permission.AUDIT)
+        is Screen.MergeProducts -> listOf(Permission.CATALOG_EDIT)
         Screen.ImeiSearch -> listOf(Permission.ADJUST_STOCK, Permission.SALES_HISTORY)
         is Screen.SaleReturn -> listOf(Permission.RETURNS)
         Screen.Clients, is Screen.ClientForm, is Screen.ClientDetail -> listOf(Permission.CLIENTS)

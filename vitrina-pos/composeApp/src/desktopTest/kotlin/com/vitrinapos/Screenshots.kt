@@ -139,7 +139,7 @@ class Screenshots {
         shoot(graph, File(outDir, "48-tope-stock.png"), 412, 900, 2f) { app ->
             app.selectTab(Screen.Pos); app.clearCart(); repeat(few.stock.toInt() + 2) { app.addToCart(few) }
         }
-        runBlocking { repo.closeCashSession(repo.db.cashSessionQueries.selectOpen(repo.deviceId).executeAsOne(), 0, "") }
+        runBlocking { repo.closeCashSession(repo.db.cashSessionQueries.selectOpen(repo.deviceId).executeAsOne(), 0, "Captura de pantalla", "Admin") }
         shoot(graph, File(outDir, "49-cobro-caja-cerrada.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); addCart(app, repo); app.open(Screen.Checkout) }
         runBlocking { repo.openCashSession(200000) }
 
@@ -204,6 +204,27 @@ class Screenshots {
         shoot(graph, File(outDir, "45-vendedor-mas.png"), 412, 900, 2f) { app ->
             app.repo.currentUser.value = graph.repo.db.appUserQueries.selectById(pedroId).executeAsOne(); app.selectTab(Screen.More)
         }
+        // ---- 1.10: controles ----
+        val luis = graph.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Luis" }
+        val simIds = runBlocking {
+            val a = repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "SIM CARD DE CLARO (Báez)", "", null, null, 5500, 10000, 29.0, 0.0, "und", true, true, null, ""))
+            val b = repo.saveProduct(com.vitrinapos.data.ProductDraft(null, "SIM CARD DE CLARO (Cedecom)", "", null, null, 6000, 10000, 21.0, 0.0, "und", true, true, null, ""))
+            graph.repo.currentUser.value = admin
+            repo.saveProduct(repo.productById(a)!!.let { p -> com.vitrinapos.data.ProductDraft(p.id, p.name, p.code, null, null, p.cost, 12000, 0.0, 0.0, "und", true, true, null, "") })
+            repo.logEvent("Vio la clave de un equipo", "REP-0002 · Samsung A54")
+            a to b
+        }
+        shoot(graph, File(outDir, "61-cierre-ciego.png"), 412, 1500, 2f) { it.repo.currentUser.value = luis; it.selectTab(Screen.More); it.open(Screen.Cash) }
+        shoot(graph, File(outDir, "62-actividad.png"), 412, 1100, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Activity) }
+        shoot(graph, File(outDir, "63-bloqueo.png"), 412, 900, 2f) { it.lockedUserId = luis.id; it.repo.currentUser.value = null }
+        shoot(graph, File(outDir, "64-unir.png"), 412, 1200, 2f) { app ->
+            app.repo.currentUser.value = admin; app.selectTab(Screen.Catalog); app.open(Screen.MergeProducts(simIds.first))
+        }
+        shoot(graph, File(outDir, "65-configuracion-modulos.png"), 412, 3600, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Settings) }
+        runBlocking { graph.repo.saveSettings(graph.repo.settings.value.copy(modTaller = false, modQuotes = false)); Thread.sleep(300) }
+        shoot(graph, File(outDir, "66-inicio-sin-taller.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.Home) }
+        shoot(graph, File(outDir, "67-mas-sin-taller.png"), 412, 900, 2f) { it.repo.currentUser.value = admin; it.selectTab(Screen.More) }
+        runBlocking { graph.repo.saveSettings(graph.repo.settings.value.copy(modTaller = true, modQuotes = true)); Thread.sleep(300) }
         shoot(graph, File(outDir, "15-entrar.png"), 412, 900, 2f) { it.repo.currentUser.value = null }
         val pedro = other.repo.db.appUserQueries.selectAll().executeAsList().first { it.name == "Pedro" }
         shoot(other, File(outDir, "16-conectado.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
@@ -219,6 +240,14 @@ class Screenshots {
         shoot(other, File(outDir, "17-conectado-sin-red.png"), 412, 900, 2f) { it.repo.currentUser.value = pedro; it.selectTab(Screen.Home) }
         other.becomeSolo(); other.repo.close()
         graph.becomeSolo()
+
+        // Asistente del primer uso (equipo nuevo)
+        System.setProperty("vitrina.dataDir", Files.createTempDirectory("vitrina-shots-nuevo").toString())
+        val fresh = AppGraph(DesktopPlatform())
+        shoot(fresh, File(outDir, "68-asistente-admin.png"), 412, 900, 2f) { }
+        runBlocking { fresh.repo.saveUser(null, "Bladimir", "1234", com.vitrinapos.data.Roles.ADMIN, true) }
+        shoot(fresh, File(outDir, "69-asistente-tipo.png"), 412, 1000, 2f) { }
+        fresh.repo.close()
 
         // PDF de la cotización
         runBlocking {

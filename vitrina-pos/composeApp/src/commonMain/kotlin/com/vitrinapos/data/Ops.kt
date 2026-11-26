@@ -110,7 +110,7 @@ sealed class Op {
     data class OpenCash(val amount: Long, val deviceId: String, val user: String) : Op()
 
     @Serializable @SerialName("cashClose")
-    data class CloseCash(val sessionId: Long, val counted: Long, val notes: String) : Op()
+    data class CloseCash(val sessionId: Long, val counted: Long, val notes: String, val authorizedBy: String = "", val user: String = "") : Op()
 
     /** Recibe o edita un equipo. El abono (si hay) entra como cobro en Caja. */
     @Serializable @SerialName("repair")
@@ -156,7 +156,7 @@ sealed class Op {
 
     /** Merma: mercancía dañada, vencida, perdida o de uso interno. */
     @Serializable @SerialName("stockLoss")
-    data class StockLoss(val productId: Long, val qty: Double, val reason: String, val note: String, val serials: List<String>, val user: String) : Op()
+    data class StockLoss(val productId: Long, val qty: Double, val reason: String, val note: String, val serials: List<String>, val user: String, val authorizedBy: String = "") : Op()
 
     /** Conteo físico: ajusta cada producto contado a lo que se contó (descontando lo vendido mientras se contaba). */
     @Serializable @SerialName("count")
@@ -166,7 +166,16 @@ sealed class Op {
     @Serializable @SerialName("saleReturn")
     data class ReturnSale(
         val saleId: Long, val lines: List<ReturnLine>, val reason: String, val refundMethod: String, val deviceId: String, val user: String,
+        val authorizedBy: String = "",
     ) : Op()
+
+    /** Une productos repetidos en uno: existencias, historial, IMEI y códigos. */
+    @Serializable @SerialName("merge")
+    data class MergeProducts(val keepId: Long, val mergeIds: List<Long>, val name: String) : Op()
+
+    /** Anota en la actividad algo que pasó en el equipo (por ejemplo, ver la clave de un equipo del taller). */
+    @Serializable @SerialName("log")
+    data class LogEvent(val action: String, val detail: String) : Op()
 
     /** Registra los IMEI o números de serie de las unidades que ya están en existencia. */
     @Serializable @SerialName("units")
@@ -214,6 +223,7 @@ enum class Permission(val title: String, val detail: String) {
     RETURNS("Devoluciones", "Recibir devoluciones de una venta (todo o parte) y reembolsar"),
     CASH("Caja", "Abrir y cerrar la caja"),
     REPORTS("Reportes y ganancias", "Ver reportes, ganancias y costos"),
+    AUDIT("Ver actividad", "Quién cambió precios, permisos, caja, anulaciones y borrados"),
     WORKSHOP("Taller", "Recibir equipos y cambiar su estado"),
     WORKSHOP_DELIVER("Entregar equipos", "Cobrar y entregar equipos del taller"),
     LABELS("Etiquetas", "Imprimir etiquetas de productos"),

@@ -77,8 +77,8 @@ fun ScannerScreen(mode: String) {
         if (code == lastCode && now - lastAt < 1_500) return
         lastCode = code
         lastAt = now
-        val p = products.firstOrNull { it.code.equals(code, ignoreCase = true) }
-        if (p == null && com.vitrinapos.data.parseRepairCode(code) != null) {
+        val p = app.repo.productForCode(code, products)
+        if (p == null && app.settingsNow.modTaller && com.vitrinapos.data.parseRepairCode(code) != null) {
             app.platform.scanFeedback(true)
             scope.launch { if (app.openRepairByCode(code)) app.stack.remove(Screen.Scanner(mode)) }
             return

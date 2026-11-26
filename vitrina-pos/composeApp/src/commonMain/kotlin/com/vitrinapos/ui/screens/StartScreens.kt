@@ -57,89 +57,7 @@ import kotlinx.coroutines.launch
 
 /** Primera vez que se abre la app: datos básicos del negocio. */
 @Composable
-fun WelcomeScreen(onConnect: () -> Unit = {}) {
-    val app = LocalAppState.current
-    val scope = com.vitrinapos.ui.components.rememberSafeScope()
-    val s = app.settingsNow
-    var name by remember { mutableStateOf("") }
-    var currency by remember { mutableStateOf(s.currencySymbol) }
-    var taxName by remember { mutableStateOf(s.taxName) }
-    var taxRate by remember { mutableStateOf(s.taxRate.toString().removeSuffix(".0")) }
-    var included by remember { mutableStateOf(s.pricesIncludeTax) }
-    var busy by remember { mutableStateOf(false) }
-
-    fun finish(withSamples: Boolean) {
-        if (busy) return
-        busy = true
-        scope.launch {
-            if (withSamples) SampleData.load(app.repo)
-            app.repo.saveSettings(
-                app.settingsNow.copy(
-                    businessName = name.trim().ifBlank { "Mi Tienda" },
-                    currencySymbol = currency.trim().ifBlank { "$" },
-                    taxName = taxName.trim().ifBlank { "Impuesto" },
-                    taxRate = taxRate.replace(',', '.').toDoubleOrNull() ?: 0.0,
-                    pricesIncludeTax = included,
-                    onboarded = true,
-                ),
-            )
-        }
-    }
-
-    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.widthIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                    .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF0A5E4E))))
-                    .padding(24.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Storefront, null, tint = Color.White, modifier = Modifier.size(30.dp))
-                    }
-                    Text("Bienvenido a Vitrina POS", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "Vende por fotos, controla tu inventario y crea cotizaciones. Todo se guarda en este equipo, sin internet.",
-                        color = Color.White.copy(alpha = 0.88f),
-                    )
-                }
-            }
-            Text("Datos de tu negocio", style = MaterialTheme.typography.titleMedium)
-            TextInput(name, { name = it }, "Nombre del negocio", placeholder = "Mi Tienda")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextInput(currency, { currency = it.take(4) }, "Moneda", Modifier.weight(1f))
-                TextInput(taxName, { taxName = it.take(12) }, "Impuesto", Modifier.weight(1f))
-                TextInput(taxRate, { taxRate = it.filter { c -> c.isDigit() || c == '.' || c == ',' } }, "% impuesto", Modifier.weight(1f), keyboard = KeyboardType.Decimal)
-            }
-            AppCard(onClick = { included = !included }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Mis precios ya incluyen el impuesto", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (included) "El total es el precio marcado; el impuesto se muestra como incluido."
-                            else "El impuesto se suma al precio al cobrar.",
-                            style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.muted,
-                        )
-                    }
-                    Switch(included, { included = it })
-                }
-            }
-            Text("Puedes cambiar todo esto después en Configuración.", style = MaterialTheme.typography.bodySmall, color = AppTheme.extra.muted)
-            Button(onClick = { finish(false) }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) {
-                Text("Empezar", fontSize = 16.sp)
-            }
-            OutlinedButton(onClick = { finish(true) }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(16.dp)) {
-                Text("Empezar con productos de ejemplo")
-            }
-            TextButton(onClick = onConnect, modifier = Modifier.fillMaxWidth()) {
-                Text("¿Ya tienes Vitrina POS en otro equipo? Conectarme a él")
-            }
-        }
-    }
-}
+fun WelcomeScreen(onConnect: () -> Unit = {}) = OnboardingScreen(onConnect)
 
 /** Pantalla de PIN cuando está activado. */
 @Composable
@@ -195,7 +113,7 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
 @Composable
 fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
     val app = LocalAppState.current
-    var selected by remember { mutableStateOf(if (users.size == 1) users.first() else null) }
+    var selected by remember { mutableStateOf(users.firstOrNull { it.id == app.lockedUserId } ?: if (users.size == 1) users.first() else null) }
     val chosen = selected
     if (chosen == null) {
         Column(
@@ -224,9 +142,15 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
     } else {
         PinPad(
             title = chosen.name,
-            subtitle = "Escribe tu PIN",
+            subtitle = if (app.lockedUserId == chosen.id) "Se bloqueó por inactividad. Escribe tu PIN" else "Escribe tu PIN",
             check = { pin, final -> app.repo.pinAttempt(chosen, pin, final) },
-            onSuccess = { app.repo.currentUser.value = chosen },
+            onSuccess = {
+                // Si entra otra persona, no se queda con el carrito de la anterior.
+                if (app.lockedUserId != null && app.lockedUserId != chosen.id) app.clearCart()
+                app.lockedUserId = null
+                app.lastActivity = com.vitrinapos.data.Time.now()
+                app.repo.currentUser.value = chosen
+            },
             onBack = if (users.size > 1) ({ selected = null }) else null,
         )
     }

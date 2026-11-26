@@ -1,0 +1,17 @@
+-- Registro de actividad: acciones sensibles (precios, permisos, anulaciones, caja, borrados…). No se edita.
+CREATE TABLE auditLog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  device TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX auditLog_created ON auditLog(createdAt);
+
+insert:
+INSERT INTO auditLog(action, detail, userName, device, createdAt) VALUES (?, ?, ?, ?, ?);
+
+between:
+SELECT * FROM auditLog WHERE createdAt >= ? AND createdAt < ? ORDER BY createdAt DESC, id DESC LIMIT 1000;

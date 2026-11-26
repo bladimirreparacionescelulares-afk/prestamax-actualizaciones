@@ -121,7 +121,7 @@ fun LabelsScreen() {
     var category by remember { mutableStateOf<Long?>(null) }
     val selected = remember { mutableStateMapOf<Long, Int>().apply { app.labelJob.forEach { put(it.productId, it.copies) } } }
     val scanner = rememberBarcodeScanner { code ->
-        val p = products.firstOrNull { it.code.equals(code.trim(), true) }
+        val p = app.repo.productForCode(code, products)
         if (p == null) app.toast("No hay producto con el código $code")
         else { selected[p.id] = (selected[p.id] ?: 0) + 1; app.toast("${p.name}: ${selected[p.id]} etiquetas") }
     }

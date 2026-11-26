@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -444,6 +445,13 @@ fun CashScreen() {
     val expected = summary?.expected
     val history by produceState(emptyList<CashSession>(), open) { value = app.repo.cashHistory() }
     val sym = s.currencySymbol
+    // Cierre a ciegas: quien no es administrador cuenta antes de ver lo que debía haber.
+    val blind = s.blindClose && app.needsAdminAuth
+    val bills = remember { androidx.compose.runtime.mutableStateMapOf<Long, Int>() }
+    val billTotal = bills.entries.sumOf { it.key * it.value }
+    var closeResult by remember { mutableStateOf(false) }
+    var needAuth by remember { mutableStateOf(false) }
+    var lastClose by remember { mutableStateOf<com.vitrinapos.print.Ticket?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Caja", subtitle = if (open != null) "Abierta" else "Cerrada", onBack = if (app.stack.isNotEmpty()) ({ app.back() }) else null)
@@ -467,11 +475,12 @@ fun CashScreen() {
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatCard("Efectivo inicial", Money.format(session.openingAmount, sym), Modifier.weight(1f))
-                    StatCard("Debe haber", expected?.let { Money.format(it, sym) } ?: "…", Modifier.weight(1f), accent = true)
+                    if (!blind) StatCard("Debe haber", expected?.let { Money.format(it, sym) } ?: "…", Modifier.weight(1f), accent = true)
                 }
-                Text("Abierta ${Time.relativeDay(session.openedAt).lowercase()} a las ${Time.time(session.openedAt)}.", color = AppTheme.extra.muted, fontSize = 13.sp)
+                Text("Abierta ${Time.relativeDay(session.openedAt).lowercase()} a las ${Time.time(session.openedAt)}".trimEnd('.') + "." +
+                    (if (blind) " El monto esperado se ve después de contar." else ""), color = AppTheme.extra.muted, fontSize = 13.sp)
                 summary?.let { sm ->
-                    AppCard {
+                    if (!blind) AppCard {
                         KeyValue("Efectivo inicial", Money.format(sm.opening, sym))
                         KeyValue("Ventas en efectivo", Money.format(sm.cashSales, sym))
                         if (sm.ins > 0) KeyValue("Entradas de efectivo", Money.format(sm.ins, sym))
@@ -506,10 +515,13 @@ fun CashScreen() {
                 }
                 AppCard {
                     Text("Cerrar caja", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(10.dp))
+                    Text("Cuenta los billetes y monedas; el total se calcula solo.", fontSize = 12.sp, color = AppTheme.extra.muted)
+                    Spacer(Modifier.height(8.dp))
+                    CashCounter(bills, sym) { amount = bills.entries.sumOf { it.key * it.value }.takeIf { it > 0 } ?: amount }
+                    Spacer(Modifier.height(8.dp))
                     MoneyInput(amount, { amount = it }, "Efectivo contado")
                     val diff = (amount ?: 0) - (expected ?: 0)
-                    if (amount != null && expected != null) {
+                    if (amount != null && expected != null && !blind) {
                         Spacer(Modifier.height(8.dp))
                         Pill(
                             when { diff == 0L -> "Cuadra exacto"; diff > 0 -> "Sobran ${Money.format(diff, sym)}"; else -> "Faltan ${Money.format(-diff, sym)}" },
@@ -520,8 +532,8 @@ fun CashScreen() {
                     Spacer(Modifier.height(8.dp))
                     TextInput(notes, { notes = it }, "Nota (opcional)")
                     Spacer(Modifier.height(10.dp))
-                    Button(onClick = { confirmClose = true }, enabled = amount != null, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
-                        Text("Cerrar caja", fontWeight = FontWeight.Bold)
+                    Button(onClick = { closeResult = true }, enabled = amount != null, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
+                        Text(if (blind) "Ver resultado y cerrar" else "Cerrar caja", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -571,11 +583,63 @@ fun CashScreen() {
             dismissButton = { TextButton(onClick = { moveKind = null }) { Text("Cancelar") } },
         )
     }
-    if (confirmClose) {
-        val session = open
-        ConfirmDialog("Cerrar caja", "Se guarda el cierre con ${Money.format(amount ?: 0, sym)} contados.", "Cerrar caja",
-            onConfirm = { if (session != null) scope.launch { app.repo.closeCashSession(session, amount ?: 0, notes); amount = null; notes = ""; app.toast("Caja cerrada") } },
-            onDismiss = { confirmClose = false })
+    fun doClose(authorizedBy: String) {
+        val session = open ?: return
+        val sm = summary ?: return
+        val counted = amount ?: 0
+        val who = app.repo.currentUser.value?.name ?: ""
+        val billList = bills.entries.sortedByDescending { it.key }.map { it.key to it.value }
+        scope.launch {
+            runCatching { app.repo.closeCashSession(session, counted, notes, authorizedBy) }
+                .onSuccess {
+                    lastClose = com.vitrinapos.print.Ticket.forCashClose(s, session.openedAt, Time.now(), sm, counted, who, notes, billList)
+                    amount = null; notes = ""; bills.clear(); app.toast("Caja cerrada")
+                }
+                .onFailure { app.toast(it.message ?: "No se pudo cerrar") }
+        }
+    }
+    if (closeResult) {
+        val counted = amount ?: 0
+        val exp = expected ?: 0
+        val diff = counted - exp
+        val big = kotlin.math.abs(diff) > s.cashDiffLimit
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { closeResult = false },
+            title = { Text(if (diff == 0L) "La caja cuadra" else if (diff > 0) "Sobran ${Money.format(diff, sym)}" else "Faltan ${Money.format(-diff, sym)}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KeyValue("Contaste", Money.format(counted, sym))
+                    KeyValue("Debía haber", Money.format(exp, sym), strong = true)
+                    if (big) Text("La diferencia pasa de ${Money.format(s.cashDiffLimit, sym)}: escribe el motivo" + (if (app.needsAdminAuth) " y la autoriza un administrador." else "."),
+                        color = AppTheme.extra.danger, fontSize = 13.sp)
+                    TextInput(notes, { notes = it }, if (big) "Motivo *" else "Nota (opcional)")
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !big || notes.isNotBlank(), onClick = {
+                    closeResult = false
+                    if (big && app.needsAdminAuth) needAuth = true else doClose(if (big) app.repo.currentUser.value?.name ?: "Administrador" else "")
+                }) { Text("Cerrar caja") }
+            },
+            dismissButton = { TextButton(onClick = { closeResult = false }) { Text("Volver a contar") } },
+        )
+    }
+    if (needAuth) com.vitrinapos.ui.components.AdminAuthDialog(
+        "Diferencia en la caja", "Faltan o sobran más de ${Money.format(s.cashDiffLimit, sym)}.",
+        onAuthorized = { name -> needAuth = false; doClose(name) }, onDismiss = { needAuth = false },
+    )
+    lastClose?.let { t ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { lastClose = null },
+            title = { Text("Caja cerrada") },
+            text = {
+                Box(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Surface(shape = RoundedCornerShape(6.dp), color = androidx.compose.ui.graphics.Color.White) { TicketPreview(t, Modifier.padding(10.dp)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { app.print(t) { app.open(Screen.Settings) }; lastClose = null }) { Text("Imprimir corte") } },
+            dismissButton = { TextButton(onClick = { lastClose = null }) { Text("Listo") } },
+        )
     }
 }
 
@@ -618,4 +682,33 @@ fun EcfStatusPill(status: String) {
         else -> ex.warn to ex.warnSoft
     }
     com.vitrinapos.ui.components.Pill(com.vitrinapos.data.EcfStatus.label(status), fg, bg)
+}
+
+/** Billetes y monedas de la República Dominicana (en centavos). */
+private val cashDenoms = listOf(200000L, 100000L, 50000L, 20000L, 10000L, 5000L, 2500L, 1000L, 500L, 100L)
+
+/** Conteo por denominación: cantidad de cada billete o moneda. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CashCounter(bills: MutableMap<Long, Int>, sym: String, onChange: () -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2,
+    ) {
+        cashDenoms.forEach { v ->
+            Row(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(start = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(Money.format(v, sym).removeSuffix(".00"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(if (v >= 5000) "billete" else "moneda", fontSize = 10.sp, color = AppTheme.extra.muted, maxLines = 1)
+                }
+                com.vitrinapos.ui.components.QtyStepper((bills[v] ?: 0).toDouble(), { q ->
+                    val n = q.toInt().coerceAtLeast(0)
+                    if (n == 0) bills.remove(v) else bills[v] = n
+                    onChange()
+                })
+            }
+        }
+    }
 }

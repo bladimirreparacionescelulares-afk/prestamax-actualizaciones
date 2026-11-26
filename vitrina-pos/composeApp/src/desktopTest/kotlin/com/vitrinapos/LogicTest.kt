@@ -108,10 +108,15 @@ class LogicTest {
         assertTrue(pdf.length() > 1000)
 
         // Respaldo y restauración
-        val backup = ByteArrayOutputStream().also { graph.exportBackup(it) }.toByteArray()
+        val backup = ByteArrayOutputStream().also { graph.exportBackup(it, "clave-segura") }.toByteArray()
+        // La base va cifrada: el nombre de un cliente no se lee en el archivo.
+        assertTrue(!String(backup, Charsets.ISO_8859_1).contains("Taller Centro"))
         repo.saveClient(null, "Cliente nuevo", "", "", "", "", "")
         assertEquals(4, graph.repo.db.clientQueries.selectAll().executeAsList().size)
-        graph.importBackup(ByteArrayInputStream(backup))
+        assertTrue(runCatching { graph.importBackup(ByteArrayInputStream(backup), "") }.exceptionOrNull()?.message!!.contains("contraseña"))
+        assertTrue(runCatching { graph.importBackup(ByteArrayInputStream(backup), "otra-clave") }.exceptionOrNull()?.message!!.contains("no es correcta"))
+        assertEquals(4, graph.repo.db.clientQueries.selectAll().executeAsList().size)
+        graph.importBackup(ByteArrayInputStream(backup), "clave-segura")
         assertEquals(3, graph.repo.db.clientQueries.selectAll().executeAsList().size)
         assertEquals(11, graph.repo.db.productQueries.selectActive().executeAsList().size)
         graph.repo.close()

@@ -103,21 +103,34 @@ class AppGraph(val platform: Platform) {
         client?.pull()
     }
 
-    /** Escribe un .zip con la base de datos y las fotos. */
-    fun exportBackup(out: OutputStream) {
+    /**
+     * Escribe un .zip con la base de datos y las fotos. La base (y el certificado de facturación, si hay)
+     * van cifrados con la contraseña: sin ella el respaldo no se puede abrir.
+     */
+    fun exportBackup(out: OutputStream, password: String) {
+        require(password.length >= 6) { "La contraseña del respaldo lleva al menos 6 caracteres" }
         val r = repo
         r.checkpoint()
+        val salt = Crypto.randomBytes(16)
+        val key = Crypto.keyFromPassword(password, salt)
         ZipOutputStream(out).use { zip ->
-            zip.putNextEntry(ZipEntry(DB_ENTRY))
-            platform.databaseFile.inputStream().use { it.copyTo(zip) }
+            zip.putNextEntry(ZipEntry(DB_ENC_ENTRY))
+            zip.write(ENC_MAGIC.toByteArray(Charsets.US_ASCII))
+            zip.write(salt)
+            zip.write(Crypto.seal(key, platform.databaseFile.readBytes()))
             zip.closeEntry()
+            r.fiscal.certificateForDevices()?.let { cert ->
+                zip.putNextEntry(ZipEntry(CERT_ENTRY))
+                zip.write(Crypto.seal(key, cert))
+                zip.closeEntry()
+            }
             r.imagesDir.listFiles()?.filter { it.isFile }?.forEach { f ->
                 zip.putNextEntry(ZipEntry("images/${f.name}"))
                 f.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
             zip.putNextEntry(ZipEntry("info.txt"))
-            zip.write("Respaldo de Vitrina POS\nFecha: ${Time.dateTime(Time.now())}\n".toByteArray())
+            zip.write("Respaldo de Vitrina POS\nFecha: ${Time.dateTime(Time.now())}\nLos datos van cifrados: se abren con la contraseña que se puso al crearlo.\n".toByteArray())
             zip.closeEntry()
         }
     }
@@ -126,16 +139,32 @@ class AppGraph(val platform: Platform) {
      * Restaura un respaldo. Primero lo extrae a una carpeta temporal y comprueba que tenga la base de datos;
      * solo entonces reemplaza los datos actuales. Este equipo conserva su identidad y su modo de red.
      */
-    fun importBackup(input: InputStream) {
+    fun importBackup(input: InputStream, password: String = "") {
         // Restaurar un respaldo haría retroceder la numeración e-NCF y se repetirían comprobantes.
         if (repo.settings.value.fiscalEnabled || repo.ecfDocs.value.isNotEmpty())
             throw IllegalStateException("Con facturación electrónica no se puede restaurar un respaldo: se repetirían números de comprobantes ya enviados a la DGII.")
         val tmp = File(platform.dataDir, "restore_tmp").apply { deleteRecursively(); mkdirs() }
         var hasDb = false
+        var cert: ByteArray? = null
+        var backupKey: ByteArray? = null
         ZipInputStream(input).use { zip ->
             while (true) {
                 val e = zip.nextEntry ?: break
                 if (e.isDirectory) continue
+                if (e.name == DB_ENC_ENTRY) {
+                    val all = zip.readBytes()
+                    val magic = ENC_MAGIC.length
+                    require(all.size > magic + 16 && String(all, 0, magic, Charsets.US_ASCII) == ENC_MAGIC) { "El respaldo está dañado." }
+                    if (password.isBlank()) throw IllegalStateException("Este respaldo tiene contraseña. Escríbela para restaurarlo.")
+                    val key = Crypto.keyFromPassword(password, all.copyOfRange(magic, magic + 16)).also { backupKey = it }
+                    val plain = runCatching { Crypto.open(key, all.copyOfRange(magic + 16, all.size)) }
+                        .getOrElse { throw IllegalStateException("La contraseña del respaldo no es correcta.") }
+                    File(tmp, DB_ENTRY).writeBytes(plain)
+                    hasDb = true
+                    // El certificado se guarda con la llave de este equipo.
+                    continue
+                }
+                if (e.name == CERT_ENTRY) { cert = zip.readBytes(); continue }
                 val target = when {
                     e.name == DB_ENTRY -> File(tmp, DB_ENTRY).also { hasDb = true }
                     e.name.startsWith("images/") -> {
@@ -171,11 +200,17 @@ class AppGraph(val platform: Platform) {
             close()
         }
         repo = Repository(platform)
+        // El certificado de facturación del respaldo se guarda con la llave de este equipo.
+        val k = backupKey
+        if (cert != null && k != null) runCatching { repo.fiscal.installShared(Crypto.open(k, cert!!)) }
         repo.startFiscal()
         if (wasServer) runCatching { startServer() }
     }
 
     companion object {
+        const val DB_ENC_ENTRY = "vitrina.db.cifrado"
+        const val CERT_ENTRY = "certificado.cifrado"
+        const val ENC_MAGIC = "VPOS-CIFRADO-1"
         const val DB_ENTRY = "vitrina.db"
     }
 }

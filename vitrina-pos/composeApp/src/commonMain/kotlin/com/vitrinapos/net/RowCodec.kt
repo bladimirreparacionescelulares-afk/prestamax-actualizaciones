@@ -31,7 +31,7 @@ object RowCodec {
         t(
             "product", "id" to L, "name" to S, "code" to S, "categoryId" to L, "supplierId" to L, "cost" to L, "price" to L,
             "stock" to D, "minStock" to D, "unit" to S, "taxable" to L, "trackStock" to L, "imagePath" to S, "description" to S,
-            "active" to L, "createdAt" to L, "updatedAt" to L, "isService" to L, "serialized" to L, "variantGroup" to S, "variantName" to S,
+            "active" to L, "createdAt" to L, "updatedAt" to L, "isService" to L, "serialized" to L, "variantGroup" to S, "variantName" to S, "altCodes" to S,
         ),
         t("client", "id" to L, "name" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
         t("supplier", "id" to L, "name" to S, "contact" to S, "phone" to S, "email" to S, "docId" to S, "address" to S, "notes" to S, "createdAt" to L),
@@ -65,6 +65,7 @@ object RowCodec {
             "restock" to L, "serials" to S,
         ),
         t("stockCount", "id" to L, "number" to L, "note" to S, "products" to L, "diffQty" to D, "diffValue" to L, "userName" to S, "createdAt" to L),
+        t("auditLog", "id" to L, "action" to S, "detail" to S, "userName" to S, "device" to S, "createdAt" to L),
         t("stockCountItem", "id" to L, "countId" to L, "productId" to L, "name" to S, "expected" to D, "counted" to D, "cost" to L),
         t(
             "cashSession", "id" to L, "openedAt" to L, "openingAmount" to L, "closedAt" to L, "expectedAmount" to L, "countedAmount" to L,

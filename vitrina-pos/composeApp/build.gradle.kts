@@ -10,8 +10,10 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.9.0"
-val appVersionCode = 11
+// La versión se escribe en un solo lugar: src/commonMain/kotlin/com/vitrinapos/AppInfo.kt
+val appInfo = file("src/commonMain/kotlin/com/vitrinapos/AppInfo.kt").readText()
+val appVersionName = Regex("VERSION = \"([^\"]+)\"").find(appInfo)!!.groupValues[1]
+val appVersionCode = Regex("BUILD = (\\d+)").find(appInfo)!!.groupValues[1].toInt()
 
 kotlin {
     androidTarget {

@@ -628,7 +628,15 @@ fun UserDetailScreen(id: Long) {
                     }
                 }
                 AppCard(padding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
-                    com.vitrinapos.data.Permission.entries.forEachIndexed { i, p ->
+                    val ms = app.settings
+                    com.vitrinapos.data.Permission.entries.filter { p ->
+                        when (p) {
+                            com.vitrinapos.data.Permission.WORKSHOP, com.vitrinapos.data.Permission.WORKSHOP_DELIVER -> ms.modTaller
+                            com.vitrinapos.data.Permission.QUOTES -> ms.modQuotes
+                            com.vitrinapos.data.Permission.LABELS -> ms.modLabels
+                            else -> true
+                        }
+                    }.forEachIndexed { i, p ->
                         if (i > 0) Divider()
                         Row(Modifier.fillMaxWidth().clickable { set(p, p !in granted) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {

@@ -176,7 +176,7 @@ class SyncClient(
 
     override suspend fun execute(op: Op, opId: String): JsonElement {
         val resp = try {
-            call(ApiRequest("op", opId = opId, op = op))
+            call(ApiRequest("op", opId = opId, op = op, user = repo.currentUser.value?.name ?: ""))
         } catch (e: HttpStatusException) {
             if (e.code == 401) {
                 _status.value = NetStatus(LinkState.REVOKED, "El equipo principal quitó el acceso a este equipo")

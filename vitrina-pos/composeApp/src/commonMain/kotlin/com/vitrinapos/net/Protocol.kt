@@ -24,6 +24,8 @@ data class ApiRequest(
     val op: Op? = null,
     val name: String = "",
     val data: String = "",
+    /** Usuario que hizo la operación en el equipo (para la actividad). */
+    val user: String = "",
 )
 
 @Serializable

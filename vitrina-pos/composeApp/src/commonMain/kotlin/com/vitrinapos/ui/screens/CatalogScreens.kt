@@ -291,10 +291,15 @@ fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
     }
     val scanner = rememberBarcodeScanner { code = it }
 
-    val duplicate = code.isNotBlank() && products.any { it.code.equals(code.trim(), true) && it.id != id }
+    val duplicate = code.isNotBlank() && app.repo.productForCode(code, products.filter { it.id != id }) != null
     val nameError = if (showErrors && name.isBlank()) "Escribe el nombre" else null
     val priceError = if (showErrors && price == null) "Escribe el precio" else if (price != null && price!! <= 0) "El precio debe ser mayor que cero" else null
     val codeError = if (duplicate) "Ya existe otro producto con este código" else null
+
+    val snapshot = listOf(name, code, categoryId, supplierId, cost, price, stock, minStock, unit, taxable, trackStock, isService, imagePath, description, serialized, variantName)
+    var baseline by remember { mutableStateOf<List<Any?>?>(null) }
+    androidx.compose.runtime.SideEffect { if (loaded && baseline == null) baseline = snapshot }
+    com.vitrinapos.ui.components.TrackUnsaved(baseline != null && snapshot != baseline && !saved)
 
     fun save(another: Boolean) {
         showErrors = true
@@ -312,6 +317,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
             )
             if (original?.imagePath != null && original?.imagePath != imagePath) app.repo.deleteImage(original?.imagePath)
             saved = true
+            app.unsaved = null
             app.toast(if (id == null) (if (isService) "Servicio guardado" else "Producto guardado") else "Cambios guardados")
             if (another) app.replace(Screen.ProductForm(key = newId)) else app.back()
             if (id == null && !another && app.settingsNow.labelAskOnSave) app.labelPrompt = newId
@@ -425,7 +431,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
                     Switch(trackStock, { trackStock = it })
                 }
             }
-            if (!isService) AppCard(onClick = { serialized = !serialized; if (serialized) trackStock = true }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
+            if (!isService && (s.modImei || serialized)) AppCard(onClick = { serialized = !serialized; if (serialized) trackStock = true }, padding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Con IMEI o número de serie", fontWeight = FontWeight.SemiBold)
@@ -478,9 +484,15 @@ fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
             }
             TextInput(description, { description = it }, "Descripción (opcional)", singleLine = false, minLines = 2)
 
-            if (id != null && !isService && app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) {
+            if (id != null && !isService && s.modVariants && app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) {
                 OutlinedButton(onClick = { app.open(Screen.ProductForm(copyOf = id)) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
                     Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Crear otra variante")
+                }
+            }
+            if (id != null && (original?.altCodes ?: "").isNotBlank()) Text("También responde a: ${original?.altCodes?.replace(",", ", ")}", fontSize = 12.sp, color = AppTheme.extra.muted)
+            if (id != null && app.can(com.vitrinapos.data.Permission.CATALOG_EDIT)) {
+                OutlinedButton(onClick = { app.open(Screen.MergeProducts(id)) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp)) {
+                    Text("Unir con un producto repetido")
                 }
             }
             if (id != null && moves.isNotEmpty()) {

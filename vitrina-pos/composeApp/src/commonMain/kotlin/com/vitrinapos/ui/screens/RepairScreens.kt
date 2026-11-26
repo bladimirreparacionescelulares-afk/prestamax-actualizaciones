@@ -188,6 +188,7 @@ fun AppState.printRepairReceipt(r: RepairOrder) = print(Ticket.forRepair(setting
 
 /** Abre la orden si el texto es un código REP-0042. Devuelve true si lo era. */
 suspend fun AppState.openRepairByCode(text: String): Boolean {
+    if (!settingsNow.modTaller) return false
     val n = parseRepairCode(text) ?: return false
     val r = repo.repairByNumber(n)
     if (r == null) toast("No existe la orden ${text.trim()}") else open(Screen.RepairDetail(r.id))
@@ -370,6 +371,9 @@ fun RepairReceiveScreen(editId: Long?, warrantyOf: Long? = null) {
     val serialScanner = rememberBarcodeScanner { d = d.copy(serial = it) }
     val techs = users.filter { it.active == 1L && (it.role == Roles.TECH || it.role == Roles.ADMIN) }
 
+    var baseline by remember { mutableStateOf<RepairDraft?>(null) }
+    androidx.compose.runtime.SideEffect { if (loaded && baseline == null) baseline = d }
+    com.vitrinapos.ui.components.TrackUnsaved(baseline != null && d != baseline && !busy)
     val step1Ok = d.clientName.isNotBlank() && (d.brand.isNotBlank() || d.model.isNotBlank())
     val step2Ok = d.problem.isNotBlank()
 
@@ -787,7 +791,10 @@ fun RepairDetailScreen(id: Long) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${UnlockTypes.label(r.unlockType)}: ${if (showUnlock) r.unlockCode else "••••"}", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showUnlock = !showUnlock }) { Icon(Icons.Rounded.Visibility, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(if (showUnlock) "Ocultar" else "Ver") }
+                        TextButton(onClick = {
+                            showUnlock = !showUnlock
+                            if (showUnlock) scope.launch { app.repo.logEvent("Vio la clave de un equipo", "${r.code} · ${listOf(r.brand, r.model).filter { it.isNotBlank() }.joinToString(" ")}") }
+                        }) { Icon(Icons.Rounded.Visibility, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(if (showUnlock) "Ocultar" else "Ver") }
                     }
                 }
                 if (r.notes.isNotBlank()) { Spacer(Modifier.height(8.dp)); Text("Notas: ${r.notes}", fontSize = 13.sp, color = AppTheme.extra.muted) }
