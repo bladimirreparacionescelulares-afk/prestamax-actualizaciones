@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -166,6 +167,7 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
 @Composable
 private fun MainShell(app: AppState) {
     PlatformBackHandler(enabled = app.stack.isNotEmpty() || app.tab != Screen.Home) { app.back() }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(4_000); app.autoCheckUpdates() }
     val mods = app.settings
     LaunchedEffect(mods.modTaller, mods.modQuotes, mods.modLabels, mods.modImei) {
         if (!app.moduleOn(app.tab)) app.selectTab(Screen.Home)
@@ -186,6 +188,7 @@ private fun MainShell(app: AppState) {
             else WindowInsetsSides.Top + WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
             Row(Modifier.fillMaxSize().padding(pad).windowInsetsPadding(WindowInsets.safeDrawing.only(sides))) {
                 app.labelPrompt?.let { LabelPromptDialog(it) }
+                if (app.showUpdate) UpdateDialog(app)
                 if (app.confirmLeave) com.vitrinapos.ui.components.ConfirmDialog(
                     "Salir sin guardar", "Tienes cambios sin guardar en esta pantalla. Si sales, se pierden.", "Salir sin guardar",
                     onConfirm = { app.confirmLeave = true; app.back() }, onDismiss = { app.confirmLeave = false }, destructive = true,
@@ -365,4 +368,31 @@ private fun NoAccessScreen() {
         Spacer(Modifier.height(16.dp))
         androidx.compose.material3.OutlinedButton(onClick = { if (app.stack.isNotEmpty()) app.back() else app.selectTab(Screen.Home) }) { Text("Volver") }
     }
+}
+
+/** Aviso de versión nueva: Actualizar (descarga e instala) o Cerrar. */
+@Composable
+fun UpdateDialog(app: AppState) {
+    val u = app.update ?: return
+    val busy = app.updateProgress != null
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!busy) app.dismissUpdate() },
+        title = { Text(if (u.important) "Actualización importante" else "Actualización disponible") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Vitrina POS ${u.version} ya está lista. Tienes la ${AppInfo.VERSION}.")
+                if (u.notes.isNotBlank()) Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Text(u.notes, Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(12.dp), fontSize = 13.sp)
+                }
+                if (u.size > 0) Text("Descarga de ${"%.1f".format(u.size / 1_048_576.0)} MB. Tus datos no se tocan.", fontSize = 12.sp, color = AppTheme.extra.muted)
+                app.updateProgress?.let { p ->
+                    androidx.compose.material3.LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                    Text("Descargando… ${(p * 100).toInt()} %", fontSize = 12.sp, color = AppTheme.extra.muted)
+                }
+                app.updateMessage?.let { Text(it, color = AppTheme.extra.warn, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+            }
+        },
+        confirmButton = { androidx.compose.material3.Button(onClick = { app.installUpdate() }, enabled = !busy) { Text(if (app.updateMessage != null) "Intentar de nuevo" else "Actualizar") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { app.dismissUpdate() }, enabled = !busy) { Text("Cerrar") } },
+    )
 }

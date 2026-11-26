@@ -448,6 +448,32 @@ fun SettingsScreen() {
                 }
             }
 
+            // ---- Actualizaciones ----
+            SectionTitle("Actualizaciones")
+            AppCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Vitrina POS ${com.vitrinapos.AppInfo.VERSION}", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when {
+                                !app.canSelfUpdate -> "Este sistema se actualiza instalando la versión nueva a mano"
+                                app.update != null -> "Hay una versión nueva: ${app.update?.version}"
+                                else -> "Busca versiones nuevas sola cada vez que abres la app"
+                            },
+                            fontSize = 12.sp, color = if (app.update != null) MaterialTheme.colorScheme.primary else AppTheme.extra.muted,
+                        )
+                    }
+                }
+                if (app.canSelfUpdate) {
+                    Spacer(Modifier.height(10.dp))
+                    if (app.update != null) Button(onClick = { app.updateMessage = null; app.showUpdate = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Text("Actualizar a la ${app.update?.version}")
+                    } else OutlinedButton(onClick = { app.checkForUpdates(manual = true) }, enabled = !app.checkingUpdate, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Text(if (app.checkingUpdate) "Buscando…" else "Buscar actualizaciones")
+                    }
+                }
+            }
+
             // ---- Respaldo ----
             SectionTitle("Respaldo de datos")
             if (app.graph.client != null) Text("Este equipo está conectado a un principal: los respaldos se hacen en el equipo principal, que guarda los datos de todos.", color = AppTheme.extra.muted, fontSize = 13.sp)

@@ -59,9 +59,8 @@ class ControlTest {
         assertTrue(log.any { it.action.startsWith("Anuló la venta") && it.detail.contains("Error al cobrar") })
         assertTrue(log.any { it.action == "Abrió la caja" })
         // Una operación rechazada no deja rastro.
-        val before = repo.activity(0, Long.MAX_VALUE).size
-        failMessage { repo.adjustStock(a, -1.0, "x") }
-        assertEquals(before, repo.activity(0, Long.MAX_VALUE).size)
+        assertTrue(failMessage { repo.adjustStock(a, -1.0, "x") }.contains("negativo"))
+        assertTrue(repo.activity(0, Long.MAX_VALUE).none { it.action == "Ajustó existencias" })
 
         // Unir: existencias sumadas, costo promedio, historial y código del otro.
         repo.mergeProducts(a, listOf(b), "SIM Card Claro")

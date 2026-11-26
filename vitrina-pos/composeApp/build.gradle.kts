@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -13,6 +14,10 @@ plugins {
 // La versión se escribe en un solo lugar: src/commonMain/kotlin/com/vitrinapos/AppInfo.kt
 val appInfo = file("src/commonMain/kotlin/com/vitrinapos/AppInfo.kt").readText()
 val appVersionName = Regex("VERSION = \"([^\"]+)\"").find(appInfo)!!.groupValues[1]
+val releaseProps = Properties().apply {
+    rootProject.file("release/keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val ksFile: String? = System.getenv("VITRINA_KEYSTORE_FILE") ?: releaseProps.getProperty("storeFile")?.let { rootProject.file("release/$it").path }
 val appVersionCode = Regex("BUILD = (\\d+)").find(appInfo)!!.groupValues[1].toInt()
 
 kotlin {
@@ -94,13 +99,23 @@ android {
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
+    // Firma propia de la app (la misma siempre: sin ella Android no acepta las actualizaciones).
+    // Local: release/keystore.properties (no se sube al repositorio). En GitHub: secretos VITRINA_KEYSTORE_*.
+    signingConfigs {
+        if (ksFile != null && file(ksFile).exists()) create("release") {
+            storeFile = file(ksFile)
+            storePassword = System.getenv("VITRINA_KEYSTORE_PASSWORD") ?: releaseProps.getProperty("storePassword")
+            keyAlias = System.getenv("VITRINA_KEY_ALIAS") ?: releaseProps.getProperty("keyAlias") ?: "androiddebugkey"
+            keyPassword = System.getenv("VITRINA_KEY_PASSWORD") ?: releaseProps.getProperty("keyPassword") ?: storePassword
+        }
+    }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Firma de prueba para poder instalar el APK. Reemplazar por la firma propia antes de publicar.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sin la firma propia (por ejemplo, en una compilación de prueba) se usa la de depuración.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -113,7 +128,7 @@ compose.desktop {
     application {
         mainClass = "com.vitrinapos.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg)
             packageName = "Vitrina POS"
             packageVersion = appVersionName
             description = "Punto de venta con catálogo por fotos"
@@ -127,12 +142,20 @@ compose.desktop {
                 menuGroup = "Vitrina POS"
                 upgradeUuid = "7d8a2b0e-4c1f-4a8e-9a2d-3f1b6c5e9a10"
             }
+            macOS {
+                iconFile.set(project.file("icons/vitrina-pos.icns"))
+                bundleID = "com.vitrinapos.app"
+                appCategory = "public.app-category.business"
+                // macOS exige que la versión empiece en 1 o más (1.10.1 está bien).
+                packageVersion = appVersionName
+            }
         }
     }
 }
 
 // Capturas de pantalla: ./gradlew :composeApp:desktopTest -Dscreenshots=/ruta/carpeta
 tasks.withType<Test>().configureEach {
+    systemProperty("vitrina.noUpdates", "true")
     System.getProperty("screenshots")?.let { systemProperty("screenshots", it) }
     listOf("phoneCode", "phonePort", "labeldebug", "fiscalOut", "dgiiLive").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
     outputs.upToDateWhen { System.getProperty("screenshots") == null && System.getProperty("phoneCode") == null && System.getProperty("dgiiLive") == null }

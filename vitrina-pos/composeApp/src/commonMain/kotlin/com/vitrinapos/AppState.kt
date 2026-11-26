@@ -89,6 +89,66 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
     val settings: AppSettings
         @Composable get() = repo.settings.collectAsState().value
 
+    // ---------- Actualizaciones ----------
+
+    /** Versión nueva encontrada (null = no hay o no se ha buscado). */
+    var update by mutableStateOf<com.vitrinapos.data.AppUpdate?>(null)
+    var showUpdate by mutableStateOf(false)
+    /** Progreso de la descarga (0..1); null cuando no se descarga. */
+    var updateProgress by mutableStateOf<Float?>(null)
+    var updateMessage by mutableStateOf<String?>(null)
+    var checkingUpdate by mutableStateOf(false)
+    val canSelfUpdate: Boolean get() = platform.updateExtension.isNotBlank()
+
+    /** Busca una versión nueva. [manual]: la pidió la persona (avisa también si ya está al día). */
+    fun checkForUpdates(manual: Boolean) {
+        if (!canSelfUpdate || checkingUpdate) return
+        checkingUpdate = true
+        scope.launch {
+            val found = runCatching { kotlinx.coroutines.withContext(platform.io) { com.vitrinapos.data.Updater.check(platform.updateExtension) } }
+            checkingUpdate = false
+            repo.metaPut("update.lastCheck", com.vitrinapos.data.Time.now().toString())
+            found.onFailure { if (manual) toast("No se pudo buscar: revisa la conexión a internet") }
+            val u = found.getOrNull()
+            update = u
+            when {
+                u == null -> if (manual && found.isSuccess) toast("Tienes la versión más reciente (${AppInfo.VERSION})")
+                manual || u.important || repo.metaGet("update.dismissed") != u.version -> { updateMessage = null; showUpdate = true }
+            }
+        }
+    }
+
+    /** Busca sola al abrir la app, como mucho cada 6 horas. */
+    fun autoCheckUpdates() {
+        if (System.getProperty("vitrina.noUpdates") != null) return
+        val last = repo.metaGet("update.lastCheck")?.toLongOrNull() ?: 0
+        if (com.vitrinapos.data.Time.now() - last > 6 * 3_600_000L) checkForUpdates(manual = false)
+    }
+
+    fun dismissUpdate() {
+        update?.let { repo.metaPut("update.dismissed", it.version) }
+        showUpdate = false
+    }
+
+    /** Descarga e instala la versión nueva. */
+    fun installUpdate() {
+        val u = update ?: return
+        if (updateProgress != null) return
+        updateMessage = null
+        updateProgress = 0f
+        scope.launch {
+            val r = runCatching {
+                val file = kotlinx.coroutines.withContext(platform.io) {
+                    com.vitrinapos.data.Updater.download(u, platform.updateDir) { p -> scope.launch { updateProgress = p } }
+                }
+                repo.checkpoint()
+                platform.installUpdate(file)
+            }
+            updateProgress = null
+            r.onSuccess { msg -> updateMessage = msg }.onFailure { updateMessage = it.message ?: "No se pudo descargar la actualización" }
+        }
+    }
+
     val settingsNow: AppSettings get() = repo.settings.value
 
     // ---------- Usuario actual y permisos ----------

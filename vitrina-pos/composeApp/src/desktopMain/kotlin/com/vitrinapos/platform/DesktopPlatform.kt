@@ -165,6 +165,30 @@ class DesktopPlatform : Platform {
         return c.doFinal(data, 12, data.size - 12)
     }
 
+    private val os = System.getProperty("os.name").orEmpty().lowercase()
+
+    override val updateExtension: String = when {
+        os.startsWith("windows") -> "msi"
+        os.contains("mac") -> "dmg"
+        else -> ""
+    }
+
+    override val updateDir: File get() = File(dataDir, "actualizaciones")
+
+    override fun installUpdate(file: File): String? = when (updateExtension) {
+        "msi" -> {
+            // El instalador reemplaza la versión actual; la app se cierra para liberar sus archivos.
+            ProcessBuilder("msiexec", "/i", file.absolutePath).start()
+            Thread { Thread.sleep(1500); kotlin.system.exitProcess(0) }.start()
+            null
+        }
+        "dmg" -> {
+            ProcessBuilder("open", file.absolutePath).start()
+            "Arrastra Vitrina POS a la carpeta Aplicaciones (reemplázala) y vuelve a abrirla."
+        }
+        else -> { openFile(file.parentFile); "Abre el instalador que se descargó." }
+    }
+
     override fun openUrl(url: String): Boolean = runCatching { Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 }
 

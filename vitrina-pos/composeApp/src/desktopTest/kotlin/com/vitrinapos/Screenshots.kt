@@ -241,6 +241,18 @@ class Screenshots {
         other.becomeSolo(); other.repo.close()
         graph.becomeSolo()
 
+        // Aviso de actualización
+        shoot(graph, File(outDir, "70-actualizacion.png"), 412, 900, 2f) { app ->
+            app.repo.currentUser.value = admin; app.selectTab(Screen.Home)
+            app.update = com.vitrinapos.data.AppUpdate("1.12.0", "• Cierre de caja más rápido\n• Arreglo al imprimir etiquetas\n• Mejoras en la facturación electrónica", true, "VitrinaPOS-1.12.0.apk", "", 5_600_000, "")
+            app.showUpdate = true
+        }
+        shoot(graph, File(outDir, "71-config-actualizaciones.png"), 412, 4200, 2f) { app ->
+            app.repo.currentUser.value = admin
+            app.update = com.vitrinapos.data.AppUpdate("1.12.0", "", false, "VitrinaPOS-1.12.0.apk", "", 0, "")
+            app.selectTab(Screen.More); app.open(Screen.Settings)
+        }
+
         // Asistente del primer uso (equipo nuevo)
         System.setProperty("vitrina.dataDir", Files.createTempDirectory("vitrina-shots-nuevo").toString())
         val fresh = AppGraph(DesktopPlatform())

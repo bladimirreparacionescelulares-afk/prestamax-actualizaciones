@@ -59,6 +59,15 @@ interface Platform {
 
     /** Abre un enlace (por ejemplo, WhatsApp). Devuelve false si no hay con qué abrirlo. */
     fun openUrl(url: String): Boolean
+
+    /** Instalador de este sistema para actualizarse: "apk", "msi" o "dmg" (vacío si no se puede). */
+    val updateExtension: String
+
+    /** Carpeta donde se descargan las actualizaciones. */
+    val updateDir: java.io.File
+
+    /** Abre el instalador descargado. Devuelve un aviso si hace falta un paso de la persona (null si ya arrancó). */
+    fun installUpdate(file: java.io.File): String?
 }
 
 /** Lienzo para dibujar PDF; coordenadas en puntos desde la esquina superior izquierda. */

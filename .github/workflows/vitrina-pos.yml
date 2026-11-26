@@ -1,6 +1,19 @@
-name: Vitrina POS · compilar APK y Windows
+name: Vitrina POS · compilar y publicar
 on:
   workflow_dispatch:
+    inputs:
+      publicar:
+        description: Publicar esta versión para que las apps se actualicen solas
+        type: boolean
+        default: false
+      notas:
+        description: Qué trae la versión (sale en el aviso de actualización)
+        type: string
+        default: ""
+      importante:
+        description: Actualización importante (el aviso sale en cada inicio)
+        type: boolean
+        default: false
   push:
     paths:
       - "vitrina-pos/**"
@@ -29,12 +42,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Pruebas
         run: ./gradlew :composeApp:desktopTest --no-daemon
+      - name: Firma propia de la app
+        env:
+          KEYSTORE_B64: ${{ secrets.VITRINA_KEYSTORE_B64 }}
+          PUBLICAR: ${{ inputs.publicar }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/vitrina-release.jks"
+            echo "VITRINA_KEYSTORE_FILE=$RUNNER_TEMP/vitrina-release.jks" >> "$GITHUB_ENV"
+          elif [ "$PUBLICAR" = "true" ]; then
+            echo "::error::Falta el secreto VITRINA_KEYSTORE_B64: sin la firma propia las apps no aceptan la actualización."
+            exit 1
+          fi
       - name: Compilar APK
-        run: ./gradlew :composeApp:assembleRelease --no-daemon
+        env:
+          VITRINA_KEYSTORE_PASSWORD: ${{ secrets.VITRINA_KEYSTORE_PASSWORD }}
+          VITRINA_KEY_PASSWORD: ${{ secrets.VITRINA_KEYSTORE_PASSWORD }}
+        run: |
+          ./gradlew :composeApp:assembleRelease --no-daemon
+          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' composeApp/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
+          cp composeApp/build/outputs/apk/release/*.apk "VitrinaPOS-$VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: VitrinaPOS-android
-          path: vitrina-pos/composeApp/build/outputs/apk/release/*.apk
+          path: vitrina-pos/VitrinaPOS-*.apk
           if-no-files-found: error
 
   windows:
@@ -60,3 +91,62 @@ jobs:
           name: VitrinaPOS-windows
           path: vitrina-pos/composeApp/build/compose/binaries/main/msi/*.msi
           if-no-files-found: error
+
+  mac:
+    name: Instalador de Mac
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: vitrina-pos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Crear instalador .dmg
+        run: ./gradlew :composeApp:packageDmg --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitrinaPOS-mac
+          path: vitrina-pos/composeApp/build/compose/binaries/main/dmg/*.dmg
+          if-no-files-found: error
+
+  publicar:
+    name: Publicar la versión
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publicar }}
+    needs: [android, windows, mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: entregas
+          merge-multiple: true
+      - name: Crear la entrega en GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NOTAS: ${{ inputs.notas }}
+          IMPORTANTE: ${{ inputs.importante }}
+        run: |
+          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' vitrina-pos/composeApp/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
+          TAG="vitrina-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::La versión $VERSION ya está publicada. Sube el número en AppInfo.kt."
+            exit 1
+          fi
+          BODY="$NOTAS"
+          if [ "$IMPORTANTE" = "true" ]; then BODY="[importante] $BODY"; fi
+          ls -la entregas
+          # --latest=false: la "última versión" del repositorio es el canal de PrestaMax y no se toca.
+          gh release create "$TAG" entregas/* --target "$GITHUB_SHA" --title "Vitrina POS $VERSION" --notes "$BODY" --latest=false

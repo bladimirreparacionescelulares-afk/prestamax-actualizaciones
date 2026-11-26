@@ -220,6 +220,28 @@ class AndroidPlatform(private val context: Context) : Platform {
         context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }.isSuccess
 
+    override val updateExtension = "apk"
+
+    override val updateDir: File get() = File(context.cacheDir, "actualizaciones")
+
+    override fun installUpdate(file: File): String? {
+        // Android pide permitir, una sola vez, que Vitrina POS instale aplicaciones.
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+            runCatching {
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:${context.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+            return "Activa \"Permitir de esta fuente\" para Vitrina POS, vuelve y toca Actualizar otra vez."
+        }
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uriFor(file), "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { context.startActivity(view); null }.getOrElse { "No se pudo abrir el instalador: ${it.message}" }
+    }
+
     override fun openFile(file: File) {
         val view = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uriFor(file), if (file.extension == "pdf") "application/pdf" else "*/*")
