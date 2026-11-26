@@ -20,7 +20,7 @@ import com.vitrinapos.db.Supplier
 import com.vitrinapos.db.VitrinaDb
 import com.vitrinapos.net.Crypto
 import com.vitrinapos.net.RowCodec
-import com.vitrinapos.platform.Platform
+import com.vitrinapos.platform.CorePlatform
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -213,7 +213,7 @@ object CashMoveType {
     fun sign(t: String) = if (t == IN) 1 else -1
 }
 
-class Repository(val platform: Platform) {
+class Repository(val platform: CorePlatform) {
     private val scope = CoroutineScope(SupervisorJob() + platform.io)
     val driver: SqlDriver = platform.createDriver()
     val db = VitrinaDb(driver)

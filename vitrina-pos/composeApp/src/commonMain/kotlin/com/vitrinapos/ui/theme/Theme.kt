@@ -148,6 +148,4 @@ fun VitrinaTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () 
 }
 
 /** Paleta para categorías y para el fondo de productos sin foto. */
-val CategoryPalette = listOf(
-    0xFF0E7C66, 0xFF2F6FD6, 0xFF8B5CF6, 0xFFE0592A, 0xFFC9850C, 0xFF0891B2, 0xFFDB2777, 0xFF4D7C0F, 0xFF64748B,
-)
+// CategoryPalette está en el núcleo (core/ui/theme/Palette.kt): la usan también los datos de ejemplo.

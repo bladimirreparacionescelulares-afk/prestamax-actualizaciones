@@ -8,11 +8,10 @@ plugins {
     kotlin("plugin.serialization")
     id("org.jetbrains.compose")
     id("com.android.application")
-    id("app.cash.sqldelight")
 }
 
-// La versión se escribe en un solo lugar: src/commonMain/kotlin/com/vitrinapos/AppInfo.kt
-val appInfo = file("src/commonMain/kotlin/com/vitrinapos/AppInfo.kt").readText()
+// La versión se escribe en un solo lugar: core/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt
+val appInfo = rootProject.file("core/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt").readText()
 val appVersionName = Regex("VERSION = \"([^\"]+)\"").find(appInfo)!!.groupValues[1]
 val releaseProps = Properties().apply {
     rootProject.file("release/keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
@@ -32,6 +31,7 @@ kotlin {
         val desktopMain by getting
 
         commonMain.dependencies {
+            implementation(project(":core"))
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
@@ -73,14 +73,6 @@ kotlin {
                 implementation(compose.desktop.uiTestJUnit4)
                 implementation("com.google.zxing:javase:3.5.3")
             }
-        }
-    }
-}
-
-sqldelight {
-    databases {
-        create("VitrinaDb") {
-            packageName.set("com.vitrinapos.db")
         }
     }
 }

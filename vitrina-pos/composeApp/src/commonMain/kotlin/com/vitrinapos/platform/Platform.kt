@@ -11,28 +11,10 @@ import java.io.OutputStream
 data class PrinterDevice(val id: String, val name: String, val detail: String = "")
 
 /** Servicios que cambian entre Android y Windows. */
-interface Platform {
+interface Platform : CorePlatform {
     val isDesktop: Boolean
-    /** "Android" o "Windows". */
-    val platformName: String
-    /** Nombre sugerido para este equipo en la red. */
-    val defaultDeviceName: String
-
-    /** Mantiene activa la recepción de mensajes de la red (necesario en Android para que lo encuentren). */
-    fun setNetworkActive(active: Boolean)
-
-    val io: CoroutineDispatcher
-    /** Carpeta privada de la app (base de datos, fotos, PDF). */
-    val dataDir: File
-    val databaseFile: File
-
-    fun createDriver(): SqlDriver
-
     /** Decodifica una imagen reduciéndola a [maxSide] píxeles como máximo. */
     fun decodeImage(file: File, maxSide: Int): ImageBitmap?
-
-    /** Guarda [src] como JPEG comprimido en [dest], corrigiendo la orientación. */
-    fun saveCompressedJpeg(src: File, dest: File, maxSide: Int = 1080, quality: Int = 82): Boolean
 
     suspend fun listPrinters(): List<PrinterDevice>
     suspend fun printRaw(printer: PrinterDevice, bytes: ByteArray)
@@ -47,16 +29,6 @@ interface Platform {
     fun shareText(text: String, title: String)
     fun openFile(file: File)
 
-    /**
-     * Cifra datos sensibles (el certificado digital) con una llave que no sale de este equipo:
-     * en Android, el Keystore del sistema; en Windows, una llave propia de la app en su carpeta privada.
-     */
-    /** Proveedor extra para abrir certificados .p12 que el sistema no lee (en Android, BouncyCastle). */
-    val extraKeyStoreProvider: java.security.Provider? get() = null
-
-    fun protect(data: ByteArray): ByteArray
-    fun unprotect(data: ByteArray): ByteArray
-
     /** Abre un enlace (por ejemplo, WhatsApp). Devuelve false si no hay con qué abrirlo. */
     fun openUrl(url: String): Boolean
 
@@ -68,20 +40,6 @@ interface Platform {
 
     /** Abre el instalador descargado. Devuelve un aviso si hace falta un paso de la persona (null si ya arrancó). */
     fun installUpdate(file: java.io.File): String?
-}
-
-/** Lienzo para dibujar PDF; coordenadas en puntos desde la esquina superior izquierda. */
-interface PdfCanvas {
-    val pageWidth: Float
-    val pageHeight: Float
-    fun newPage()
-    fun text(x: Float, y: Float, text: String, size: Float, bold: Boolean = false, color: Long = 0xFF1B2421, align: TextAlign = TextAlign.Left)
-    fun textWidth(text: String, size: Float, bold: Boolean = false): Float
-    fun rect(x: Float, y: Float, w: Float, h: Float, color: Long, radius: Float = 0f)
-    fun line(x1: Float, y1: Float, x2: Float, y2: Float, color: Long, width: Float = 0.8f)
-    fun image(file: File, x: Float, y: Float, w: Float, h: Float)
-
-    enum class TextAlign { Left, Right, Center }
 }
 
 interface ImagePicker {

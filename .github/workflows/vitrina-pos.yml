@@ -41,7 +41,7 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Pruebas
-        run: ./gradlew :composeApp:desktopTest --no-daemon
+        run: ./gradlew :core:jvmTest :composeApp:desktopTest --no-daemon
       - name: Firma propia de la app
         env:
           KEYSTORE_B64: ${{ secrets.VITRINA_KEYSTORE_B64 }}
@@ -60,7 +60,7 @@ jobs:
           VITRINA_KEY_PASSWORD: ${{ secrets.VITRINA_KEYSTORE_PASSWORD }}
         run: |
           ./gradlew :composeApp:assembleRelease --no-daemon
-          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' composeApp/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
+          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' core/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
           cp composeApp/build/outputs/apk/release/*.apk "VitrinaPOS-$VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
@@ -139,7 +139,7 @@ jobs:
           NOTAS: ${{ inputs.notas }}
           IMPORTANTE: ${{ inputs.importante }}
         run: |
-          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' vitrina-pos/composeApp/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
+          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' vitrina-pos/core/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
           TAG="vitrina-v$VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::La versión $VERSION ya está publicada. Sube el número en AppInfo.kt."

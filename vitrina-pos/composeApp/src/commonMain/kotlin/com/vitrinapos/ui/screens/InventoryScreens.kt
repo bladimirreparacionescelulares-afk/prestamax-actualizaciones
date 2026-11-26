@@ -856,7 +856,7 @@ fun ImeiSearchScreen() {
         if (searched.length >= 3 && results.isEmpty()) EmptyState(Icons.Rounded.Search, "Sin resultados", "No hay ningún equipo con \"$searched\".")
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(results, key = { it.id }) { u ->
-                AppCard(onClick = { if (u.saleId != null && u.status == UnitStatus.SOLD) app.open(Screen.SaleDetail(u.saleId)) else app.open(Screen.ProductUnits(u.productId)) }) {
+                AppCard(onClick = { if (u.saleId != null && u.status == UnitStatus.SOLD) app.open(Screen.SaleDetail(u.saleId!!)) else app.open(Screen.ProductUnits(u.productId)) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(u.serial, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
@@ -919,7 +919,7 @@ fun ProductUnitsScreen(productId: Long) {
             }
             if (shown.isEmpty()) item { Text("No hay IMEI registrados.", color = AppTheme.extra.muted) }
             items(shown, key = { it.id }) { u ->
-                AppCard(onClick = { if (u.saleId != null && u.status == UnitStatus.SOLD) app.open(Screen.SaleDetail(u.saleId)) }, padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
+                AppCard(onClick = { if (u.saleId != null && u.status == UnitStatus.SOLD) app.open(Screen.SaleDetail(u.saleId!!)) }, padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(u.serial, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)

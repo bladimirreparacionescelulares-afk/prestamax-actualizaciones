@@ -14,13 +14,6 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.math.roundToInt
 
-/** Lenguaje que entiende la etiquetadora. */
-enum class LabelLanguage(val title: String, val hint: String) {
-    TSPL("TSPL", "Xprinter, HPRT, Gprinter, Munbyn, TSC, iDPRT y la mayoría de etiquetadoras económicas"),
-    ZPL("ZPL", "Zebra y compatibles (Honeywell, Godex en modo ZPL)"),
-    ESCPOS("ESC/POS", "Impresoras de tickets con rollo de etiquetas"),
-}
-
 /** Imagen en blanco y negro, un punto por punto de la impresora. */
 class MonoBitmap(val width: Int, val height: Int, val black: BooleanArray) {
     val rowBytes get() = (width + 7) / 8
@@ -39,18 +32,6 @@ class MonoBitmap(val width: Int, val height: Int, val black: BooleanArray) {
     }
 
     fun countBlack() = black.count { it }
-}
-
-data class LabelPrinterConfig(
-    val language: LabelLanguage = LabelLanguage.TSPL,
-    val dpi: Int = 203,
-    val gapMm: Float = 2f,
-    /** Oscuridad 1 (claro) a 15 (oscuro). */
-    val darkness: Int = 8,
-    val offsetXmm: Float = 0f,
-    val offsetYmm: Float = 0f,
-) {
-    val dotsPerMm: Float get() = dpi / 25.4f
 }
 
 object LabelRaster {
