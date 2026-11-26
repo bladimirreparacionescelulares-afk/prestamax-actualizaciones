@@ -348,6 +348,15 @@ fun SettingsScreen() {
             SectionTitle("Cotizaciones")
             TextInput(d.quoteValidDays.toString(), { d = d.copy(quoteValidDays = it.filter(Char::isDigit).toIntOrNull() ?: 0) }, "Días de validez", keyboard = KeyboardType.Number)
             TextInput(d.quoteTerms, { d = d.copy(quoteTerms = it) }, "Condiciones", singleLine = false, minLines = 3)
+
+            // ---- Taller ----
+            SectionTitle("Taller de reparación")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                com.vitrinapos.ui.components.MoneyInput(d.repairDiagnosisFee, { d = d.copy(repairDiagnosisFee = it ?: 0) }, "Costo de diagnóstico", Modifier.weight(1f))
+                TextInput(d.repairWarrantyDays.toString(), { d = d.copy(repairWarrantyDays = it.filter(Char::isDigit).take(3).toIntOrNull() ?: 0) }, "Días de garantía", Modifier.weight(1f), keyboard = KeyboardType.Number)
+            }
+            TextInput(d.repairAbandonDays.toString(), { d = d.copy(repairAbandonDays = it.filter(Char::isDigit).take(4).toIntOrNull() ?: 0) }, "Días para considerar un equipo abandonado", keyboard = KeyboardType.Number)
+            TextInput(d.repairTerms, { d = d.copy(repairTerms = it) }, "Condiciones del comprobante de recepción", singleLine = false, minLines = 3)
             }
 
             if (dirty) {

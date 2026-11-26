@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.3.0"
-val appVersionCode = 4
+val appVersionName = "1.4.0"
+val appVersionCode = 5
 
 kotlin {
     androidTarget {

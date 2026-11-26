@@ -1,5 +1,7 @@
 package com.vitrinapos.ui.screens
 
+import com.vitrinapos.data.daysLate
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -129,7 +131,7 @@ fun HomeScreen() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 QuickAction(Icons.Rounded.AddBox, "Nuevo producto", Modifier.weight(1f)) { app.open(Screen.ProductForm()) }
                 QuickAction(Icons.Rounded.Description, "Cotización", Modifier.weight(1f)) { app.open(Screen.QuoteEditor()) }
-                QuickAction(Icons.Rounded.LocalShipping, "Proveedores", Modifier.weight(1f)) { app.open(Screen.Suppliers) }
+                QuickAction(Icons.Rounded.Build, "Recibir equipo", Modifier.weight(1f)) { app.open(Screen.RepairReceive()) }
                 if (app.can(com.vitrinapos.data.Permission.REPORTS)) QuickAction(Icons.Rounded.BarChart, "Reportes", Modifier.weight(1f)) { app.open(Screen.Reports) }
                 else QuickAction(Icons.Rounded.PointOfSale, "Caja", Modifier.weight(1f)) { app.open(Screen.Cash) }
             }
@@ -149,6 +151,28 @@ fun HomeScreen() {
                     }
                     Pill(if (cash != null) "Abierta" else "Abrir", if (cash != null) AppTheme.extra.ok else AppTheme.extra.cta,
                         if (cash != null) AppTheme.extra.okSoft else AppTheme.extra.cta.copy(alpha = 0.12f))
+                }
+            }
+
+            // Taller
+            val repairs by app.repo.repairs.collectAsState()
+            val pendingRepairs = repairs.filter { com.vitrinapos.data.RepairStatus.isPending(it.status) }
+            val readyRepairs = repairs.filter { com.vitrinapos.data.RepairStatus.isReady(it.status) }
+            if (pendingRepairs.isNotEmpty() || readyRepairs.isNotEmpty()) {
+                val lateRepairs = pendingRepairs.count { it.daysLate() > 0 }
+                AppCard(onClick = { app.selectTab(Screen.Taller) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Build, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Taller", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${pendingRepairs.size} en proceso" + (if (lateRepairs > 0) " · $lateRepairs ${if (lateRepairs == 1) "atrasado" else "atrasados"}" else ""),
+                                style = MaterialTheme.typography.bodySmall, color = if (lateRepairs > 0) AppTheme.extra.danger else AppTheme.extra.muted,
+                            )
+                        }
+                        if (readyRepairs.isNotEmpty()) Pill(if (readyRepairs.size == 1) "1 listo" else "${readyRepairs.size} listos", AppTheme.extra.ok, AppTheme.extra.okSoft)
+                    }
                 }
             }
 

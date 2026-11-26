@@ -1,0 +1,47 @@
+-- Versión 2 -> 3: taller de reparaciones.
+CREATE TABLE repairOrder (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  clientId INTEGER,
+  clientName TEXT NOT NULL,
+  clientPhone TEXT NOT NULL DEFAULT '',
+  clientEmail TEXT NOT NULL DEFAULT '',
+  deviceType TEXT NOT NULL,
+  brand TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  serial TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '',
+  unlockType TEXT NOT NULL DEFAULT 'NONE',
+  unlockCode TEXT NOT NULL DEFAULT '',
+  problem TEXT NOT NULL DEFAULT '',
+  conditionText TEXT NOT NULL DEFAULT '',
+  accessories TEXT NOT NULL DEFAULT '',
+  photos TEXT NOT NULL DEFAULT '',
+  estimate INTEGER NOT NULL DEFAULT 0,
+  deposit INTEGER NOT NULL DEFAULT 0,
+  diagnosisFee INTEGER NOT NULL DEFAULT 0,
+  estimatedAt INTEGER,
+  technician TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  receivedBy TEXT NOT NULL DEFAULT '',
+  total INTEGER NOT NULL DEFAULT 0,
+  warrantyDays INTEGER NOT NULL DEFAULT 30,
+  deliveredAt INTEGER,
+  saleId INTEGER,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX repair_status ON repairOrder(status);
+
+CREATE TABLE repairEvent (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repairId INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX repairEvent_repair ON repairEvent(repairId);

@@ -29,6 +29,9 @@ sealed interface Screen {
     data object Pos : Screen
     data object Clients : Screen
     data object More : Screen
+    data object Taller : Screen
+    data class RepairReceive(val id: Long? = null) : Screen
+    data class RepairDetail(val id: Long) : Screen
 
     // Pantallas secundarias
     data class ProductForm(val id: Long? = null, val presetCode: String? = null, val key: Long = 0) : Screen

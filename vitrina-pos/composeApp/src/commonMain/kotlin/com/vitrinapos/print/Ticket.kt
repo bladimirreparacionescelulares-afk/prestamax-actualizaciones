@@ -18,7 +18,7 @@ import java.text.Normalizer
 class Ticket(val width: Int) {
     enum class Style { Normal, Bold, Big }
     enum class Align { Left, Center, Right }
-    data class Line(val text: String, val style: Style = Style.Normal, val align: Align = Align.Left)
+    data class Line(val text: String, val style: Style = Style.Normal, val align: Align = Align.Left, val qr: String? = null)
 
     val lines = mutableListOf<Line>()
 
@@ -35,6 +35,9 @@ class Ticket(val width: Int) {
     fun raw(text: String, style: Style = Style.Normal) {
         lines += Line(text.take(if (style == Style.Big) width / 2 else width), style)
     }
+
+    /** Código QR impreso por la propia impresora (comando ESC/POS). */
+    fun qr(data: String) { lines += Line("[ QR $data ]", Style.Normal, Align.Center, qr = data) }
 
     fun separator(c: Char = '-') { lines += Line(c.toString().repeat(width)) }
 
@@ -72,6 +75,18 @@ class Ticket(val width: Int) {
         if (cp850 != null) cmd(0x1B, 0x74, 2) // tabla de caracteres PC850 (acentos y ñ)
         for (line in lines) {
             cmd(0x1B, 0x61, when (line.align) { Align.Left -> 0; Align.Center -> 1; Align.Right -> 2 })
+            if (line.qr != null) {
+                val data = line.qr.toByteArray(Charsets.US_ASCII)
+                cmd(0x1D, 0x28, 0x6B, 4, 0, 49, 65, 50, 0) // modelo 2
+                cmd(0x1D, 0x28, 0x6B, 3, 0, 49, 67, if (width >= 48) 7 else 6) // tamaño del módulo
+                cmd(0x1D, 0x28, 0x6B, 3, 0, 49, 69, 49) // corrección M
+                val len = data.size + 3
+                cmd(0x1D, 0x28, 0x6B, len and 0xFF, len shr 8, 49, 80, 48)
+                out.write(data)
+                cmd(0x1D, 0x28, 0x6B, 3, 0, 49, 81, 48) // imprimir
+                out.write(0x0A)
+                continue
+            }
             when (line.style) {
                 Style.Normal -> { cmd(0x1B, 0x45, 0); cmd(0x1D, 0x21, 0x00) }
                 Style.Bold -> { cmd(0x1B, 0x45, 1); cmd(0x1D, 0x21, 0x00) }
@@ -163,6 +178,50 @@ class Ticket(val width: Int) {
             } else {
                 t.pair("Pago", sale.paymentMethod)
             }
+            footer(t, s)
+            return t
+        }
+
+        /** Comprobante de recepción de un equipo en el taller. */
+        fun forRepair(s: AppSettings, r: com.vitrinapos.db.RepairOrder): Ticket {
+            val t = Ticket(s.ticketChars)
+            val sym = s.currencySymbol
+            header(t, s)
+            t.separator()
+            t.center("COMPROBANTE DE RECEPCIÓN", Style.Bold)
+            t.center(com.vitrinapos.data.repairCode(r.number), Style.Big)
+            t.separator()
+            t.pair("Fecha", Time.dateTime(r.createdAt))
+            t.left("Cliente: ${r.clientName}")
+            if (r.clientPhone.isNotBlank()) t.left("Tel.: ${r.clientPhone}")
+            t.left("Equipo: ${com.vitrinapos.data.DeviceTypes.label(r.deviceType)} ${listOf(r.brand, r.model).filter { it.isNotBlank() }.joinToString(" ")}".trim())
+            if (r.serial.isNotBlank()) t.left("${if (r.deviceType == com.vitrinapos.data.DeviceTypes.PHONE) "IMEI" else "Serie"}: ${r.serial}")
+            if (r.color.isNotBlank()) t.left("Color: ${r.color}")
+            if (r.problem.isNotBlank()) t.left("Falla: ${r.problem}")
+            val cond = com.vitrinapos.data.Condition.parse(r.conditionText)
+            if (cond.isNotEmpty()) {
+                val ok = cond.filterValues { it == com.vitrinapos.data.Condition.OK }.keys
+                val bad = cond.filterValues { it == com.vitrinapos.data.Condition.BAD }.keys
+                if (ok.isNotEmpty()) t.left("Funciona: ${ok.joinToString(", ")}")
+                if (bad.isNotEmpty()) t.left("Con daño: ${bad.joinToString(", ")}")
+            }
+            if (r.accessories.isNotBlank()) t.left("Deja: ${r.accessories.replace(",", ", ")}")
+            t.separator()
+            if (r.estimate > 0) t.pair("Presupuesto", Money.format(r.estimate, sym))
+            if (r.diagnosisFee > 0) t.pair("Diagnóstico", Money.format(r.diagnosisFee, sym))
+            if (r.deposit > 0) t.pair("Abono", Money.format(r.deposit, sym))
+            if (r.estimate > 0 && r.deposit > 0) t.pair("Saldo estimado", Money.format((r.estimate - r.deposit).coerceAtLeast(0), sym), Style.Bold)
+            r.estimatedAt?.let { t.pair("Entrega estimada", Time.date(it)) }
+            if (r.technician.isNotBlank()) t.pair("Técnico", r.technician)
+            if (r.receivedBy.isNotBlank()) t.pair("Recibió", r.receivedBy)
+            t.separator()
+            t.qr(com.vitrinapos.data.repairCode(r.number))
+            if (s.repairTerms.isNotBlank()) t.center(s.repairTerms)
+            if (r.diagnosisFee > 0) t.center("Si no aprueba la reparación, se cobra el diagnóstico.")
+            t.center("Equipos no retirados en ${s.repairAbandonDays} días se consideran abandonados.")
+            t.blank(); t.blank()
+            t.center("______________________________".take(t.width - 4))
+            t.center("Firma del cliente")
             footer(t, s)
             return t
         }

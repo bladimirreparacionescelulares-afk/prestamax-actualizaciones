@@ -114,8 +114,11 @@ fun PosScreen(wide: Boolean) {
     val categories by app.repo.categories.collectAsState()
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf<Long?>(null) }
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val scanner = rememberBarcodeScanner { code ->
-        if (!app.addByCode(code, products)) {
+        if (com.vitrinapos.data.parseRepairCode(code) != null && products.none { it.code.equals(code, true) }) {
+            scope.launch { app.openRepairByCode(code) }
+        } else if (!app.addByCode(code, products)) {
             app.toast("No hay producto con el código $code")
             app.open(Screen.ProductForm(presetCode = code))
         }
@@ -128,7 +131,12 @@ fun PosScreen(wide: Boolean) {
                 SearchBox(
                     query, { query = it }, if (scanner != null) "Buscar por nombre o código" else "Buscar o escanear código (lector USB)",
                     Modifier.weight(1f),
-                    onSubmit = { if (app.addByCode(query, products)) query = "" },
+                    onSubmit = {
+                        if (com.vitrinapos.data.parseRepairCode(query) != null && products.none { it.code.equals(query.trim(), true) }) {
+                            val q = query; query = ""
+                            scope.launch { app.openRepairByCode(q) }
+                        } else if (app.addByCode(query, products)) query = ""
+                    },
                 )
                 if (scanner != null) {
                     Spacer(Modifier.width(8.dp))

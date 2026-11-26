@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.LocalShipping
@@ -82,7 +83,7 @@ private val bottomItems = listOf(
     NavItem(Screen.Home, "Inicio", Icons.Rounded.Home),
     NavItem(Screen.Catalog, "Catálogo", Icons.Rounded.GridView),
     NavItem(Screen.Pos, "Vender", Icons.Rounded.ShoppingCart),
-    NavItem(Screen.Clients, "Clientes", Icons.Rounded.People),
+    NavItem(Screen.Taller, "Taller", Icons.Rounded.Build),
     NavItem(Screen.More, "Más", Icons.Rounded.MoreHoriz),
 )
 
@@ -90,6 +91,7 @@ private val sideItems = listOf(
     NavItem(Screen.Home, "Inicio", Icons.Rounded.Home),
     NavItem(Screen.Pos, "Vender", Icons.Rounded.ShoppingCart),
     NavItem(Screen.Catalog, "Catálogo", Icons.Rounded.GridView),
+    NavItem(Screen.Taller, "Taller", Icons.Rounded.Build),
     NavItem(Screen.Clients, "Clientes", Icons.Rounded.People),
     NavItem(Screen.Quotes, "Cotizaciones", Icons.Rounded.Description),
     NavItem(Screen.Suppliers, "Proveedores", Icons.Rounded.LocalShipping),
@@ -102,7 +104,7 @@ private val sideItems = listOf(
 )
 
 /** Pantallas que ocupan todo el alto (sin barra de pestañas). */
-private fun Screen.isTab() = this is Screen.Home || this is Screen.Catalog || this is Screen.Pos || this is Screen.Clients || this is Screen.More
+private fun Screen.isTab() = this is Screen.Home || this is Screen.Catalog || this is Screen.Pos || this is Screen.Taller || this is Screen.More
 
 @Composable
 fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
@@ -174,6 +176,9 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.Pos -> PosScreen(wide)
         Screen.Clients -> ClientsScreen()
         Screen.More -> MoreScreen()
+        Screen.Taller -> TallerScreen()
+        is Screen.RepairReceive -> RepairReceiveScreen(screen.id)
+        is Screen.RepairDetail -> RepairDetailScreen(screen.id)
         is Screen.ProductForm -> ProductFormScreen(screen.id, screen.presetCode)
         Screen.Checkout -> CheckoutScreen()
         is Screen.SaleDetail -> SaleDetailScreen(screen.id)

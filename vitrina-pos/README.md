@@ -45,6 +45,16 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
   - Probado de punta a punta: lo que recibe una impresora de red simulada se vuelve a convertir en imagen y su QR se lee (TSPL, ZPL y ESC/POS; 203 y 300 dpi), también desde el APK en Android.
 - Las etiquetadoras que solo funcionan con su propia app (Niimbot, Phomemo) no son compatibles.
 
+### Taller de reparación
+
+- Pestaña **Taller** en la barra de abajo (Clientes pasó a **Más**). Muestra pendientes, listos, atrasados y entregados, con búsqueda por nombre, teléfono, IMEI o número REP.
+- **Recibir equipo** en 3 pasos: cliente y equipo (tipo, marca, modelo, IMEI/serie con escáner, color, PIN/patrón/contraseña que nunca se imprime), cómo llega (lista de revisión, accesorios, fotos) y confirmación (presupuesto, diagnóstico, abono, fecha de entrega, técnico, garantía).
+- El abono se registra como un cobro normal: aparece en Caja, Ventas y Reportes.
+- Al recibir se imprime la **etiqueta del equipo** (QR con el número REP, dueño, contacto, equipo, IMEI) en la etiquetadora, o se crea un PDF si no hay una; y el **comprobante** para el cliente en la impresora de tickets, con QR.
+- Escanear la etiqueta (desde Taller, Vender o el escáner continuo) o escribir REP-0001 abre la orden.
+- Cada cambio de estado queda en el historial con fecha y usuario.
+- En Configuración → Taller: costo de diagnóstico, días de garantía, días para considerar un equipo abandonado y condiciones del comprobante.
+
 ### Escáner continuo
 
 - En Vender y en Etiquetas, el botón de escanear abre la cámara y cada código que pasa se agrega solo, con pitido y vibración. El mismo código se cuenta una vez cada 1,5 s.

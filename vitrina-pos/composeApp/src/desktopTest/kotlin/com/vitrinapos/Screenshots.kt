@@ -78,6 +78,13 @@ class Screenshots {
         runBlocking { repo.saveSettings(repo.settings.value.copy(labelPrinterId = "net:192.168.1.50:9100", labelPrinterName = "Xprinter XP-365B")) }
         shoot(graph, File(outDir, "23-etiquetadora.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.open(Screen.LabelPrinter) }
         shoot(graph, File(outDir, "24-diseno-imprimir.png"), 412, 900, 2f) { app -> app.selectTab(Screen.More); app.openLabelsFor(job) }
+        // ---- Taller ----
+        val repId = runBlocking { seedRepairs(repo) }
+        shoot(graph, File(outDir, "25-taller.png"), 412, 900, 2f) { it.selectTab(Screen.Taller) }
+        shoot(graph, File(outDir, "26-recibir-equipo.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairReceive()) }
+        shoot(graph, File(outDir, "27-orden.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(repId)) }
+        shoot(graph, File(outDir, "28-windows-taller.png"), 1366, 800, 1f) { it.selectTab(Screen.Taller) }
+        shoot(graph, File(outDir, "29-inicio-taller.png"), 412, 900, 2f) { it.selectTab(Screen.Home) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
 
         // ---- Trabajo en red y usuarios ----
@@ -142,6 +149,29 @@ class Screenshots {
             val img = scene.render(t)
             file.writeBytes(img.encodeToData(EncodedImageFormat.PNG)!!.bytes)
         }
+    }
+
+    private suspend fun seedRepairs(repo: Repository): Long {
+        val day = 86_400_000L
+        val base = com.vitrinapos.data.RepairDraft(diagnosisFee = 30000, warrantyDays = 30)
+        val clients = repo.db.clientQueries.selectAll().executeAsList()
+        val id = repo.saveRepair(base.copy(
+            clientName = "María Pérez", clientPhone = "809-555-0101", brand = "Samsung", model = "Galaxy A54", serial = "356789012345678",
+            color = "Negro", unlockType = com.vitrinapos.data.UnlockTypes.PATTERN, unlockCode = "1-2-3-6-9", problem = "Pantalla rota, no da imagen",
+            conditionText = com.vitrinapos.data.Condition.format(mapOf("Pantalla" to "mal", "Carga" to "ok", "Cámaras" to "ok", "Botones" to "ok")),
+            accessories = "Cargador,Funda", estimate = 350000, deposit = 100000, estimatedAt = Time.now() + 2 * day, technician = "Luis",
+        ))
+        repo.setRepairStatus(id, com.vitrinapos.data.RepairStatus.DIAGNOSIS, "Display dañado, táctil funciona")
+        repo.setRepairStatus(id, com.vitrinapos.data.RepairStatus.REPAIRING)
+        val late = repo.saveRepair(base.copy(clientId = clients[0].id, clientName = clients[0].name, clientPhone = clients[0].phone, brand = "Apple", model = "iPhone 12",
+            problem = "No carga", estimate = 180000, estimatedAt = Time.now() - 3 * day))
+        repo.setRepairStatus(late, com.vitrinapos.data.RepairStatus.PARTS, "Se pidió el puerto de carga")
+        val ready = repo.saveRepair(base.copy(clientName = "José Rodríguez", clientPhone = "829-555-0177", deviceType = com.vitrinapos.data.DeviceTypes.LAPTOP,
+            brand = "HP", model = "Pavilion 15", serial = "5CD1234XYZ", problem = "Muy lenta, limpieza y cambio a SSD", estimate = 450000, deposit = 200000, estimatedAt = Time.now()))
+        repo.setRepairStatus(ready, com.vitrinapos.data.RepairStatus.READY)
+        repo.saveRepair(base.copy(clientName = "Ana Castillo", clientPhone = "849-555-0123", deviceType = com.vitrinapos.data.DeviceTypes.TABLET, brand = "Lenovo",
+            model = "Tab M10", problem = "Batería se descarga rápido", estimatedAt = Time.now() + day))
+        return id
     }
 
     private suspend fun seed(repo: Repository) {

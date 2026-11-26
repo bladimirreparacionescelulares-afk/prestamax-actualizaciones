@@ -372,6 +372,17 @@ class Repository(val platform: Platform) {
                         if (s != null && s.closedAt == null) db.cashSessionQueries.close(now, expectedCashSync(s), op.counted, op.notes, s.id)
                         JsonNull
                     }
+                    is Op.SaveRepair -> JsonPrimitive(saveRepairLocal(op, now))
+                    is Op.SetRepairStatus -> {
+                        val r = db.repairQueries.selectById(op.id).executeAsOneOrNull()
+                        if (r != null && r.status != op.status) {
+                            db.repairQueries.setStatus(op.status, now, op.id)
+                            db.repairQueries.insertEvent(op.id, op.status, op.note.trim(), op.user, now)
+                        } else if (r != null && op.note.isNotBlank()) {
+                            db.repairQueries.insertEvent(op.id, op.status, op.note.trim(), op.user, now)
+                        }
+                        JsonNull
+                    }
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
                             db.appUserQueries.insert(op.name.trim(), op.pinHash ?: "", op.role, if (op.active) 1 else 0, now)
@@ -390,6 +401,42 @@ class Repository(val platform: Platform) {
     }
 
     private fun newCode(): String = com.vitrinapos.labels.Codes.newInternalEan { db.productQueries.selectByCode(it).executeAsOneOrNull() != null }
+
+    /** Guarda la orden (dentro de una transacción). Devuelve su id. */
+    private fun saveRepairLocal(op: Op.SaveRepair, now: Long): Long {
+        val d = op.draft
+        // Cliente nuevo: se registra para que aparezca en Clientes y en su historial.
+        val clientId = d.clientId ?: d.clientName.trim().takeIf { it.isNotEmpty() }?.let {
+            db.clientQueries.insert(it, d.clientPhone.trim(), d.clientEmail.trim(), "", "", "", now)
+            db.clientQueries.lastId().executeAsOne()
+        }
+        if (d.id != null) {
+            db.repairQueries.update(
+                clientId, d.clientName.trim(), d.clientPhone.trim(), d.clientEmail.trim(), d.deviceType, d.brand.trim(), d.model.trim(), d.serial.trim(),
+                d.color.trim(), d.unlockType, d.unlockCode, d.problem.trim(), d.conditionText, d.accessories, d.photos, d.estimate, d.diagnosisFee,
+                d.estimatedAt, d.technician.trim(), d.notes.trim(), d.warrantyDays.toLong(), now, d.id,
+            )
+            return d.id
+        }
+        val number = db.repairQueries.nextNumber().executeAsOne()
+        db.repairQueries.insert(
+            number, clientId, d.clientName.trim(), d.clientPhone.trim(), d.clientEmail.trim(), d.deviceType, d.brand.trim(), d.model.trim(),
+            d.serial.trim(), d.color.trim(), d.unlockType, d.unlockCode, d.problem.trim(), d.conditionText, d.accessories, d.photos,
+            d.estimate, d.deposit, d.diagnosisFee, d.estimatedAt, d.technician.trim(), RepairStatus.RECEIVED, d.notes.trim(), op.userName,
+            d.warrantyDays.toLong(), now, now,
+        )
+        val id = db.repairQueries.lastId().executeAsOne()
+        db.repairQueries.insertEvent(id, RepairStatus.RECEIVED, if (d.deposit > 0) "Abono ${Money.format(d.deposit, settings.value.currencySymbol)}" else "", op.userName, now)
+        if (d.deposit > 0) {
+            // El abono es un cobro: entra en Caja, en Ventas y en Reportes.
+            val line = CartLine(null, "Abono reparación ${repairCode(number)}", repairCode(number), 1.0, d.deposit, 0, false, null, false)
+            insertSale(
+                Op.RecordSale(listOf(line), clientId, d.clientName.trim(), 0, op.depositMethod, d.deposit, null, op.deviceId, op.userId, op.userName, now),
+                number = db.saleQueries.nextNumber().executeAsOne(),
+            )
+        }
+        return id
+    }
 
     /** Inserta la venta (dentro de una transacción). Devuelve su id. */
     private fun insertSale(op: Op.RecordSale, number: Long): Long {
@@ -691,6 +738,24 @@ class Repository(val platform: Platform) {
     suspend fun closeCashSession(session: CashSession, counted: Long, notes: String) { run(Op.CloseCash(session.id, counted, notes)) }
 
     suspend fun cashHistory(): List<CashSession> = withContext(io) { db.cashSessionQueries.selectRecent(deviceId).executeAsList() }
+
+    // ================= Taller =================
+
+    val repairs: StateFlow<List<com.vitrinapos.db.RepairOrder>> = db.repairQueries.selectAll().asFlow().mapToList(io)
+        .stateIn(scope, SharingStarted.Eagerly, db.repairQueries.selectAll().executeAsList())
+
+    suspend fun saveRepair(d: RepairDraft, depositMethod: String = PaymentMethods.CASH): Long {
+        val u = currentUser.value
+        return run(Op.SaveRepair(d, depositMethod, deviceId, u?.id, u?.name ?: "")).asId()
+    }
+
+    suspend fun setRepairStatus(id: Long, status: String, note: String = "") { run(Op.SetRepairStatus(id, status, note, userName)) }
+
+    suspend fun repairById(id: Long) = withContext(io) { db.repairQueries.selectById(id).executeAsOneOrNull() }
+
+    suspend fun repairByNumber(n: Long) = withContext(io) { db.repairQueries.selectByNumber(n).executeAsOneOrNull() }
+
+    suspend fun repairEvents(id: Long) = withContext(io) { db.repairQueries.eventsByRepair(id).executeAsList() }
 
     // ================= Usuarios =================
 

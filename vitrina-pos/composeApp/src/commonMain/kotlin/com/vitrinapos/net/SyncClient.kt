@@ -146,17 +146,18 @@ class SyncClient(
             val row = c.row ?: return@mapNotNull null
             when (c.t) {
                 "product", "quoteItem" -> row.str("imagePath")
+                "repairOrder" -> row.str("photos")
                 "setting" -> if (row.str("key") == "logoPath") row.str("content") else null
                 else -> null
             }
-        }.filter { it.isNotBlank() && repo.imageFile(it) == null }.distinct()
+        }.flatMap { it.split(',') }.filter { it.isNotBlank() && repo.imageFile(it) == null }.distinct()
         for (n in names) {
             runCatching {
                 val resp = call(ApiRequest("imgGet", name = n), timeoutMs = 30_000)
                 if (resp.data.isNotBlank()) File(repo.imagesDir, File(n).name).writeBytes(Base64.getDecoder().decode(resp.data))
             }
         }
-        if (names.isNotEmpty()) repo.driver.notifyListeners("product", "setting")
+        if (names.isNotEmpty()) repo.driver.notifyListeners("product", "setting", "repairOrder")
     }
 
     private fun JsonObject.str(k: String): String? = this[k]?.jsonPrimitive?.contentOrNull

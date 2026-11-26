@@ -85,7 +85,7 @@ fun ClientsScreen() {
     val byClient = recent.filter { it.status == SaleStatus.OK && it.clientId != null }.groupBy { it.clientId }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ScreenHeader("Clientes", subtitle = "${clients.size} registrados")
+            ScreenHeader("Clientes", subtitle = "${clients.size} registrados", onBack = if (app.stack.isNotEmpty()) ({ app.back() }) else null)
             SearchBox(query, { query = it }, "Buscar por nombre, teléfono o documento", Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             if (clients.isEmpty()) {
                 EmptyState(Icons.Rounded.People, "Sin clientes todavía", "Registra a tus clientes para ver lo que compran y enviarles cotizaciones.")
@@ -164,7 +164,7 @@ fun ClientFormScreen(id: Long?) {
     }
     if (confirmDelete && id != null) {
         ConfirmDialog("Eliminar cliente", "Se borra \"$name\". Sus ventas anteriores se conservan con su nombre.", "Eliminar",
-            onConfirm = { scope.launch { app.repo.deleteClient(id); app.toast("Cliente eliminado"); app.selectTab(Screen.Clients) } },
+            onConfirm = { scope.launch { app.repo.deleteClient(id); app.toast("Cliente eliminado"); while (app.stack.isNotEmpty() && app.stack.last() !is Screen.Clients) app.stack.removeAt(app.stack.lastIndex) } },
             onDismiss = { confirmDelete = false }, destructive = true)
     }
 }
@@ -195,6 +195,7 @@ fun ClientDetailScreen(id: Long) {
     val app = LocalAppState.current
     val clients by app.repo.clients.collectAsState()
     val quotes by app.repo.quotes.collectAsState()
+    val repairs by app.repo.repairs.collectAsState()
     val client = clients.firstOrNull { it.id == id }
     val sales by produceState(emptyList<Sale>(), id, client) { value = app.repo.salesByClient(id) }
     if (client == null) {
@@ -240,6 +241,11 @@ fun ClientDetailScreen(id: Long) {
             if (clientQuotes.isNotEmpty()) {
                 item { SectionTitle("Cotizaciones") }
                 items(clientQuotes, key = { "q${it.id}" }) { q -> QuoteRow(q) { app.open(Screen.QuoteEditor(q.id)) } }
+            }
+            val clientRepairs = repairs.filter { it.clientId == id }
+            if (clientRepairs.isNotEmpty()) {
+                item { SectionTitle("Equipos en el taller") }
+                items(clientRepairs, key = { "r${it.id}" }) { r -> RepairRow(r) { app.open(Screen.RepairDetail(r.id)) } }
             }
             item { SectionTitle("Historial de compras") }
             if (sales.isEmpty()) item { Text("Todavía no tiene compras.", color = AppTheme.extra.muted) }

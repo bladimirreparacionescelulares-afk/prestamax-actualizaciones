@@ -441,6 +441,12 @@ fun TicketPreview(ticket: Ticket, modifier: Modifier = Modifier) {
     Column(modifier) {
         ticket.lines.forEach { line ->
             val big = line.style == Ticket.Style.Big
+            if (line.qr != null) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                    com.vitrinapos.ui.components.QrCodeImage(line.qr, Modifier.size(110.dp))
+                }
+                return@forEach
+            }
             Text(
                 ticket.aligned(line),
                 fontFamily = FontFamily.Monospace,

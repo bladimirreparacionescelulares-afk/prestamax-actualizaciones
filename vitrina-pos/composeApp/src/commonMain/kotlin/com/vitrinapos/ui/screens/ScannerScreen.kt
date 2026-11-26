@@ -1,5 +1,6 @@
 package com.vitrinapos.ui.screens
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +65,7 @@ fun ScannerScreen(mode: String) {
     val s = app.settings
     val products by app.repo.products.collectAsState()
     val session = remember { mutableStateMapOf<Long, Int>() }
+    val scope = com.vitrinapos.ui.components.rememberSafeScope()
     var last by remember { mutableStateOf<Product?>(null) }
     var unknown by remember { mutableStateOf<String?>(null) }
     var lastCode by remember { mutableStateOf("") }
@@ -76,6 +78,11 @@ fun ScannerScreen(mode: String) {
         lastCode = code
         lastAt = now
         val p = products.firstOrNull { it.code.equals(code, ignoreCase = true) }
+        if (p == null && com.vitrinapos.data.parseRepairCode(code) != null) {
+            app.platform.scanFeedback(true)
+            scope.launch { if (app.openRepairByCode(code)) app.stack.remove(Screen.Scanner(mode)) }
+            return
+        }
         if (p == null) {
             unknown = code
             last = null

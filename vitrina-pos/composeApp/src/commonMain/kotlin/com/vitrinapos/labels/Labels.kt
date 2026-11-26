@@ -55,6 +55,19 @@ data class LabelContent(
     val code: String,
     val store: String,
     val extra: String = "",
+    /** Si viene, se dibuja la etiqueta de un equipo del taller en vez de la de un producto. */
+    val repair: RepairLabel? = null,
+)
+
+/** Datos de la etiqueta que se pega a un equipo en reparación. */
+data class RepairLabel(
+    val code: String,
+    val owner: String,
+    val contact: String,
+    val device: String,
+    val serial: String,
+    val date: String,
+    val problem: String,
 )
 
 /** Hojas de etiquetas adhesivas para impresoras normales (medidas en mm). */
@@ -131,6 +144,7 @@ object LabelLayout {
         val w = o.widthMm
         val h = o.heightMm
         val pad = clamp(minOf(w, h) * 0.07f, 1f, 2.5f)
+        c.repair?.let { repair(p, it, pad, w, h); return }
         when (o.template) {
             LabelTemplate.PRICE_QR -> qrBlock(p, o, c, pad, pad, w - 2 * pad, h - 2 * pad, qrRatio = 0.44f)
             LabelTemplate.MINI -> mini(p, o, c, pad, w, h)
@@ -157,6 +171,36 @@ object LabelLayout {
         }
         if (o.showCode && c.code.isNotBlank() && h >= 12) lines += Line(fit(p, c.code, small, false, tw), small, false)
         stack(p, lines, tx, y, h, PdfCanvas.TextAlign.Left)
+    }
+
+    /** Etiqueta del equipo: QR con el número de orden, número grande en negativo y los datos del dueño. */
+    private fun repair(p: LabelPainter, r: RepairLabel, pad: Float, w: Float, h: Float) {
+        val inner = h - 2 * pad
+        val qr = minOf(inner, (w - 2 * pad) * 0.38f)
+        drawQr(p, r.code, pad, (h - qr) / 2, qr)
+        val tx = pad + qr + clamp(w * 0.04f, 0.8f, 2f)
+        val tw = w - pad - tx
+        val codeSize = shrink(p, r.code, clamp(h * 0.17f, 2f, 7f), true, tw - 1f)
+        val body = clamp(h * 0.085f, 1.2f, 3f)
+        val small = clamp(h * 0.07f, 1.1f, 2.4f)
+        val lines = mutableListOf<Line>()
+        lines += Line(fit(p, r.owner, body * 1.1f, true, tw), body * 1.1f, true)
+        if (r.contact.isNotBlank() && h >= 15) lines += Line(fit(p, r.contact, small, false, tw), small, false)
+        if (h >= 20 && r.device.isNotBlank()) lines += Line(fit(p, r.device, small, false, tw), small, false)
+        // El IMEI/serie va en su propia línea para que se lea completo.
+        if (h >= 20 && r.serial.isNotBlank()) lines += Line(fit(p, r.serial, small, false, tw), small, false)
+        if (h >= 28 && r.problem.isNotBlank()) lines += Line(fit(p, "${r.date} · ${r.problem}", small, false, tw), small, false)
+        // Bloque del número: fondo negro con letras blancas no existe en una térmica de 1 color,
+        // así que se usa un recuadro grueso alrededor del número.
+        val boxH = codeSize * 1.35f
+        val textH = lines.sumOf { (it.size * 1.12f).toDouble() }.toFloat()
+        val top = pad + (inner - boxH - textH - 0.8f) / 2
+        val stroke = clamp(h * 0.015f, 0.25f, 0.5f)
+        val boxW = minOf(tw, p.textWidth(r.code, codeSize, true) + codeSize * 0.6f)
+        p.rect(tx, top, boxW, stroke); p.rect(tx, top + boxH - stroke, boxW, stroke)
+        p.rect(tx, top, stroke, boxH); p.rect(tx + boxW - stroke, top, stroke, boxH)
+        p.text(tx + boxW / 2, top + boxH * 0.74f, r.code, codeSize, true, PdfCanvas.TextAlign.Center)
+        stack(p, lines, tx, top + boxH + 0.8f, textH, PdfCanvas.TextAlign.Left)
     }
 
     private fun mini(p: LabelPainter, o: LabelOptions, c: LabelContent, pad: Float, w: Float, h: Float) {

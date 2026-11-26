@@ -89,6 +89,19 @@ sealed class Op {
     @Serializable @SerialName("cashClose")
     data class CloseCash(val sessionId: Long, val counted: Long, val notes: String) : Op()
 
+    /** Recibe o edita un equipo. El abono (si hay) entra como cobro en Caja. */
+    @Serializable @SerialName("repair")
+    data class SaveRepair(
+        val draft: RepairDraft,
+        val depositMethod: String,
+        val deviceId: String,
+        val userId: Long?,
+        val userName: String,
+    ) : Op()
+
+    @Serializable @SerialName("repairStatus")
+    data class SetRepairStatus(val id: Long, val status: String, val note: String, val user: String) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 
