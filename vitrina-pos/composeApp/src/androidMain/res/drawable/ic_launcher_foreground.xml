@@ -1,17 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono de Vitrina POS: la "v" con la etiqueta de precio. Dibujado en una caja de 120 y reducido a la zona segura de 66 dp. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <!-- asa -->
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="4.5" android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M44,42 L44,38 A10,10 0 0 1 64,38 L64,42" />
-    <!-- bolsa -->
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M35,42 L73,42 A3,3 0 0 1 76,45 L78,74 A5,5 0 0 1 73,79 L35,79 A5,5 0 0 1 30,74 L32,45 A3,3 0 0 1 35,42 Z" />
-    <!-- etiqueta de precio -->
-    <path android:fillColor="#F26B3A"
-        android:pathData="M47,55 L58,55 L65,61.5 L58,68 L47,68 A2,2 0 0 1 45,66 L45,57 A2,2 0 0 1 47,55 Z" />
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M58.5,61.5 m-2,0 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0" />
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="21" android:translateY="21" android:scaleX="0.55" android:scaleY="0.55">
+        <group android:translateX="32.440" android:translateY="94" android:scaleX="0.104000" android:scaleY="-0.104000">
+            <path android:fillColor="#FBFAF6" android:pathData="M162 0 3 528H175L266 134H270L365 528H527L368 0Z" />
+        </group>
+        <group android:rotation="45" android:pivotX="92" android:pivotY="28">
+            <path android:fillColor="#E4572E" android:fillType="evenOdd" android:pathData="M82,18 L102,18 L102,38 L82,38 Z M84.4,23 A2.6,2.6 0 1 0 89.6,23 A2.6,2.6 0 1 0 84.4,23 Z" />
+        </group>
+    </group>
 </vector>

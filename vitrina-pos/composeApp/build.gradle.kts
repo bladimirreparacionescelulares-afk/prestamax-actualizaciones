@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.6.0"
-val appVersionCode = 7
+val appVersionName = "1.6.1"
+val appVersionCode = 8
 
 kotlin {
     androidTarget {
@@ -118,6 +118,7 @@ compose.desktop {
             vendor = "Vitrina POS"
             modules("java.sql", "java.desktop")
             windows {
+                iconFile.set(project.file("icons/vitrina-pos.ico"))
                 menu = true
                 shortcut = true
                 dirChooser = true

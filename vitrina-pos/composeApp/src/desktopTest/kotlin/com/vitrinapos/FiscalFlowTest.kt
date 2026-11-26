@@ -93,6 +93,16 @@ class FiscalFlowTest {
         assertEquals(repo.saleById(s1)!!.total, d1.total)
         EcfTest.validate("rfce32.xsd", repo.fiscal.sign(d1.summaryXml).xml)
 
+        // El ticket de la venta lleva el QR de consulta de la DGII, el código de seguridad y la fecha de firma.
+        val tk = com.vitrinapos.print.Ticket.forSale(repo.settings.value, repo.saleById(s1)!!, repo.saleItems(s1), ecf = d1)
+        val qr = tk.lines.mapNotNull { it.qr }.single()
+        assertTrue(qr.startsWith("https://fc.dgii.gov.do/testecf/ConsultaTimbreFC?RncEmisor=101010632&ENCF=E320000000001&MontoTotal="), qr)
+        assertTrue(tk.preview().contains("Código de seguridad: ${d1.securityCode}"))
+        val raw = tk.escPos(ascii = false, openDrawer = false)
+        assertTrue(raw.toList().windowed(3).any { it == listOf<Byte>(0x1D, 0x28, 0x6B) }, "comando de QR de la impresora")
+        assertTrue(String(raw, Charsets.ISO_8859_1).contains(qr), "el enlace completo va dentro del QR")
+        System.getProperty("fiscalOut")?.let { File(it).apply { mkdirs() }.resolve("ticket-ecf.txt").writeText(tk.preview()) }
+
         // Crédito fiscal sin RNC: no se registra la venta.
         val before = repo.db.saleQueries.selectRecent(100).executeAsList().size
         assertFailsWith<IllegalStateException> { repo.recordSale(listOf(CartLine.of(cable)), null, 0, PaymentMethods.CASH, 100000, null, FiscalChoice(31)) }

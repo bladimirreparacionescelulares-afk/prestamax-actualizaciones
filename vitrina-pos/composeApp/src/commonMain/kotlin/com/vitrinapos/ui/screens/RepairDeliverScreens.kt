@@ -247,7 +247,8 @@ suspend fun printDelivery(app: AppState, saleId: Long, repairId: Long) {
     val sale = app.repo.saleById(saleId) ?: return
     val items = app.repo.saleItems(saleId)
     val r = app.repo.repairById(repairId) ?: return
-    app.print(Ticket.forSale(app.settingsNow, sale, items, repair = r))
+    val ecf = app.repo.ecfForSale(saleId).firstOrNull { it.type != 34L }
+    app.print(Ticket.forSale(app.settingsNow, sale, items, repair = r, ecf = ecf))
 }
 
 // ================= WhatsApp =================

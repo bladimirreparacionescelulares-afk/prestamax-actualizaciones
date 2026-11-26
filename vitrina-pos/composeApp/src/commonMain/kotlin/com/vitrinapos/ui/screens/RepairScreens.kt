@@ -699,7 +699,7 @@ fun RepairDetailScreen(id: Long) {
         val sid = r?.saleId
         value = if (r != null && sid != null && RepairStatus.isClosed(r.status)) {
             val sale = app.repo.saleById(sid)
-            sale?.let { Ticket.forSale(s, it, app.repo.saleItems(sid), repair = r) }
+            sale?.let { Ticket.forSale(s, it, app.repo.saleItems(sid), repair = r, ecf = app.repo.ecfForSale(sid).firstOrNull { d -> d.type != 34L }) }
         } else null
     }
     if (r == null) {

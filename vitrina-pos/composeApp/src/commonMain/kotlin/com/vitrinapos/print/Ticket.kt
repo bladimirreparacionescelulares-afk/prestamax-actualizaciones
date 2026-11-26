@@ -141,7 +141,6 @@ class Ticket(val width: Int) {
             ecf: com.vitrinapos.db.EcfDoc? = null,
         ): Ticket {
             val t = Ticket(s.ticketChars)
-            val wide = s.ticketChars >= 48
             header(t, s, fiscal = ecf != null)
             t.separator()
             if (ecf != null) fiscalHead(t, ecf)
@@ -161,34 +160,23 @@ class Ticket(val width: Int) {
             if (reprint) t.center("*** COPIA ***", Ticket.Style.Bold)
             if (sale.status != "OK") t.center("*** VENTA ANULADA ***", Ticket.Style.Bold)
             t.separator()
-            if (wide) {
-                t.raw(columns("Producto", "Cant.", "Precio", "Importe", t.width), Ticket.Style.Bold)
-                items.forEach { it ->
-                    val amount = Math.round(it.qty * it.price)
-                    val name = it.name
-                    val firstWidth = t.width - 28
-                    if (name.length <= firstWidth) {
-                        t.raw(columns(name, it.qty.fmtQty(), Money.plain(it.price), Money.plain(amount), t.width))
-                    } else {
-                        t.left(name)
-                        t.raw(columns("", it.qty.fmtQty(), Money.plain(it.price), Money.plain(amount), t.width))
-                    }
-                }
-            } else {
-                items.forEach {
-                    val amount = Math.round(it.qty * it.price)
-                    t.left(it.name)
-                    t.pair("  ${it.qty.fmtQty()} x ${Money.plain(it.price)}", Money.plain(amount))
-                }
+            // Cada artículo en dos renglones: el nombre completo y debajo cantidad x precio con su importe.
+            t.pair("DESCRIPCIÓN", "IMPORTE", Style.Bold)
+            items.forEach {
+                t.left(it.name)
+                t.pair("   ${it.qty.fmtQty()} x ${Money.plain(it.price)}", Money.plain(Math.round(it.qty * it.price)))
             }
             t.separator()
+            val units = items.sumOf { it.qty }
+            t.pair("Artículos", units.fmtQty())
             totals(t, s, sale.gross, sale.discount, sale.tax, sale.total, sale.taxIncluded == 1L)
-            t.separator()
+            t.separator('=')
             if (sale.paymentMethod == PaymentMethods.CASH) {
-                t.pair("Efectivo", Money.plain(sale.received))
-                t.pair("Cambio", Money.plain(sale.changeDue))
+                t.pair("Forma de pago", "Efectivo")
+                t.pair("Recibido", Money.plain(sale.received))
+                t.pair("Cambio", Money.plain(sale.changeDue), Style.Bold)
             } else {
-                t.pair("Pago", sale.paymentMethod)
+                t.pair("Forma de pago", sale.paymentMethod)
             }
             if (ecf != null) fiscalFoot(t, s, ecf)
             if (repair != null) {
@@ -314,17 +302,13 @@ class Ticket(val width: Int) {
                 val label = "${s.taxName} ${s.taxRate.fmtQty()}%" + if (included) " incl." else ""
                 t.pair(label, Money.plain(tax))
             }
+            t.separator()
             t.pair("TOTAL", Money.format(total, s.currencySymbol), Style.Big)
         }
 
         private fun footer(t: Ticket, s: AppSettings) {
             t.blank()
             if (s.ticketFooter.isNotBlank()) t.center(s.ticketFooter)
-        }
-
-        private fun columns(name: String, qty: String, price: String, amount: String, width: Int): String {
-            val nameW = width - 28
-            return name.take(nameW).padEnd(nameW) + qty.padStart(5) + price.padStart(11) + amount.padStart(12)
         }
     }
 }
