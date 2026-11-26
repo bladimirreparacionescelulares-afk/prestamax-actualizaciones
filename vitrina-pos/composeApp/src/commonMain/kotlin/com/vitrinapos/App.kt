@@ -166,6 +166,11 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
 @Composable
 private fun MainShell(app: AppState) {
     PlatformBackHandler(enabled = app.stack.isNotEmpty() || app.tab != Screen.Home) { app.back() }
+    val mods = app.settings
+    LaunchedEffect(mods.modTaller, mods.modQuotes, mods.modLabels, mods.modImei) {
+        if (!app.moduleOn(app.tab)) app.selectTab(Screen.Home)
+        if (app.stack.any { !app.moduleOn(it) }) app.selectTab(Screen.Home)
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
         Scaffold(

@@ -758,6 +758,9 @@ class Repository(val platform: Platform) {
             R(item, l, sn, (l.qty * item.price * ratio).roundToLong())
         }
         val already = db.inventoryQueries.returnsBySale(op.saleId).executeAsList().sumOf { it.total }
+        val estimate = rows.sumOf { it.amount }.coerceAtMost(sale.total - already)
+        if (rules.approvalAmount > 0 && estimate > rules.approvalAmount && op.authorizedBy.isBlank())
+            throw RuleException("Una devolución de ${Money.format(estimate, rules.currencySymbol)} necesita un administrador")
         // Nota de crédito (E34) cuando la venta tiene comprobante electrónico.
         val original = db.fiscalQueries.docBySale(op.saleId).executeAsList().firstOrNull { it.type != 34L }
         var total = rows.sumOf { it.amount }
@@ -1335,6 +1338,8 @@ class Repository(val platform: Platform) {
     suspend fun logEvent(action: String, detail: String) { runCatching { run(Op.LogEvent(action, detail)) } }
 
     suspend fun activity(from: Long, to: Long) = withContext(io) { db.auditQueries.between(from, to).executeAsList() }
+
+    fun activityFlow(from: Long) = db.auditQueries.between(from, Long.MAX_VALUE).asFlow().mapToList(io)
 
     /** Producto por su código o por uno de sus códigos alternos (productos unidos). */
     fun productForCode(code: String, list: List<Product> = products.value): Product? {

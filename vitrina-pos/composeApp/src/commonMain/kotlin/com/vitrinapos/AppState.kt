@@ -218,6 +218,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     /** Agrega una unidad con su IMEI. Devuelve false si no se pudo. */
     fun addUnit(p: Product, serial: String): Boolean {
+        lastActivity = com.vitrinapos.data.Time.now()
         val sn = serial.trim().uppercase()
         if (cart.any { sn in it.serials }) { toast("El IMEI $sn ya está en la venta"); return false }
         val u = repo.availableUnits.value.firstOrNull { it.serial == sn }
@@ -230,6 +231,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     /** Agrega al carrito sin pasar del stock. Devuelve false si no se pudo. */
     fun addToCart(p: Product, qty: Double = 1.0): Boolean {
+        lastActivity = com.vitrinapos.data.Time.now()
         // Con IMEI se elige la unidad exacta.
         if (p.serialized == 1L) { unitPicker = p.id; return false }
         val limit = stockLimit(p.id)

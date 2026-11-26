@@ -127,6 +127,15 @@ fun HomeScreen() {
                 }
             }
 
+            // Sin usuarios, cualquiera que tome el equipo lo puede todo.
+            val users by app.repo.users.collectAsState()
+            if (users.none { it.active == 1L }) {
+                AppCard(onClick = { app.open(Screen.Users) }, color = AppTheme.extra.warnSoft) {
+                    Text("Protege tu negocio", fontWeight = FontWeight.Bold, color = AppTheme.extra.warn)
+                    Text("Sin usuarios, cualquiera que tome este equipo puede anular ventas o cambiar precios. Crea el administrador con su PIN.", fontSize = 13.sp)
+                }
+            }
+
             // Accesos rápidos
             // Accesos según los permisos del usuario.
             val quick = listOf(

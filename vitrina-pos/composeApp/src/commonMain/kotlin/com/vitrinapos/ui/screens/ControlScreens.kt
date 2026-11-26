@@ -68,8 +68,7 @@ fun ActivityScreen() {
     var who by remember { mutableStateOf<String?>(null) }
     val today = Time.startOfDay()
     val from = when (range) { 0 -> today; 1 -> Time.addDays(today, -6); else -> Time.addDays(today, -29) }
-    val changes by app.repo.recentSales.collectAsState()
-    val list by produceState(emptyList<com.vitrinapos.db.AuditLog>(), range, changes) { value = app.repo.activity(from, Long.MAX_VALUE) }
+    val list by remember(from) { app.repo.activityFlow(from) }.collectAsState(emptyList())
     val people = list.map { it.userName.ifBlank { "Sin usuario" } }.distinct()
     val shown = list.filter { who == null || it.userName.ifBlank { "Sin usuario" } == who }
     Column(Modifier.fillMaxSize()) {

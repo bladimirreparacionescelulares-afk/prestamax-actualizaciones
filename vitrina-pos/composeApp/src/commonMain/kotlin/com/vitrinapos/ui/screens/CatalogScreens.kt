@@ -519,7 +519,7 @@ fun ProductFormScreen(id: Long?, presetCode: String?, copyOf: Long? = null) {
 
     if (confirmDelete && id != null) {
         ConfirmDialog("Eliminar producto", "\"$name\" dejará de aparecer en el catálogo. Las ventas anteriores se conservan.", "Eliminar",
-            onConfirm = { scope.launch { app.repo.deleteProduct(id); saved = true; app.toast("Producto eliminado"); app.back() } },
+            onConfirm = { scope.launch { app.repo.deleteProduct(id); saved = true; app.unsaved = null; app.toast("Producto eliminado"); app.back() } },
             onDismiss = { confirmDelete = false }, destructive = true)
     }
     if (adjust && id != null) {
