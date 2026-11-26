@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -138,7 +139,14 @@ fun SaleDetailScreen(id: Long) {
         return
     }
     val repairs by app.repo.repairs.collectAsState()
-    val ticket = Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id })
+    val allDocs by app.repo.ecfDocs.collectAsState()
+    val docs = allDocs.filter { it.saleId == sale.id }
+    val ecf = docs.firstOrNull { it.type != 34L }
+    val creditNote = docs.firstOrNull { it.type == 34L }
+    var showCreditNote by remember { mutableStateOf(false) }
+    var voidReason by remember { mutableStateOf("") }
+    val ticket = if (showCreditNote && creditNote != null) Ticket.forSale(s, sale, items, ecf = creditNote)
+        else Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id }, ecf = ecf)
     val fresh = Time.now() - sale.createdAt < 120_000
     val voided = sale.status == SaleStatus.VOID
 
@@ -174,6 +182,24 @@ fun SaleDetailScreen(id: Long) {
                     Text("Venta anulada. El inventario se devolvió.", color = AppTheme.extra.danger, fontWeight = FontWeight.SemiBold)
                 }
             }
+            if (docs.isNotEmpty()) {
+                com.vitrinapos.ui.components.AppCard {
+                    docs.forEach { d ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(d.encf, fontWeight = FontWeight.Bold)
+                                Text(com.vitrinapos.fiscal.EcfType.of(d.type.toInt()).title, fontSize = 12.sp, color = AppTheme.extra.muted)
+                                if (d.message.isNotBlank()) Text(d.message, fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 2)
+                            }
+                            EcfStatusPill(d.status)
+                        }
+                    }
+                    if (creditNote != null) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.FilterChip(selected = !showCreditNote, onClick = { showCreditNote = false }, label = { Text("Factura") })
+                        androidx.compose.material3.FilterChip(selected = showCreditNote, onClick = { showCreditNote = true }, label = { Text("Nota de crédito") })
+                    }
+                }
+            }
             // Vista previa del ticket
             Text("Ticket de ${s.paperWidthMm} mm", style = MaterialTheme.typography.titleSmall)
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -187,7 +213,7 @@ fun SaleDetailScreen(id: Long) {
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp).widthIn(max = 720.dp).align(Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { app.print(Ticket.forSale(s, sale, items, reprint = !fresh)) { app.open(Screen.Settings) } },
+                    OutlinedButton(onClick = { app.print(if (ecf != null) ticket else Ticket.forSale(s, sale, items, reprint = !fresh)) { app.open(Screen.Settings) } },
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(6.dp)); Text("Imprimir")
                     }
@@ -207,9 +233,31 @@ fun SaleDetailScreen(id: Long) {
             }
         }
     }
-    if (confirmVoid) {
+    if (confirmVoid && ecf != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmVoid = false },
+            title = { Text("Anular con nota de crédito") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Esta venta tiene el comprobante ${ecf.encf}. Para anularla se emite una nota de crédito electrónica (E34) por el total, firmada y enviada a la DGII. Los productos vuelven al inventario.")
+                    com.vitrinapos.ui.components.TextInput(voidReason, { voidReason = it }, "Motivo (sale en la nota de crédito)")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmVoid = false
+                    scope.launch {
+                        runCatching { app.repo.voidSale(id, voidReason) }
+                            .onSuccess { refresh++; showCreditNote = true; app.toast("Nota de crédito emitida") }
+                            .onFailure { app.toast(it.message ?: "No se pudo anular") }
+                    }
+                }) { Text("Emitir nota de crédito", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmVoid = false }) { Text("Cancelar") } },
+        )
+    } else if (confirmVoid) {
         ConfirmDialog("Anular ${sale.label.lowercase()}", "La venta quedará anulada y los productos vuelven al inventario.", "Anular venta",
-            onConfirm = { scope.launch { app.repo.voidSale(id); refresh++; app.toast("Venta anulada") } },
+            onConfirm = { scope.launch { runCatching { app.repo.voidSale(id) }.onSuccess { refresh++; app.toast("Venta anulada") }.onFailure { app.toast(it.message ?: "No se pudo anular") } } },
             onDismiss = { confirmVoid = false }, destructive = true)
     }
 }
@@ -460,4 +508,18 @@ fun TicketPreview(ticket: Ticket, modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/** Estado de un e-CF ante la DGII. */
+@Composable
+fun EcfStatusPill(status: String) {
+    val ex = AppTheme.extra
+    val (fg, bg) = when (status) {
+        com.vitrinapos.data.EcfStatus.ACCEPTED -> ex.ok to ex.okSoft
+        com.vitrinapos.data.EcfStatus.CONDITIONAL -> ex.warn to ex.warnSoft
+        com.vitrinapos.data.EcfStatus.REJECTED, com.vitrinapos.data.EcfStatus.ERROR -> ex.danger to ex.dangerSoft
+        com.vitrinapos.data.EcfStatus.SENT -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.primaryContainer
+        else -> ex.warn to ex.warnSoft
+    }
+    com.vitrinapos.ui.components.Pill(com.vitrinapos.data.EcfStatus.label(status), fg, bg)
 }

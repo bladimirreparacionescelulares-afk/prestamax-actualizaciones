@@ -10,8 +10,8 @@ plugins {
     id("app.cash.sqldelight")
 }
 
-val appVersionName = "1.5.0"
-val appVersionCode = 6
+val appVersionName = "1.6.0"
+val appVersionCode = 7
 
 kotlin {
     androidTarget {
@@ -52,6 +52,8 @@ kotlin {
             implementation("androidx.camera:camera-lifecycle:1.3.4")
             implementation("androidx.camera:camera-view:1.3.4")
             implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+            // Lector de certificados .p12 modernos (AES/PBES2) que Android 8–11 no abre solo
+            implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)

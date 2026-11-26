@@ -60,6 +60,21 @@ Todo se guarda en el propio equipo, en un archivo local. No usa servidor, no nec
 - **Estados editables** (Configuración → Taller → Estados del taller): renombrar, ordenar, agregar y quitar. Recibido, Listo, Entregado y No reparado son fijos (solo se renombran). No se puede quitar un estado que tenga órdenes.
 - En Configuración → Taller: costo de diagnóstico, días de garantía, días para considerar un equipo abandonado y condiciones del comprobante.
 
+### Facturación electrónica (e-CF de la DGII)
+
+Más → Facturación electrónica. Para personas físicas y empresas (SRL, SA).
+- **Datos del negocio**: tipo de contribuyente, RNC o cédula (con dígito verificador), razón social y dirección.
+- **Certificado digital**: guía para comprarlo (Avansi/Viafirma, Digifirma) y abrir la página de la entidad; se agrega el .p12 con su contraseña, la app lo verifica con una firma de prueba y lo guarda cifrado (Keystore de Android / llave propia en Windows). El principal puede compartirlo cifrado con las cajas.
+- **Trámite con la DGII**: lista de pasos con enlace a la Oficina Virtual (se hacen en la página de la DGII; no hay servicio para hacerlos desde otra app).
+- **Secuencias e-NCF**: se registran los rangos autorizados; cada equipo toma bloques para poder facturar sin conexión.
+- **Ambientes**: Pruebas, Certificación y Producción. Botón para probar la conexión (semilla firmada → token).
+- **Al cobrar**: Consumo E32, Crédito fiscal E31 (pide RNC) o Gubernamental E45. Se arma el XML según el formato oficial, se firma (XMLDSig, C14N, RSA-SHA256) y se imprime con el QR, el código de seguridad y la fecha de firma.
+- **Envío**: el equipo principal envía en segundo plano (resumen RFCE para consumos menores de RD$250,000; e-CF completo con consulta del TrackId para los demás). Sin internet, las facturas firmadas esperan con el plazo de 72 h a la vista.
+- **Anular** una venta facturada emite una nota de crédito E34. Los abonos del taller se facturan aparte y la entrega factura el saldo, sin líneas negativas.
+- Con la facturación activa no se restauran respaldos ni se cargan datos de ejemplo (se repetirían números).
+- Pruebas: los XML de E31, E32, E33, E34, E45, RFCE y ANECF se validan contra los XSD oficiales (`desktopTest/resources/dgii-xsd`) y las firmas con el validador XMLDSig del JDK.
+- Pendiente: servicios de recepción y aprobación comercial en internet (los exige la DGII para la certificación) y el asistente del set de pruebas.
+
 ### Escáner continuo
 
 - En Vender y en Etiquetas, el botón de escanear abre la cámara y cada código que pasa se agrega solo, con pitido y vibración. El mismo código se cuenta una vez cada 1,5 s.

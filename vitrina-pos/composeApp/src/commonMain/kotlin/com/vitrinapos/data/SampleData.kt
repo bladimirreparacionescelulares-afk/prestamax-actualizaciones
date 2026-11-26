@@ -5,6 +5,7 @@ import com.vitrinapos.ui.theme.CategoryPalette
 /** Productos de ejemplo para probar la app. Se pueden borrar desde el catálogo. */
 object SampleData {
     suspend fun load(repo: Repository) {
+        check(!repo.settings.value.fiscalEnabled) { "Con facturación electrónica activa no se cargan datos de ejemplo." }
         val cats = listOf("Cargadores", "Audio", "Fundas", "Micas", "Energía", "Cables")
             .mapIndexed { i, n -> n to repo.saveCategory(null, n, CategoryPalette[i % CategoryPalette.size]) }.toMap()
         val sup1 = repo.saveSupplier(null, "TecnoImport", "Pedro Almonte", "809-555-0177", "", "", "", "")

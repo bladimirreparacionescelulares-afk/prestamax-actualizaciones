@@ -192,13 +192,15 @@ class FiscalCertificate(val key: PrivateKey, val cert: X509Certificate) {
 
     companion object {
         /** Abre el .p12 con su contraseña. Lanza un error claro si la contraseña o el archivo no sirven. */
-        fun load(input: InputStream, password: CharArray): FiscalCertificate {
-            val ks = KeyStore.getInstance("PKCS12")
-            try {
-                ks.load(input, password)
-            } catch (e: Exception) {
-                throw IllegalArgumentException("No se pudo abrir el certificado: la contraseña no es correcta o el archivo no es un .p12 válido.")
-            }
+        fun load(input: InputStream, password: CharArray, fallback: java.security.Provider? = null): FiscalCertificate {
+            val bytes = input.readBytes()
+            // Primero con el lector del sistema; si no puede (p. ej. .p12 con AES en Android viejo), con el de respaldo.
+            val ks = (listOf<java.security.Provider?>(null) + listOfNotNull(fallback)).firstNotNullOfOrNull { prov ->
+                runCatching {
+                    (if (prov == null) KeyStore.getInstance("PKCS12") else KeyStore.getInstance("PKCS12", prov))
+                        .apply { load(ByteArrayInputStream(bytes), password) }
+                }.getOrNull()
+            } ?: throw IllegalArgumentException("No se pudo abrir el certificado: la contraseña no es correcta o el archivo no es un .p12 válido.")
             for (alias in ks.aliases().toList()) {
                 if (!ks.isKeyEntry(alias)) continue
                 val key = ks.getKey(alias, password) as? PrivateKey ?: continue

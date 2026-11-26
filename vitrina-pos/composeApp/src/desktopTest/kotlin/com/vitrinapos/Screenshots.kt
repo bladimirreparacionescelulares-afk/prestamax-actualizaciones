@@ -89,6 +89,39 @@ class Screenshots {
         shoot(graph, File(outDir, "31-entregado-garantia.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(doneId)) }
         shoot(graph, File(outDir, "32-estados.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.RepairStatuses) }
         shoot(graph, File(outDir, "33-listos.png"), 412, 900, 2f) { it.selectTab(Screen.Taller); it.open(Screen.RepairDetail(readyId)) }
+
+        // ---- Facturación electrónica ----
+        shoot(graph, File(outDir, "34-fe-inicio.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.Fiscal) }
+        shoot(graph, File(outDir, "35-fe-certificado-guia.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalCert) }
+        runBlocking {
+            repo.saveSettings(repo.settings.value.copy(
+                fiscalKind = "JURIDICA", fiscalRnc = "101010632", fiscalName = "MI TIENDA DE ACCESORIOS SRL", fiscalTradeName = "Mi Tienda",
+                fiscalAddress = "Av. Principal #24, Santo Domingo", fiscalSteps = "cert,ofv,solicitud,firmante",
+            ))
+            repo.fiscal.installCertificate(EcfFlowCert.p12, EcfFlowCert.pw)
+            val exp = Time.now() + 400L * 86_400_000L
+            repo.saveFiscalRange(32, 1, 1000, exp); repo.saveFiscalRange(31, 1, 200, exp); repo.saveFiscalRange(34, 1, 200, null)
+            repo.saveSettings(repo.settings.value.copy(fiscalEnabled = true))
+        }
+        shoot(graph, File(outDir, "36-fe-certificado-listo.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalCert) }
+        shoot(graph, File(outDir, "37-fe-tramite.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalDgii) }
+        shoot(graph, File(outDir, "38-fe-datos.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalEmitter) }
+        val ps2 = repo.products.value
+        val fsale = runBlocking {
+            repo.recordSale(listOf(CartLine.of(ps2.first { it.code == "CRG-020" }, 2.0), CartLine.of(ps2.first { it.code == "CBL-001" })), null, 0,
+                PaymentMethods.CARD, 0, null, com.vitrinapos.data.FiscalChoice(31, "101010632", "FERRETERÍA LA ESQUINA SRL"))
+        }
+        runBlocking {
+            repo.recordSale(listOf(CartLine.of(ps2.first { it.code == "AUD-210" })), null, 0, PaymentMethods.CASH, 200000, null)
+            repo.recordSale(listOf(CartLine.of(ps2.first { it.code == "MIC-054" })), null, 0, PaymentMethods.CASH, 50000, null)
+        }
+        shoot(graph, File(outDir, "39-fe-inicio-activo.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.Fiscal) }
+        shoot(graph, File(outDir, "40-fe-secuencias.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalSequences) }
+        shoot(graph, File(outDir, "41-fe-cobro.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Pos); addCart(app, repo); app.open(Screen.Checkout) }
+        shoot(graph, File(outDir, "42-fe-venta.png"), 412, 1400, 2f) { it.selectTab(Screen.Home); it.open(Screen.SaleDetail(fsale)) }
+        shoot(graph, File(outDir, "43-fe-comprobantes.png"), 412, 900, 2f) { it.selectTab(Screen.More); it.open(Screen.FiscalDocs) }
+        // Las capturas de red siguientes son de una caja sin certificado.
+        runBlocking { repo.saveSettings(repo.settings.value.copy(fiscalEnabled = false)) }
         shoot(graph, File(outDir, "22-pregunta-etiqueta.png"), 412, 900, 2f) { app -> app.selectTab(Screen.Catalog); app.labelPrompt = ps.first { it.code == "AUD-210" }.id }
 
         // ---- Trabajo en red y usuarios ----
@@ -304,3 +337,17 @@ class Screenshots {
 }
 
 private fun Graphics2D.noop() = Unit
+
+/** Certificado de prueba para las capturas (hecho con keytool). */
+object EcfFlowCert {
+    val pw = "clave-de-prueba".toCharArray()
+    val p12: ByteArray by lazy {
+        val f = File(java.nio.file.Files.createTempDirectory("c").toFile(), "c.p12")
+        val keytool = File(System.getProperty("java.home"), "bin/keytool").path
+        val p = ProcessBuilder(keytool, "-genkeypair", "-alias", "f", "-keyalg", "RSA", "-keysize", "2048", "-dname",
+            "CN=MARIA PEREZ RODRIGUEZ, SERIALNUMBER=IDCDO-00113918205, O=AVANSI (PRUEBA), C=DO", "-validity", "365", "-storetype", "PKCS12",
+            "-keystore", f.path, "-storepass", String(pw), "-keypass", String(pw)).redirectErrorStream(true).start()
+        p.inputStream.readBytes(); check(p.waitFor() == 0)
+        f.readBytes()
+    }
+}

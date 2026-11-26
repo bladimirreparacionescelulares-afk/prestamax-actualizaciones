@@ -162,6 +162,16 @@ class SyncClient(
 
     private fun JsonObject.str(k: String): String? = this[k]?.jsonPrimitive?.contentOrNull
 
+    /** Trae el certificado del principal (si lo comparte) y lo guarda cifrado en esta caja. */
+    suspend fun fetchFiscalCertificate() {
+        val resp = try {
+            call(ApiRequest("fiscalCert"))
+        } catch (e: HttpStatusException) {
+            throw IOException(e.message)
+        }
+        repo.fiscal.installShared(Base64.getDecoder().decode(resp.data))
+    }
+
     // ---------- RemoteGateway ----------
 
     override suspend fun execute(op: Op, opId: String): JsonElement {

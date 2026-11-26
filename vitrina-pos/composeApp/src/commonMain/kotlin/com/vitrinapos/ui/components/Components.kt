@@ -317,10 +317,12 @@ fun TextInput(
     prefix: String? = null,
     trailing: (@Composable () -> Unit)? = null,
     placeholder: String? = null,
+    visual: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
+        visualTransformation = visual,
         label = { Text(label) },
         modifier = modifier,
         singleLine = singleLine,

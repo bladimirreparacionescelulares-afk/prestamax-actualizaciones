@@ -178,6 +178,9 @@ class Repository(val platform: Platform) {
     /** Se asigna cuando este equipo está conectado a un principal. */
     @Volatile var remote: RemoteGateway? = null
 
+    /** Facturación electrónica de este equipo. */
+    val fiscal: Fiscal by lazy { Fiscal(this) }
+
     /** Usuario que está usando la app (null si no hay usuarios configurados). */
     val currentUser = MutableStateFlow<AppUser?>(null)
     private val userName: String get() = currentUser.value?.name ?: ""
@@ -225,7 +228,14 @@ class Repository(val platform: Platform) {
     val pendingSales: StateFlow<Long> = db.syncQueries.outboxCount().asFlow().mapToOne(io)
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
+    /** Empieza a enviar a la DGII en segundo plano (y, en una caja, a pedir números para trabajar sin conexión). */
+    fun startFiscal() = fiscal.startWorker(scope)
+
+    /** Comprobantes firmados que todavía no se envían a la DGII. */
+    fun unsentFiscalDocs(): Long = db.fiscalQueries.pendingDocs().executeAsList().count { it.status == EcfStatus.SIGNED }.toLong()
+
     fun close() {
+        fiscal.stopWorker()
         scope.cancel()
         driver.close()
     }
@@ -328,6 +338,13 @@ class Repository(val platform: Platform) {
                     is Op.VoidSale -> {
                         val sale = db.saleQueries.selectById(op.saleId).executeAsOneOrNull()
                         if (sale != null && sale.status != SaleStatus.VOID) {
+                            // Una venta con e-CF solo se anula con una nota de crédito E34 firmada.
+                            val docs = db.fiscalQueries.docBySale(op.saleId).executeAsList()
+                            val original = docs.firstOrNull { it.type != 34L }
+                            if (original != null && docs.none { it.type == 34L }) {
+                                val note = fiscal.issueCreditNote(sale, db.saleQueries.itemsBySale(op.saleId).executeAsList(), original, op.reason, now)
+                                fiscal.store(note, op.saleId, deviceId, now)
+                            }
                             db.saleQueries.setStatus(SaleStatus.VOID, op.saleId)
                             for (item in db.saleQueries.itemsBySale(op.saleId).executeAsList()) {
                                 val pid = item.productId ?: continue
@@ -385,6 +402,23 @@ class Repository(val platform: Platform) {
                         JsonNull
                     }
                     is Op.DeliverRepair -> JsonPrimitive(deliverRepairLocal(op, now))
+                    is Op.ReserveFiscalBlock -> {
+                        val id = fiscal.reserveLocal(op.ecfType, op.deviceId, op.size.coerceIn(10, 1000), now)
+                            ?: throw FiscalException("No quedan números e-NCF E${op.ecfType} autorizados en el equipo principal.")
+                        JsonPrimitive(id)
+                    }
+                    is Op.SaveFiscalRange -> {
+                        require(op.fromNo in 1..op.toNo && op.toNo <= 9_999_999_999L) { "El rango no es válido" }
+                        val overlap = db.fiscalQueries.ranges().executeAsList().any { it.type == op.ecfType.toLong() && op.fromNo <= it.toNo && op.toNo >= it.fromNo }
+                        if (overlap) throw FiscalException("Ese rango se cruza con otro ya registrado")
+                        db.fiscalQueries.insertSequence(op.ecfType.toLong(), op.fromNo, op.toNo, op.expiresAt, "", null, now)
+                        JsonPrimitive(db.fiscalQueries.lastSequenceId().executeAsOne())
+                    }
+                    is Op.DeleteFiscalRange -> {
+                        if (db.fiscalQueries.blocksOfRange(op.id).executeAsList().isNotEmpty()) throw FiscalException("Ese rango ya se empezó a usar y no se puede borrar")
+                        db.fiscalQueries.deleteSequence(op.id)
+                        JsonNull
+                    }
                     is Op.SaveUser -> JsonPrimitive(
                         if (op.id == null) {
                             db.appUserQueries.insert(op.name.trim(), op.pinHash ?: "", op.role, if (op.active) 1 else 0, now)
@@ -431,7 +465,9 @@ class Repository(val platform: Platform) {
         db.repairQueries.insertEvent(id, RepairStatus.RECEIVED, if (d.deposit > 0) "Abono ${Money.format(d.deposit, settings.value.currencySymbol)}" else "", op.userName, now)
         if (d.deposit > 0) {
             // El abono es un cobro: entra en Caja, en Ventas y en Reportes.
-            val line = CartLine(null, "Abono reparación ${repairCode(number)}", repairCode(number), 1.0, d.deposit, 0, false, null, false)
+            // El abono se factura aparte (con su ITBIS incluido cuando los precios lo incluyen).
+            val taxable = settings.value.pricesIncludeTax && settings.value.taxRate > 0
+            val line = CartLine(null, "Abono reparación ${repairCode(number)}", repairCode(number), 1.0, d.deposit, 0, taxable, null, false)
             insertSale(
                 Op.RecordSale(listOf(line), clientId, d.clientName.trim(), 0, op.depositMethod, d.deposit, null, op.deviceId, op.userId, op.userName, now),
                 number = db.saleQueries.nextNumber().executeAsOne(),
@@ -447,10 +483,18 @@ class Repository(val platform: Platform) {
         val code = r.code
         val charged = totalsFor(op.lines, 0).total
         if (r.deposit > charged) throw IllegalStateException("El abono es mayor que el total a cobrar")
-        // El abono ya se cobró al recibir: se descuenta como una línea negativa para que Caja y Reportes no lo cuenten dos veces.
-        val lines = op.lines + if (r.deposit > 0) listOf(CartLine(null, "Abono recibido $code", code, 1.0, -r.deposit, 0, false, null, false)) else emptyList()
+        // El abono ya se facturó al recibir: se descuenta del servicio (y lo que sobre, como descuento),
+        // sin líneas negativas, para que la factura de entrega sea válida como e-CF.
+        var left = r.deposit
+        val lines = op.lines.map { l ->
+            if (left > 0 && l.productId == null && l.qty == 1.0 && l.price > 0) {
+                val cut = minOf(left, l.price)
+                left -= cut
+                l.copy(name = "${l.name} · menos abono $code", price = l.price - cut)
+            } else l
+        }.filter { it.price > 0 || it.productId != null }
         val saleId = insertSale(
-            Op.RecordSale(lines, r.clientId, r.clientName, 0, op.paymentMethod, op.received, null, op.deviceId, op.userId, op.userName, now),
+            Op.RecordSale(lines, r.clientId, r.clientName, left, op.paymentMethod, op.received, null, op.deviceId, op.userId, op.userName, now),
             number = db.saleQueries.nextNumber().executeAsOne(),
         )
         val warranty = if (op.repaired) r.warrantyDays else 0
@@ -486,6 +530,9 @@ class Repository(val platform: Platform) {
             }
         }
         if (op.quoteId != null) db.quoteQueries.setStatus(QuoteStatus.SOLD, saleId, op.createdAt, op.quoteId)
+        // Facturación electrónica: el e-CF ya viene firmado (caja sin conexión) o se firma aquí.
+        if (op.ecf != null) fiscal.store(op.ecf, saleId, op.deviceId, op.createdAt)
+        else if (fiscal.active && totals.total > 0) fiscal.store(fiscal.issueForSale(op, totals.total, op.createdAt), saleId, deviceId, op.createdAt)
         return saleId
     }
 
@@ -493,7 +540,8 @@ class Repository(val platform: Platform) {
      * Venta hecha sin conexión con el principal: se guarda aquí con número provisional (P1, P2…)
      * y queda en la cola para enviarse cuando vuelva la red.
      */
-    private fun recordSaleOffline(op: Op.RecordSale, opId: String): Long {
+    private fun recordSaleOffline(original: Op.RecordSale, opId: String): Long {
+        var op = original
         val pid: Long
         synchronized(writeLock) {
             val pending = db.syncQueries.outboxCount().executeAsOne()
@@ -502,6 +550,20 @@ class Repository(val platform: Platform) {
             val totals = totalsFor(op.lines, op.discount)
             val cash = op.paymentMethod == PaymentMethods.CASH
             db.transaction {
+                // Sin conexión la caja firma con su propio bloque de números y su copia del certificado.
+                val ecf = if (fiscal.active && op.ecf == null && totals.total > 0) fiscal.issueForSale(op, totals.total, op.createdAt) else op.ecf
+                if (ecf != null) {
+                    op = op.copy(ecf = ecf)
+                    RowCodec.upsert(driver, "ecfDoc", JsonObject(mapOf(
+                        "id" to JsonPrimitive(pid), "saleId" to JsonPrimitive(pid), "type" to JsonPrimitive(ecf.type), "encf" to JsonPrimitive(ecf.encf),
+                        "status" to JsonPrimitive(EcfStatus.SIGNED), "xml" to JsonPrimitive(ecf.xml), "summaryXml" to JsonPrimitive(""),
+                        "securityCode" to JsonPrimitive(ecf.securityCode), "signedAt" to JsonPrimitive(ecf.signedAt), "total" to JsonPrimitive(ecf.total),
+                        "buyerRnc" to JsonPrimitive(ecf.buyerRnc), "buyerName" to JsonPrimitive(ecf.buyerName), "refEncf" to JsonPrimitive(""),
+                        "trackId" to JsonPrimitive(""), "message" to JsonPrimitive("Firmado sin conexión"), "attempts" to JsonPrimitive(0), "sentAt" to JsonNull,
+                        "deviceId" to JsonPrimitive(deviceId), "env" to JsonPrimitive(settings.value.fiscalEnv),
+                        "createdAt" to JsonPrimitive(op.createdAt), "updatedAt" to JsonPrimitive(op.createdAt),
+                    )))
+                }
                 RowCodec.upsert(driver, "sale", JsonObject(mapOf(
                     "id" to JsonPrimitive(pid), "number" to JsonPrimitive(number), "clientId" to (op.clientId?.let { JsonPrimitive(it) } ?: JsonNull),
                     "clientName" to JsonPrimitive(op.clientName), "gross" to JsonPrimitive(totals.gross), "discount" to JsonPrimitive(totals.discount),
@@ -533,7 +595,7 @@ class Repository(val platform: Platform) {
             }
             db.syncQueries.clearChangeLog()
         }
-        driver.notifyListeners("sale", "saleItem", "product", "stockMove", "outbox")
+        driver.notifyListeners("sale", "saleItem", "product", "stockMove", "outbox", "ecfDoc")
         return pid
     }
 
@@ -543,6 +605,11 @@ class Repository(val platform: Platform) {
         synchronized(writeLock) {
             db.transaction {
                 for ((table, key, row) in changes) {
+                    if (table == "ecfDoc" && row != null) {
+                        // Una copia provisional (firmada sin conexión) se reemplaza por la del principal.
+                        val encf = (row["encf"] as? JsonPrimitive)?.content
+                        if (encf != null) driver.execute(null, "DELETE FROM ecfDoc WHERE encf = ? AND id != ?", 2) { bindString(0, encf); bindLong(1, key.toLong()) }
+                    }
                     if (row == null) RowCodec.delete(driver, table, key) else RowCodec.upsert(driver, table, row)
                 }
             }
@@ -573,6 +640,7 @@ class Repository(val platform: Platform) {
                 if (provisionalSaleId != null) {
                     RowCodec.delete(driver, "sale", provisionalSaleId.toString())
                     driver.execute(null, "DELETE FROM saleItem WHERE saleId = ?", 1) { bindLong(0, provisionalSaleId) }
+                    db.fiscalQueries.deleteDocsOfSale(provisionalSaleId)
                 }
                 if (db.syncQueries.outboxCount().executeAsOne() == 0L) db.stockMoveQueries.deleteProvisional()
             }
@@ -692,11 +760,12 @@ class Repository(val platform: Platform) {
         paymentMethod: String,
         received: Long,
         quoteId: Long?,
+        fiscal: FiscalChoice? = null,
     ): Long {
         val user = currentUser.value
         val op = Op.RecordSale(
             lines, client?.id, client?.name ?: "Consumidor final", discount, paymentMethod, received, quoteId,
-            deviceId, user?.id, user?.name ?: "", Time.now(),
+            deviceId, user?.id, user?.name ?: "", Time.now(), fiscal = fiscal,
         )
         val r = remote ?: return withContext(io) { applyLocal(op) }.asId()
         val opId = UUID.randomUUID().toString()
@@ -708,10 +777,25 @@ class Repository(val platform: Platform) {
         }
     }
 
-    suspend fun voidSale(saleId: Long) {
+    suspend fun voidSale(saleId: Long, reason: String = "") {
         if (saleId < 0) throw OfflineException("Esta venta todavía no llega al equipo principal. Podrás anularla cuando se envíe.")
-        run(Op.VoidSale(saleId, userName))
+        run(Op.VoidSale(saleId, userName, reason))
     }
+
+    // ================= Facturación electrónica =================
+
+    val ecfDocs: StateFlow<List<com.vitrinapos.db.EcfDoc>> = db.fiscalQueries.recentDocs(500).asFlow().mapToList(io).stateIn(scope, SharingStarted.Eagerly, emptyList())
+    val fiscalRanges: StateFlow<List<com.vitrinapos.db.FiscalSequence>> = db.fiscalQueries.ranges().asFlow().mapToList(io).stateIn(scope, SharingStarted.Eagerly, emptyList())
+    val fiscalBlocks: StateFlow<List<com.vitrinapos.db.FiscalSequence>> = db.fiscalQueries.allBlocks().asFlow().mapToList(io).stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    suspend fun ecfForSale(saleId: Long): List<com.vitrinapos.db.EcfDoc> = withContext(io) { db.fiscalQueries.docBySale(saleId).executeAsList() }
+
+    suspend fun saveFiscalRange(type: Int, fromNo: Long, toNo: Long, expiresAt: Long?) { run(Op.SaveFiscalRange(type, fromNo, toNo, expiresAt)) }
+
+    suspend fun deleteFiscalRange(id: Long) { run(Op.DeleteFiscalRange(id)) }
+
+    /** Una caja pide números al principal para poder facturar sin conexión. */
+    suspend fun reserveFiscalBlock(type: Int) { run(Op.ReserveFiscalBlock(type, deviceId, settings.value.fiscalBlockSize)) }
 
     suspend fun saleById(id: Long): Sale? = withContext(io) { db.saleQueries.selectById(id).executeAsOneOrNull() }
 

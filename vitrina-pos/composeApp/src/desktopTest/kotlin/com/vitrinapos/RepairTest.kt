@@ -139,7 +139,7 @@ class RepairTest {
         assertEquals(r.total, paid)
         // Comprobante de entrega con la garantía.
         val text = Ticket.forSale(repo.settings.value, sale, repo.saleItems(saleId), repair = r).preview()
-        assertTrue("COMPROBANTE DE ENTREGA" in text && "GARANT" in text && "Abono recibido REP-0001" in text, text)
+        assertTrue("COMPROBANTE DE ENTREGA" in text && "GARANT" in text && "menos abono REP-0001" in text, text)
         // No se entrega dos veces.
         assertTrue(runCatching { repo.deliverRepair(id, listOf(labor), true, PaymentMethods.CASH, 0) }.isFailure)
 

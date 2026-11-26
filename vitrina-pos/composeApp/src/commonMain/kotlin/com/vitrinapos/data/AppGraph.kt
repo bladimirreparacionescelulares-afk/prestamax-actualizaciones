@@ -26,6 +26,7 @@ class AppGraph(val platform: Platform) {
 
     init {
         startNetwork()
+        repo.startFiscal()
     }
 
     val deviceName: String get() = repo.meta.value["deviceName"] ?: repo.metaGet("deviceName") ?: platform.defaultDeviceName
@@ -85,6 +86,8 @@ class AppGraph(val platform: Platform) {
      * Se ejecuta fuera del hilo de la pantalla.
      */
     suspend fun connectTo(host: String, port: Int, secret: String) {
+        if (repo.role != NetRole.CLIENT && repo.unsentFiscalDocs() > 0)
+            throw IllegalStateException("Este equipo tiene comprobantes electrónicos sin enviar a la DGII. Envíalos antes de unirlo a otro equipo.")
         val resp = SyncClient.pair(host, port, secret, PairRequest(repo.deviceId, deviceName, platform.platformName))
         stopNetwork()
         val r = repo
@@ -124,6 +127,9 @@ class AppGraph(val platform: Platform) {
      * solo entonces reemplaza los datos actuales. Este equipo conserva su identidad y su modo de red.
      */
     fun importBackup(input: InputStream) {
+        // Restaurar un respaldo haría retroceder la numeración e-NCF y se repetirían comprobantes.
+        if (repo.settings.value.fiscalEnabled || repo.ecfDocs.value.isNotEmpty())
+            throw IllegalStateException("Con facturación electrónica no se puede restaurar un respaldo: se repetirían números de comprobantes ya enviados a la DGII.")
         val tmp = File(platform.dataDir, "restore_tmp").apply { deleteRecursively(); mkdirs() }
         var hasDb = false
         ZipInputStream(input).use { zip ->
@@ -165,6 +171,7 @@ class AppGraph(val platform: Platform) {
             close()
         }
         repo = Repository(platform)
+        repo.startFiscal()
         if (wasServer) runCatching { startServer() }
     }
 

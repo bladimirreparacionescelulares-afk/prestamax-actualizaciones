@@ -141,6 +141,30 @@ class DesktopPlatform : Platform {
         runCatching { Desktop.getDesktop().open(file) }
     }
 
+    /** Llave de la app guardada en su carpeta privada (solo legible por el usuario de Windows o del sistema). */
+    private val vaultKey: javax.crypto.SecretKey by lazy {
+        val f = File(dataDir, ".vault.key")
+        val bytes = if (f.exists() && f.length() == 32L) f.readBytes() else ByteArray(32).also {
+            java.security.SecureRandom().nextBytes(it)
+            f.writeBytes(it)
+            runCatching { f.setReadable(false, false); f.setReadable(true, true); f.setWritable(false, false); f.setWritable(true, true) }
+        }
+        javax.crypto.spec.SecretKeySpec(bytes, "AES")
+    }
+
+    override fun protect(data: ByteArray): ByteArray {
+        val iv = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.ENCRYPT_MODE, vaultKey, javax.crypto.spec.GCMParameterSpec(128, iv))
+        return iv + c.doFinal(data)
+    }
+
+    override fun unprotect(data: ByteArray): ByteArray {
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.DECRYPT_MODE, vaultKey, javax.crypto.spec.GCMParameterSpec(128, data, 0, 12))
+        return c.doFinal(data, 12, data.size - 12)
+    }
+
     override fun openUrl(url: String): Boolean = runCatching { Desktop.getDesktop().browse(java.net.URI(url)) }.isSuccess
 }
 

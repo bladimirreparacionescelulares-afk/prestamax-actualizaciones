@@ -66,10 +66,25 @@ sealed class Op {
         val userId: Long?,
         val userName: String,
         val createdAt: Long,
+        /** Comprobante que pidió el cliente (tipo, RNC y nombre). */
+        val fiscal: FiscalChoice? = null,
+        /** e-CF ya firmado en una caja sin conexión. */
+        val ecf: com.vitrinapos.fiscal.EcfIssued? = null,
     ) : Op()
 
     @Serializable @SerialName("saleVoid")
-    data class VoidSale(val saleId: Long, val user: String) : Op()
+    data class VoidSale(val saleId: Long, val user: String, val reason: String = "") : Op()
+
+    /** Reserva un bloque de números e-NCF del rango autorizado para que una caja pueda facturar sin conexión. */
+    @Serializable @SerialName("fiscalBlock")
+    data class ReserveFiscalBlock(val ecfType: Int, val deviceId: String, val size: Int) : Op()
+
+    /** Registra un rango de e-NCF autorizado por la DGII. */
+    @Serializable @SerialName("fiscalRange")
+    data class SaveFiscalRange(val ecfType: Int, val fromNo: Long, val toNo: Long, val expiresAt: Long?) : Op()
+
+    @Serializable @SerialName("fiscalRangeDelete")
+    data class DeleteFiscalRange(val id: Long) : Op()
 
     @Serializable @SerialName("quote")
     data class SaveQuote(

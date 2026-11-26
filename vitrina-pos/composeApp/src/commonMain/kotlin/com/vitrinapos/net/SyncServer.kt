@@ -136,6 +136,15 @@ class SyncServer(private val repo: Repository, private val serverName: () -> Str
                 ApiResponse(result = result, last = repo.maxSeq())
             }
         }
+        "fiscalCert" -> {
+            // Solo si el administrador permitió firmar en las cajas; viaja dentro del canal cifrado del equipo.
+            val raw = repo.fiscal.certificateForDevices()
+            when {
+                !repo.settings.value.fiscalCertOnClients -> ApiResponse(ok = false, error = "El equipo principal no comparte el certificado con las cajas.")
+                raw == null -> ApiResponse(ok = false, error = "El equipo principal no tiene certificado digital.")
+                else -> ApiResponse(data = Base64.getEncoder().encodeToString(raw))
+            }
+        }
         "imgGet" -> {
             val f = repo.imageFile(req.name) ?: return ApiResponse(ok = false, error = "No existe la imagen")
             ApiResponse(data = Base64.getEncoder().encodeToString(f.readBytes()))

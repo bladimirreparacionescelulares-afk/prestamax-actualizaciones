@@ -1,0 +1,2 @@
+XSD oficiales de la DGII (e-CF v1.0), descargados de dgii.gov.do el 26-11-2026.
+rfce32.xsd: se cambió "(?:" por "(" porque la DGII usa sintaxis .NET que el estándar XML Schema no admite; valida lo mismo.

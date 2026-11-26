@@ -47,6 +47,16 @@ interface Platform {
     fun shareText(text: String, title: String)
     fun openFile(file: File)
 
+    /**
+     * Cifra datos sensibles (el certificado digital) con una llave que no sale de este equipo:
+     * en Android, el Keystore del sistema; en Windows, una llave propia de la app en su carpeta privada.
+     */
+    /** Proveedor extra para abrir certificados .p12 que el sistema no lee (en Android, BouncyCastle). */
+    val extraKeyStoreProvider: java.security.Provider? get() = null
+
+    fun protect(data: ByteArray): ByteArray
+    fun unprotect(data: ByteArray): ByteArray
+
     /** Abre un enlace (por ejemplo, WhatsApp). Devuelve false si no hay con qué abrirlo. */
     fun openUrl(url: String): Boolean
 }

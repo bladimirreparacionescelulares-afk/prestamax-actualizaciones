@@ -188,6 +188,34 @@ class AndroidPlatform(private val context: Context) : Platform {
         context.startActivity(Intent.createChooser(send, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    override val extraKeyStoreProvider: java.security.Provider by lazy { org.bouncycastle.jce.provider.BouncyCastleProvider() }
+
+    private fun vaultKey(): javax.crypto.SecretKey {
+        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey("vitrina-vault", null) as? javax.crypto.SecretKey)?.let { return it }
+        val gen = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        gen.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                "vitrina-vault", android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT,
+            ).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256).build(),
+        )
+        return gen.generateKey()
+    }
+
+    override fun protect(data: ByteArray): ByteArray {
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.ENCRYPT_MODE, vaultKey())
+        return c.iv + c.doFinal(data)
+    }
+
+    override fun unprotect(data: ByteArray): ByteArray {
+        val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(javax.crypto.Cipher.DECRYPT_MODE, vaultKey(), javax.crypto.spec.GCMParameterSpec(128, data, 0, 12))
+        return c.doFinal(data, 12, data.size - 12)
+    }
+
     override fun openUrl(url: String): Boolean = runCatching {
         context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }.isSuccess

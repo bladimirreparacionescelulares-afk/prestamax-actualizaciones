@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.MoveToInbox
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PointOfSale
 import androidx.compose.material.icons.rounded.Print
+import androidx.compose.material.icons.rounded.Receipt
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -125,6 +126,7 @@ fun MoreScreen() {
         add(MoreItem(Icons.Rounded.Category, "Categorías", "${categories.size} categorías", Screen.Categories))
         add(MoreItem(Icons.Rounded.MoveToInbox, "Entradas", "Mercancía recibida", Screen.StockEntry()))
         add(MoreItem(Icons.Rounded.History, "Movimientos", "Historial de inventario", Screen.StockMoves))
+        if (admin || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", if (admin) Screen.Fiscal else Screen.FiscalDocs))
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
         if (admin) add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
         if (admin) add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))

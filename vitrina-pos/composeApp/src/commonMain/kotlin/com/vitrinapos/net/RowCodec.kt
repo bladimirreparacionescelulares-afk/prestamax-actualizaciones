@@ -60,6 +60,12 @@ object RowCodec {
             "deliveredAt" to L, "saleId" to L, "createdAt" to L, "updatedAt" to L,
         ),
         t("repairEvent", "id" to L, "repairId" to L, "status" to S, "note" to S, "userName" to S, "createdAt" to L),
+        t("fiscalSequence", "id" to L, "type" to L, "fromNo" to L, "toNo" to L, "expiresAt" to L, "deviceId" to S, "parentId" to L, "createdAt" to L),
+        t(
+            "ecfDoc", "id" to L, "saleId" to L, "type" to L, "encf" to S, "status" to S, "xml" to S, "summaryXml" to S, "securityCode" to S, "signedAt" to L,
+            "total" to L, "buyerRnc" to S, "buyerName" to S, "refEncf" to S, "trackId" to S, "message" to S, "attempts" to L, "sentAt" to L,
+            "deviceId" to S, "env" to S, "createdAt" to L, "updatedAt" to L,
+        ),
     ).associateBy { it.name }
 
     fun read(driver: SqlDriver, table: String, key: String): JsonObject? {

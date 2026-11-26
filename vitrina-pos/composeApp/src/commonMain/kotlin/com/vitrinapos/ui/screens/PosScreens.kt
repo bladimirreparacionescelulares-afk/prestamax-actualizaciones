@@ -2,6 +2,7 @@ package com.vitrinapos.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -365,20 +366,32 @@ fun CheckoutScreen() {
     var pickClient by remember { mutableStateOf(false) }
     var discountDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    // Facturación electrónica: tipo de comprobante y datos del comprador.
+    var ecfType by remember { mutableStateOf(com.vitrinapos.fiscal.EcfType.CONSUMO) }
+    var buyerId by remember(app.cartClient) { mutableStateOf(app.cartClient?.docId ?: "") }
+    var buyerName by remember(app.cartClient) { mutableStateOf(app.cartClient?.name ?: "") }
+    val buyerCheck = com.vitrinapos.fiscal.TaxId.check(buyerId)
+    val needsRnc = s.fiscalEnabled && ecfType != com.vitrinapos.fiscal.EcfType.CONSUMO
     val totals = app.repo.totalsFor(app.cart, app.cartDiscount, s)
     val change = (received ?: totals.total) - totals.total
-    val canPay = app.cart.isNotEmpty() && !busy && (method != PaymentMethods.CASH || (received ?: totals.total) >= totals.total)
+    val bigConsumo = s.fiscalEnabled && ecfType == com.vitrinapos.fiscal.EcfType.CONSUMO && totals.total >= com.vitrinapos.fiscal.Ecf.RFCE_LIMIT
+    val fiscalOk = !s.fiscalEnabled || ((!needsRnc && !bigConsumo) || (buyerCheck.valid && buyerName.isNotBlank()))
+    val canPay = app.cart.isNotEmpty() && !busy && fiscalOk && (method != PaymentMethods.CASH || (received ?: totals.total) >= totals.total)
 
     fun pay(print: Boolean) {
         busy = true
         scope.launch {
             val saleId = runCatching {
-                app.repo.recordSale(app.cart.toList(), app.cartClient, app.cartDiscount, method, received ?: totals.total, app.cartQuoteId)
+                val fiscal = if (s.fiscalEnabled) com.vitrinapos.data.FiscalChoice(
+                    ecfType.code, if (buyerCheck.valid) buyerCheck.digits else "", if (buyerCheck.valid) buyerName.trim() else "",
+                ) else null
+                app.repo.recordSale(app.cart.toList(), app.cartClient, app.cartDiscount, method, received ?: totals.total, app.cartQuoteId, fiscal)
             }.getOrElse { app.toast("No se pudo guardar la venta: ${it.message}"); busy = false; return@launch }
             app.clearCart()
             if (print) {
                 val sale = app.repo.saleById(saleId)
-                if (sale != null) app.print(Ticket.forSale(app.settingsNow, sale, app.repo.saleItems(saleId)))
+                val ecf = app.repo.ecfForSale(saleId).firstOrNull { it.type != 34L }
+                if (sale != null) app.print(Ticket.forSale(app.settingsNow, sale, app.repo.saleItems(saleId), ecf = ecf))
             }
             app.replace(Screen.SaleDetail(saleId))
         }
@@ -413,6 +426,25 @@ fun CheckoutScreen() {
                 TextButton(onClick = { discountDialog = true }, contentPadding = PaddingValues(0.dp)) {
                     Text(if (app.cartDiscount > 0) "Cambiar descuento" else "+ Agregar descuento")
                 }
+            }
+            if (s.fiscalEnabled) {
+                Text("Comprobante", style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.vitrinapos.fiscal.EcfType.forSale.forEach { t ->
+                        val label = if (t == com.vitrinapos.fiscal.EcfType.GUBERNAMENTAL) "Gobierno" else t.short
+                        FilterChip(selected = ecfType == t, onClick = { ecfType = t }, label = { Text("$label ${t.prefix}", fontSize = 12.sp, maxLines = 1) }, shape = RoundedCornerShape(10.dp))
+                    }
+                }
+                if (needsRnc || bigConsumo || buyerId.isNotBlank()) {
+                    com.vitrinapos.ui.components.TextInput(
+                        buyerId, { buyerId = it }, if (needsRnc) "RNC o cédula del cliente *" else "RNC o cédula del cliente",
+                        keyboard = androidx.compose.ui.text.input.KeyboardType.Number,
+                        error = if (buyerId.isNotBlank() && !buyerCheck.valid) buyerCheck.message else null,
+                    )
+                    com.vitrinapos.ui.components.TextInput(buyerName, { buyerName = it }, if (needsRnc) "Razón social o nombre *" else "Nombre del cliente")
+                }
+                if (bigConsumo) Text("Una factura de consumo de RD$250,000 o más necesita la identificación del cliente.", fontSize = 12.sp, color = AppTheme.extra.warn)
+                else if (!needsRnc && buyerId.isBlank()) Text("Factura de consumo electrónica a consumidor final.", fontSize = 12.sp, color = AppTheme.extra.muted)
             }
             Text("Forma de pago", style = MaterialTheme.typography.titleSmall)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

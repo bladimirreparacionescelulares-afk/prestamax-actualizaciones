@@ -136,11 +136,15 @@ class Ticket(val width: Int) {
             return out
         }
 
-        fun forSale(s: AppSettings, sale: Sale, items: List<SaleItem>, reprint: Boolean = false, repair: com.vitrinapos.db.RepairOrder? = null): Ticket {
+        fun forSale(
+            s: AppSettings, sale: Sale, items: List<SaleItem>, reprint: Boolean = false, repair: com.vitrinapos.db.RepairOrder? = null,
+            ecf: com.vitrinapos.db.EcfDoc? = null,
+        ): Ticket {
             val t = Ticket(s.ticketChars)
             val wide = s.ticketChars >= 48
-            header(t, s)
+            header(t, s, fiscal = ecf != null)
             t.separator()
+            if (ecf != null) fiscalHead(t, ecf)
             if (repair != null) {
                 t.center("COMPROBANTE DE ENTREGA", Style.Bold)
                 t.center(com.vitrinapos.data.repairCode(repair.number), Style.Big)
@@ -150,7 +154,7 @@ class Ticket(val width: Int) {
                 t.separator()
             }
             t.pair(if (sale.number < 0) "Venta P${-sale.number}" else "Venta #${sale.number.toString().padStart(4, '0')}", Time.dateTime(sale.createdAt))
-            t.left("Cliente: ${sale.clientName}")
+            t.left("Cliente: ${ecf?.buyerName?.ifBlank { null } ?: sale.clientName}")
             val seller = sale.userName.ifBlank { s.sellerName }
             if (seller.isNotBlank()) t.left("Atendió: $seller")
             if (sale.number < 0) t.center("Venta sin conexión: el número final se asigna al sincronizar")
@@ -186,6 +190,7 @@ class Ticket(val width: Int) {
             } else {
                 t.pair("Pago", sale.paymentMethod)
             }
+            if (ecf != null) fiscalFoot(t, s, ecf)
             if (repair != null) {
                 t.separator()
                 val until = repair.deliveredAt?.takeIf { repair.warrantyDays > 0 }?.let { Time.addDays(Time.startOfDay(it), repair.warrantyDays.toInt()) }
@@ -262,13 +267,45 @@ class Ticket(val width: Int) {
             return t
         }
 
-        private fun header(t: Ticket, s: AppSettings) {
+        private fun header(t: Ticket, s: AppSettings, fiscal: Boolean = false) {
             t.center(s.businessName.ifBlank { "Mi Tienda" }, Style.Big)
             if (s.businessTagline.isNotBlank()) t.center(s.businessTagline)
-            if (s.address.isNotBlank()) t.center(s.address)
-            val contact = listOfNotNull(s.phone.takeIf { it.isNotBlank() }?.let { "Tel. $it" }, s.taxId.takeIf { it.isNotBlank() }?.let { "RNC $it" })
+            // En un comprobante fiscal van la razón social y el RNC o la cédula del emisor.
+            if (fiscal && s.fiscalName.isNotBlank() && s.fiscalName != s.businessName) t.center(s.fiscalName, Style.Bold)
+            val address = if (fiscal) s.fiscalAddress.ifBlank { s.address } else s.address
+            if (address.isNotBlank()) t.center(address)
+            val id = if (fiscal) s.fiscalRnc.ifBlank { s.taxId } else s.taxId
+            val idLabel = if (com.vitrinapos.fiscal.TaxId.digits(id).length == 11) "Cédula" else "RNC"
+            val contact = listOfNotNull(s.phone.takeIf { it.isNotBlank() }?.let { "Tel. $it" }, id.takeIf { it.isNotBlank() }?.let { "$idLabel $it" })
             if (contact.isNotEmpty()) t.center(contact.joinToString(" · "))
         }
+
+        /** Encabezado del e-CF: tipo de comprobante, e-NCF y comprador. */
+        private fun fiscalHead(t: Ticket, d: com.vitrinapos.db.EcfDoc) {
+            val type = com.vitrinapos.fiscal.EcfType.of(d.type.toInt())
+            t.center(type.title.uppercase(), Style.Bold)
+            t.pair("e-NCF", d.encf, Style.Bold)
+            xmlValue(d.xml, "FechaVencimientoSecuencia")?.let { t.pair("Vence secuencia", it) }
+            if (d.buyerRnc.isNotBlank()) {
+                t.left("${if (d.buyerRnc.length == 11) "Cédula" else "RNC"} comprador: ${d.buyerRnc}")
+                if (d.buyerName.isNotBlank()) t.left(d.buyerName)
+            }
+            if (d.refEncf.isNotBlank()) t.left("Modifica: ${d.refEncf}")
+            t.separator()
+        }
+
+        /** Pie del e-CF: QR de consulta, código de seguridad y fecha de firma (Informe Técnico, 18.2.3). */
+        private fun fiscalFoot(t: Ticket, s: AppSettings, d: com.vitrinapos.db.EcfDoc) {
+            t.separator()
+            val issued = com.vitrinapos.fiscal.EcfIssued(d.type.toInt(), d.encf, "", d.securityCode, d.signedAt, d.total, d.buyerRnc)
+            t.qr(com.vitrinapos.fiscal.Ecf.qrUrl(com.vitrinapos.fiscal.DgiiEnv.of(d.env.ifBlank { s.fiscalEnv }), com.vitrinapos.fiscal.TaxId.digits(s.fiscalRnc), issued, d.signedAt))
+            t.center("Código de seguridad: ${d.securityCode}")
+            t.center("Fecha de firma: ${com.vitrinapos.fiscal.Ecf.stamp(d.signedAt)}")
+            if (d.env.isNotBlank() && d.env != "PROD") t.center("*** AMBIENTE DE ${com.vitrinapos.fiscal.DgiiEnv.of(d.env).title.uppercase()}: SIN VALIDEZ FISCAL ***")
+        }
+
+        private fun xmlValue(xml: String, tag: String): String? =
+            Regex("<$tag>([^<]*)</$tag>").find(xml)?.groupValues?.get(1)
 
         private fun totals(t: Ticket, s: AppSettings, gross: Long, discount: Long, tax: Long, total: Long, included: Boolean) {
             t.pair("Subtotal", Money.plain(gross))
