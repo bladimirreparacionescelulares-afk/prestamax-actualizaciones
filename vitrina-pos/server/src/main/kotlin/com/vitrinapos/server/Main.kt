@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Arranca el servidor. Todo se configura con variables de entorno (ver server/.env.ejemplo):
- * DATABASE_URL, DATA_DIR, TOKEN_SECRET, MASTER_KEY, ADMIN_TOKEN, PORT, RESEND_API_KEY, MAIL_FROM.
+ * DATABASE_URL, DATA_DIR, TOKEN_SECRET, MASTER_KEY, ADMIN_TOKEN, PORT, HOST, RESEND_API_KEY, MAIL_FROM.
  */
 fun main() {
     val log = LoggerFactory.getLogger("vitrina")
@@ -48,5 +48,5 @@ fun main() {
     val port = env("PORT")?.toIntOrNull() ?: 8080
     log.info("Vitrina POS servidor {} en el puerto {}", AppInfo.VERSION, port)
     Runtime.getRuntime().addShutdownHook(Thread { tenants.close(); control.close() })
-    embeddedServer(Netty, port = port, host = "0.0.0.0") { vitrinaApi(server) }.start(wait = true)
+    embeddedServer(Netty, port = port, host = env("HOST") ?: "0.0.0.0") { vitrinaApi(server) }.start(wait = true)
 }

@@ -14,6 +14,10 @@ on:
         description: Actualización importante (el aviso sale en cada inicio)
         type: boolean
         default: false
+      servidor:
+        description: Publicar el servidor de la nube (lo descarga el instalador del Droplet)
+        type: boolean
+        default: false
   push:
     paths:
       - "vitrina-pos/**"
@@ -105,9 +109,14 @@ jobs:
       - name: Pruebas del servidor con PostgreSQL
         env:
           TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/vitrina_test?user=vitrina&password=vitrina
-        run: ./gradlew :server:test :server:installDist --no-daemon
+        run: ./gradlew :server:test :server:installDist :server:distTar --no-daemon
       - name: Construir la imagen Docker
         run: docker build -t vitrina-servidor:prueba server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vitrina-server
+          path: vitrina-pos/server/build/distributions/vitrina-server.tar
+          if-no-files-found: error
 
   windows:
     name: Instalador de Windows
@@ -156,6 +165,36 @@ jobs:
           name: VitrinaPOS-mac
           path: vitrina-pos/composeApp/build/compose/binaries/main/dmg/*.dmg
           if-no-files-found: error
+
+  publicar-servidor:
+    name: Publicar el servidor
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.servidor }}
+    needs: [servidor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: vitrina-server
+          path: srv
+      - name: Subir a la entrega "vitrina-servidor"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' vitrina-pos/core/src/commonMain/kotlin/com/vitrinapos/AppInfo.kt)
+          sha256sum srv/vitrina-server.tar | cut -d' ' -f1 > srv/vitrina-server.tar.sha256
+          # Una sola entrega fija para el servidor (no empieza con "vitrina-v": las apps no la ven como actualización).
+          if ! gh release view vitrina-servidor >/dev/null 2>&1; then
+            gh release create vitrina-servidor --target "$GITHUB_SHA" --title "Servidor de Vitrina POS" --notes "Servidor de la nube. Lo descarga el instalador del Droplet." --latest=false --prerelease
+          fi
+          gh release upload vitrina-servidor srv/vitrina-server.tar srv/vitrina-server.tar.sha256 --clobber
+          gh release edit vitrina-servidor --notes "Servidor de la nube $VERSION ($GITHUB_SHA). Lo descarga el instalador del Droplet."
 
   publicar:
     name: Publicar la versión
