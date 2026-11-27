@@ -147,6 +147,8 @@ compose.desktop {
 
 // Capturas de pantalla: ./gradlew :composeApp:desktopTest -Dscreenshots=/ruta/carpeta
 tasks.withType<Test>().configureEach {
+    // En GitHub se ve el motivo exacto de una prueba que falla.
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL; events("failed") }
     systemProperty("vitrina.noUpdates", "true")
     System.getProperty("screenshots")?.let { systemProperty("screenshots", it) }
     listOf("phoneCode", "phonePort", "labeldebug", "fiscalOut", "dgiiLive").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }

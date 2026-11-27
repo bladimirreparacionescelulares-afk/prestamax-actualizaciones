@@ -42,6 +42,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Pruebas
         run: ./gradlew :core:jvmTest :composeApp:desktopTest --no-daemon
+      - name: Guardar el informe si una prueba falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-pruebas
+          path: |
+            vitrina-pos/composeApp/build/reports/tests
+            vitrina-pos/composeApp/build/test-results
       - name: Firma propia de la app
         env:
           KEYSTORE_B64: ${{ secrets.VITRINA_KEYSTORE_B64 }}
