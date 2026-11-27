@@ -69,7 +69,8 @@ class ControlTest {
         assertEquals(29.0 + 21.0, merged.stock)   // la venta anulada devolvió su unidad
         assertEquals(((29 * 5500 + 21 * 6000) / 50.0).toLong(), merged.cost)
         assertEquals(0L, repo.productById(b)!!.active)
-        assertEquals(merged.id, repo.productForCode(pb.code)?.id)
+        // Se lee de la base (la lista en memoria se actualiza un instante después).
+        assertEquals(merged.id, repo.productForCode(pb.code, repo.db.productQueries.selectActive().executeAsList())?.id)
         assertEquals(a, repo.saleItems(sale).single().productId)
         assertTrue(repo.activity(0, Long.MAX_VALUE).any { it.action == "Unió productos" })
         // El código del producto unido no se puede volver a usar en otro.
