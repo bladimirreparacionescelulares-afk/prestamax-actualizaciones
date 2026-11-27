@@ -68,6 +68,39 @@ jobs:
           path: vitrina-pos/VitrinaPOS-*.apk
           if-no-files-found: error
 
+  servidor:
+    name: Servidor en la nube (pruebas e imagen)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vitrina
+          POSTGRES_PASSWORD: vitrina
+          POSTGRES_DB: vitrina_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vitrina" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: vitrina-pos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Pruebas del servidor con PostgreSQL
+        env:
+          TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/vitrina_test?user=vitrina&password=vitrina
+        run: ./gradlew :server:test :server:installDist --no-daemon
+      - name: Construir la imagen Docker
+        run: docker build -t vitrina-servidor:prueba server
+
   windows:
     name: Instalador de Windows
     runs-on: windows-latest

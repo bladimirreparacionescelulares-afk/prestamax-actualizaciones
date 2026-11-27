@@ -448,6 +448,7 @@ fun CheckoutScreen() {
     val openCash by app.repo.openCash.collectAsState()
     val cashBlocked = s.requireCash && openCash == null
     var busy by remember { mutableStateOf(false) }
+    var confirmEmpty by remember { mutableStateOf(false) }
     // Facturación electrónica: tipo de comprobante y datos del comprador.
     var ecfType by remember { mutableStateOf(com.vitrinapos.fiscal.EcfType.CONSUMO) }
     var buyerId by remember(app.cartClient) { mutableStateOf(app.cartClient?.docId ?: "") }
@@ -593,13 +594,31 @@ fun CheckoutScreen() {
                         fontSize = 16.sp, fontWeight = FontWeight.Bold,
                     )
                 }
-                if (hasPrinter && s.autoPrint) {
-                    OutlinedButton(onClick = { pay(print = false) }, enabled = canPay, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                        Text("Cobrar sin imprimir")
+                // Debajo del cobro: vaciar el carrito y (si imprime solo) cobrar sin imprimir, lado a lado.
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { confirmEmpty = true }, enabled = !busy && app.cart.isNotEmpty(),
+                        modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Vaciar carrito", color = MaterialTheme.colorScheme.error, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 16.sp)
                     }
+                    if (hasPrinter && s.autoPrint) OutlinedButton(
+                        onClick = { pay(print = false) }, enabled = canPay,
+                        modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) { Text("Cobrar sin imprimir", fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 16.sp) }
                 }
             }
         }
+    }
+    if (confirmEmpty) {
+        com.vitrinapos.ui.components.ConfirmDialog(
+            "Vaciar el carrito", "Se quitan los ${app.cartCount.fmtQty()} artículos, el cliente y el descuento de esta venta.", "Vaciar",
+            onConfirm = { app.clearCart(); app.back() }, onDismiss = { confirmEmpty = false }, destructive = true,
+        )
     }
 
     if (pickClient) {

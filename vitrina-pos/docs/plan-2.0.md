@@ -1,6 +1,6 @@
 # Vitrina POS 2.0 — la nube
 
-Estado: **aprobado el diseño, sin empezar**. No se implementa 2.0a ni 2.0b hasta que el dueño lo indique.
+Estado: **2.0a y 2.0b hechas** (27/11/2026). Siguen 2.0c (app), 2.0d (DigitalOcean) y 2.0e (panel web). Detalles del servidor: `server/LEEME.md`.
 
 Propuesta visual: https://claude.ai/artifact/AfyLU9DEuaEVVWgQu6XZ9w
 

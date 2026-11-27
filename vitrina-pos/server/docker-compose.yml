@@ -1,0 +1,26 @@
+# Servidor de Vitrina POS con su PostgreSQL, para probarlo en una computadora o en el Droplet.
+# 1) ./gradlew :server:installDist   2) copia .env.ejemplo a .env y llénalo   3) docker compose up -d --build
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vitrina
+      POSTGRES_USER: vitrina
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdatos:/var/lib/postgresql/data
+  servidor:
+    build: .
+    restart: unless-stopped
+    depends_on: [db]
+    env_file: .env
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/vitrina?user=vitrina&password=${DB_PASSWORD}
+    ports:
+      - "8080:8080"
+    volumes:
+      - negocios:/datos
+volumes:
+  pgdatos:
+  negocios:
