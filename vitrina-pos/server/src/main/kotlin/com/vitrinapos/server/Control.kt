@@ -1,5 +1,6 @@
 package com.vitrinapos.server
 
+import com.vitrinapos.net.*
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import kotlinx.serialization.Serializable
@@ -20,8 +21,6 @@ data class Business(val id: Long, val accountId: Long, val name: String, val typ
 @Serializable
 data class Subscription(val planId: String, val trialUntil: Long?, val paidUntil: Long?, val period: String)
 
-@Serializable
-data class Device(val id: String, val businessId: Long, val name: String, val platform: String, val created: Long, val lastUse: Long?, val revoked: Boolean)
 
 /** Base de control (PostgreSQL): cuentas, negocios, planes, suscripciones y equipos. */
 class ControlStore(jdbcUrl: String) : AutoCloseable {

@@ -189,6 +189,8 @@ object NetRole {
     const val SOLO = "solo"
     const val SERVER = "server"
     const val CLIENT = "client"
+    /** Conectado a la nube de Vitrina POS. */
+    const val CLOUD = "cloud"
 }
 
 /** Lo implementa el cliente de red: envía operaciones e imágenes al equipo principal. */

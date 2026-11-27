@@ -1,6 +1,6 @@
 # Vitrina POS 2.0 — la nube
 
-Estado: **2.0a y 2.0b hechas** (27/11/2026). Siguen 2.0c (app), 2.0d (DigitalOcean) y 2.0e (panel web). Detalles del servidor: `server/LEEME.md`.
+Estado: **2.0a, 2.0b y 2.0c hechas** (27/11/2026). La app ya sabe trabajar con la nube (crear cuenta, entrar, pasar datos, equipos, PIN en el servidor, módulos del plan), pero las opciones quedan ocultas (`Cloud.ENABLED = false`) hasta publicar el servidor. Siguen 2.0d (DigitalOcean) y 2.0e (panel web). Detalles del servidor: `server/LEEME.md`.
 
 Propuesta visual: https://claude.ai/artifact/AfyLU9DEuaEVVWgQu6XZ9w
 

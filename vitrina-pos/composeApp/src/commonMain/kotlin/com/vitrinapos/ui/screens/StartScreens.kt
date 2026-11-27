@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
 
 /** Primera vez que se abre la app: datos básicos del negocio. */
 @Composable
-fun WelcomeScreen(onConnect: () -> Unit = {}) = OnboardingScreen(onConnect)
+fun WelcomeScreen(onConnect: () -> Unit = {}, onCloud: (CloudMode) -> Unit = {}) = OnboardingScreen(onConnect, onCloud)
 
 /** Pantalla de PIN cuando está activado. */
 @Composable
@@ -114,6 +114,7 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
 fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
     val app = LocalAppState.current
     var selected by remember { mutableStateOf(users.firstOrNull { it.id == app.lockedUserId } ?: if (users.size == 1) users.first() else null) }
+    var lastPin by remember { mutableStateOf("") }
     val chosen = selected
     if (chosen == null) {
         Column(
@@ -143,13 +144,15 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
         PinPad(
             title = chosen.name,
             subtitle = if (app.lockedUserId == chosen.id) "Se bloqueó por inactividad. Escribe tu PIN" else "Escribe tu PIN",
-            check = { pin, final -> app.repo.pinAttempt(chosen, pin, final) },
+            check = { pin, final -> app.repo.pinAttempt(chosen, pin, final).also { if (it is com.vitrinapos.data.Repository.PinResult.Ok) lastPin = pin } },
             onSuccess = {
                 // Si entra otra persona, no se queda con el carrito de la anterior.
                 if (app.lockedUserId != null && app.lockedUserId != chosen.id) app.clearCart()
                 app.lockedUserId = null
                 app.lastActivity = com.vitrinapos.data.Time.now()
                 app.repo.currentUser.value = chosen
+                // En la nube, el mismo PIN abre la sesión del usuario en el servidor.
+                app.graph.cloud?.userEntered(chosen.id, lastPin)
             },
             onBack = if (users.size > 1) ({ selected = null }) else null,
         )

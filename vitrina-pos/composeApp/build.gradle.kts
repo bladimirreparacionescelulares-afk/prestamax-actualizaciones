@@ -151,6 +151,8 @@ tasks.withType<Test>().configureEach {
     testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL; events("failed") }
     systemProperty("vitrina.noUpdates", "true")
     System.getProperty("screenshots")?.let { systemProperty("screenshots", it) }
+    // Prueba de la app con un servidor de la nube corriendo: -DcloudUrl=http://127.0.0.1:8080
+    System.getProperty("cloudUrl")?.let { systemProperty("cloudUrl", it) }
     listOf("phoneCode", "phonePort", "labeldebug", "fiscalOut", "dgiiLive").forEach { k -> System.getProperty(k)?.let { systemProperty(k, it) } }
     outputs.upToDateWhen { System.getProperty("screenshots") == null && System.getProperty("phoneCode") == null && System.getProperty("dgiiLive") == null }
 }

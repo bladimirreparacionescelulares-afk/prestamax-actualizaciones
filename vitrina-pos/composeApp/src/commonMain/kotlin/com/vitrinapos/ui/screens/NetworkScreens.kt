@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Lan
@@ -95,7 +96,19 @@ fun NetworkPill(onClick: () -> Unit) {
     val ex = AppTheme.extra
     val client = graph.client
     val server = graph.server
+    val cloud = graph.cloud
     when {
+        cloud != null -> {
+            val st by cloud.status.collectAsState()
+            val pending by app.repo.pendingSales.collectAsState()
+            val (text, fg, bg) = when (st.state) {
+                LinkState.ONLINE -> Triple("Nube", ex.ok, ex.okSoft)
+                LinkState.CONNECTING -> Triple("Conectando…", ex.muted, MaterialTheme.colorScheme.surfaceContainer)
+                LinkState.OFFLINE -> Triple(if (pending > 0) "Sin internet · $pending pendientes" else "Sin internet", ex.warn, ex.warnSoft)
+                LinkState.REVOKED -> Triple("Sin acceso", ex.danger, ex.dangerSoft)
+            }
+            StatusChip(text, fg, bg, onClick)
+        }
         client != null -> {
             val st by client.status.collectAsState()
             val pending by app.repo.pendingSales.collectAsState()
@@ -130,11 +143,13 @@ private fun StatusChip(text: String, fg: Color, bg: Color, onClick: () -> Unit) 
 @Composable
 fun OfflineBanner() {
     val app = LocalAppState.current
-    val client = app.graph.client ?: return
-    val st by client.status.collectAsState()
+    val cloud = app.graph.cloud
+    val status = cloud?.status ?: app.graph.client?.status ?: return
+    val st by status.collectAsState()
     val pending by app.repo.pendingSales.collectAsState()
     if (st.state != LinkState.OFFLINE && st.state != LinkState.REVOKED) return
     val revoked = st.state == LinkState.REVOKED
+    val where = if (cloud != null) "la nube" else "el equipo principal"
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(if (revoked) AppTheme.extra.dangerSoft else AppTheme.extra.warnSoft).padding(12.dp),
@@ -144,9 +159,10 @@ fun OfflineBanner() {
         Spacer(Modifier.width(10.dp))
         Text(
             when {
+                revoked && cloud != null -> "Este equipo ya no tiene acceso a la nube del negocio. Entra de nuevo con la cuenta en Más → Trabajo en red."
                 revoked -> "El equipo principal quitó el acceso a este equipo. Pide que lo vuelvan a unir."
-                pending > 0 -> "Sin conexión con el equipo principal. Puedes seguir vendiendo: $pending ${if (pending == 1L) "venta se enviará" else "ventas se enviarán"} al volver la red."
-                else -> "Sin conexión con el equipo principal. Puedes seguir vendiendo; las ventas se enviarán al volver la red."
+                pending > 0 -> "Sin conexión con $where. Puedes seguir vendiendo: $pending ${if (pending == 1L) "venta se enviará" else "ventas se enviarán"} al volver la red."
+                else -> "Sin conexión con $where. Puedes seguir vendiendo; las ventas se enviarán al volver la red."
             },
             color = if (revoked) AppTheme.extra.danger else AppTheme.extra.warn, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
         )
@@ -164,6 +180,13 @@ fun NetworkScreen(onClose: (() -> Unit)? = null) {
     var connecting by remember { mutableStateOf(onClose != null) }
     var confirm by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf(graph.deviceName) }
+    var cloudMode by remember { mutableStateOf<CloudMode?>(null) }
+    var cloudChoice by remember { mutableStateOf(false) }
+
+    cloudMode?.let { m ->
+        CloudAccountScreen(m, onClose = { cloudMode = null; if (app.repo.role == NetRole.CLOUD) onClose?.invoke() })
+        return
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Trabajo en red", subtitle = "Varios equipos con los mismos datos", onBack = { onClose?.invoke() ?: app.back() })
@@ -185,12 +208,16 @@ fun NetworkScreen(onClose: (() -> Unit)? = null) {
                 ModeCard(Icons.Rounded.Lan, "Conectado a un principal", "Usa los datos de otro equipo de la red. Si se cae el Wi-Fi, sigue vendiendo y envía las ventas después.", role == NetRole.CLIENT) {
                     if (role != NetRole.CLIENT) connecting = true
                 }
+                if (graph.cloudAvailable) ModeCard(Icons.Rounded.Cloud, "En la nube", "Los datos del negocio se guardan en internet. Cada equipo entra con la cuenta, desde cualquier lugar, y si se va el internet sigue vendiendo.", role == NetRole.CLOUD) {
+                    if (role != NetRole.CLOUD) cloudChoice = true
+                }
             }
 
             when {
                 connecting -> ConnectPanel(onCancel = { if (onClose != null) onClose() else connecting = false }, onDone = { connecting = false; onClose?.invoke() })
                 role == NetRole.SERVER -> ServerPanel()
                 role == NetRole.CLIENT -> ClientPanel(onLeave = { confirm = NetRole.SOLO })
+                role == NetRole.CLOUD -> CloudPanel()
                 else -> Text(
                     "Para que otros celulares o computadoras usen estos mismos datos, elige \"Equipo principal\" aquí, y en los demás equipos elige \"Conectado a un principal\".",
                     color = AppTheme.extra.muted, fontSize = 14.sp,
@@ -198,6 +225,24 @@ fun NetworkScreen(onClose: (() -> Unit)? = null) {
             }
         }
     }
+
+    if (cloudChoice) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { cloudChoice = false },
+        title = { Text("Trabajar en la nube") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (role != NetRole.CLIENT) AppCard(onClick = { cloudChoice = false; cloudMode = CloudMode.MIGRATE }) {
+                    Text("Pasar mis datos a la nube", fontWeight = FontWeight.Bold)
+                    Text("Crea la cuenta y sube lo que tiene este equipo: productos, ventas, clientes y usuarios.", fontSize = 13.sp, color = AppTheme.extra.muted)
+                }
+                AppCard(onClick = { cloudChoice = false; cloudMode = CloudMode.LOGIN }) {
+                    Text("Ya tengo cuenta: entrar", fontWeight = FontWeight.Bold)
+                    Text("Este equipo recibe los datos que ya están en la nube (los de aquí se reemplazan).", fontSize = 13.sp, color = AppTheme.extra.muted)
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { cloudChoice = false }) { Text("Cancelar") } },
+    )
 
     when (confirm) {
         NetRole.SERVER -> ConfirmDialog(

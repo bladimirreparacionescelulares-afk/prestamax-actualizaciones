@@ -1,5 +1,6 @@
 package com.vitrinapos.server
 
+import com.vitrinapos.net.*
 import com.vitrinapos.data.CartLine
 import com.vitrinapos.data.Op
 import com.vitrinapos.data.PaymentMethods

@@ -3,7 +3,13 @@ package com.vitrinapos.data
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.vitrinapos.net.Cloud
+import com.vitrinapos.net.CloudClient
 import com.vitrinapos.net.Crypto
+import com.vitrinapos.net.DeviceCredentials
+import com.vitrinapos.net.LoginRequest
+import com.vitrinapos.net.OwnerLoginRequest
+import com.vitrinapos.net.SignupRequest
 import com.vitrinapos.net.PairRequest
 import com.vitrinapos.net.SyncClient
 import com.vitrinapos.net.SyncServer
@@ -23,10 +29,14 @@ class AppGraph(val platform: Platform) {
         private set
     var client by mutableStateOf<SyncClient?>(null)
         private set
+    /** Conexión con la nube (null si este equipo no está en la nube). */
+    var cloud by mutableStateOf<CloudClient?>(null)
+        private set
 
     init {
         startNetwork()
-        repo.startFiscal()
+        // La facturación electrónica desde la nube llega más adelante: en la nube no se firma desde el equipo.
+        if (repo.role != NetRole.CLOUD) repo.startFiscal()
     }
 
     val deviceName: String get() = repo.meta.value["deviceName"] ?: repo.metaGet("deviceName") ?: platform.defaultDeviceName
@@ -37,6 +47,7 @@ class AppGraph(val platform: Platform) {
         when (repo.role) {
             NetRole.SERVER -> startServer()
             NetRole.CLIENT -> startClient()
+            NetRole.CLOUD -> startCloud()
         }
     }
 
@@ -59,12 +70,27 @@ class AppGraph(val platform: Platform) {
         c.start()
     }
 
+    private fun startCloud() {
+        val r = repo
+        val id = r.metaGet("cloud.device")?.takeIf { it.isNotBlank() } ?: return
+        val secret = r.metaGet("cloud.secret")?.takeIf { it.isNotBlank() }?.let { runCatching { String(platform.unprotect(Crypto.unhex(it)), Charsets.UTF_8) }.getOrNull() } ?: return
+        val c = CloudClient(r, cloudUrl, id, secret)
+        r.remote = c
+        cloud = c
+        c.start()
+    }
+
+    /** Dirección de la nube (se puede cambiar para pruebas con la propiedad vitrina.cloudUrl). */
+    val cloudUrl: String get() = repo.metaGet("cloud.url")?.takeIf { it.isNotBlank() } ?: System.getProperty("vitrina.cloudUrl") ?: Cloud.DEFAULT_URL
+
     private fun stopNetwork() {
         server?.stop()
         client?.stop()
+        cloud?.stop()
         repo.remote = null
         server = null
         client = null
+        cloud = null
         platform.setNetworkActive(false)
     }
 
@@ -101,6 +127,98 @@ class AppGraph(val platform: Platform) {
         r.metaPut("role", NetRole.CLIENT)
         startClient()
         client?.pull()
+    }
+
+    // ================= Nube =================
+
+    /** Si se muestran las opciones de la nube en este equipo. */
+    val cloudAvailable: Boolean get() = Cloud.ENABLED || repo.role == NetRole.CLOUD || System.getProperty("vitrina.cloudUrl") != null
+
+    /** Correo de la cuenta con la que este equipo entró a la nube. */
+    val cloudEmail: String? get() = repo.metaGet("cloud.email")
+
+    private fun checkCanJoin() {
+        if (repo.role != NetRole.CLIENT && repo.role != NetRole.CLOUD && repo.unsentFiscalDocs() > 0)
+            throw IllegalStateException("Este equipo tiene comprobantes electrónicos sin enviar a la DGII. Envíalos antes de pasar a la nube.")
+    }
+
+    /**
+     * Deja este equipo trabajando con la nube: adopta el identificador que le dio el servidor, guarda su llave
+     * (protegida con la del equipo) y recibe los datos del negocio. Los datos locales se reemplazan.
+     */
+    private suspend fun join(creds: DeviceCredentials, email: String, url: String) {
+        stopNetwork()
+        val old = repo
+        old.clearSharedData()
+        old.metaPut("deviceId", creds.deviceId)
+        old.metaPut("cloud.url", url)
+        old.metaPut("cloud.email", email)
+        old.metaPut("cloud.device", creds.deviceId)
+        old.metaPut("cloud.secret", Crypto.hex(platform.protect(creds.deviceSecret.toByteArray(Charsets.UTF_8))))
+        old.metaPut("cloud.business", creds.businessId.toString())
+        old.metaPut("cloud.businessName", creds.businessName)
+        old.metaPut("epoch", "")
+        old.metaPut("lastSeq", "0")
+        old.metaPut("role", NetRole.CLOUD)
+        old.currentUser.value = null
+        old.close()
+        repo = Repository(platform)
+        startCloud()
+        cloud?.pull()
+    }
+
+    /** Crea la cuenta y el negocio en la nube; este equipo queda autorizado. Se ejecuta fuera del hilo de la pantalla. */
+    suspend fun cloudSignup(r: SignupRequest, url: String = cloudUrl) {
+        checkCanJoin()
+        val creds = CloudClient.signup(url, r.copy(deviceName = r.deviceName.ifBlank { deviceName }, platform = platform.platformName))
+        join(creds, r.email.trim().lowercase(), url)
+    }
+
+    /** Entra con la cuenta del negocio: este equipo se autoriza y recibe los datos de la nube. */
+    suspend fun cloudLogin(email: String, password: String, url: String = cloudUrl): DeviceCredentials {
+        checkCanJoin()
+        val creds = CloudClient.login(url, LoginRequest(email.trim(), password, deviceName, platform.platformName))
+        join(creds, email.trim().lowercase(), url)
+        return creds
+    }
+
+    /**
+     * "Pasar mis datos a la nube": crea la cuenta, sube la base y las fotos de este equipo y lo deja en la nube.
+     * [progress] recibe el paso en curso.
+     */
+    suspend fun migrateToCloud(r: SignupRequest, url: String = cloudUrl, progress: (String) -> Unit = {}) {
+        checkCanJoin()
+        if (repo.role == NetRole.CLIENT) throw IllegalStateException("Este equipo está conectado a un principal. Pasa los datos desde el equipo principal.")
+        if (repo.settings.value.fiscalEnabled)
+            throw IllegalStateException("La facturación electrónica en la nube llega en una próxima versión. Por ahora, este negocio sigue en este equipo.")
+        progress("Creando la cuenta…")
+        val creds = CloudClient.signup(url, r.copy(deviceName = r.deviceName.ifBlank { deviceName }, platform = platform.platformName))
+        val owner = CloudClient.ownerLogin(url, OwnerLoginRequest(r.email.trim(), r.password))
+        progress("Subiendo los datos…")
+        repo.checkpoint()
+        val copy = File(platform.dataDir, "subida_nube.db")
+        try {
+            platform.databaseFile.copyTo(copy, overwrite = true)
+            CloudClient.uploadDatabase(url, owner.token, copy)
+        } finally { copy.delete() }
+        val photos = repo.imagesDir.listFiles()?.filter { it.isFile } ?: emptyList()
+        if (photos.isNotEmpty()) {
+            val token = CloudClient.deviceToken(url, creds).token
+            photos.forEachIndexed { i, f ->
+                progress("Subiendo fotos… ${i + 1} de ${photos.size}")
+                runCatching { CloudClient.uploadImageWith(url, token, f) }
+            }
+        }
+        progress("Recibiendo los datos de la nube…")
+        join(creds, r.email.trim().lowercase(), url)
+    }
+
+    /** Este equipo sale de la nube y se queda trabajando solo con una copia de los datos. */
+    fun leaveCloud() {
+        cloud?.logoutUser()
+        stopNetwork()
+        listOf("cloud.secret", "cloud.device").forEach { repo.metaPut(it, "") }
+        repo.metaPut("role", NetRole.SOLO)
     }
 
     /**
@@ -140,6 +258,8 @@ class AppGraph(val platform: Platform) {
      * solo entonces reemplaza los datos actuales. Este equipo conserva su identidad y su modo de red.
      */
     fun importBackup(input: InputStream, password: String = "") {
+        if (repo.role == NetRole.CLOUD)
+            throw IllegalStateException("Este equipo trabaja con la nube: los respaldos se guardan allá cada noche. Para restaurar uno, comunícate con Vitrina POS.")
         // Restaurar un respaldo haría retroceder la numeración e-NCF y se repetirían comprobantes.
         if (repo.settings.value.fiscalEnabled || repo.ecfDocs.value.isNotEmpty())
             throw IllegalStateException("Con facturación electrónica no se puede restaurar un respaldo: se repetirían números de comprobantes ya enviados a la DGII.")

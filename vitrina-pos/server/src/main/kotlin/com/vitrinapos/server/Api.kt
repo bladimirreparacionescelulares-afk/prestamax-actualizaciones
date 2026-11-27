@@ -1,5 +1,6 @@
 package com.vitrinapos.server
 
+import com.vitrinapos.net.*
 import com.vitrinapos.AppInfo
 import com.vitrinapos.data.AppSettings
 import com.vitrinapos.data.BusinessType
@@ -399,6 +400,19 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 if (bytes.size > 8 * 1024 * 1024) throw ApiError(HttpStatusCode.PayloadTooLarge, "La foto pesa demasiado (máximo 8 MB)")
                 File(s.tenants.repo(ctx.claims.business).imagesDir, name).writeBytes(bytes)
                 call.respond(Message(message = "Foto guardada"))
+            }
+
+            // ---------- Pasar los datos de un equipo a la nube ----------
+            post("/migrar") {
+                // Solo el dueño con su correo, y solo sobre un negocio recién creado (no pisa datos de la nube).
+                val c = call.bearer()?.let { Secure.verify(s.config.tokenSecret, it) }?.takeIf { it.kind == "dueño" }
+                    ?: throw ApiError(HttpStatusCode.Unauthorized, "Entra con tu correo y contraseña")
+                if (!s.tenants.isFresh(c.business)) throw ApiError(HttpStatusCode.Conflict, "Este negocio ya tiene datos en la nube: no se pueden reemplazar")
+                val size = call.request.header("Content-Length")?.toLongOrNull() ?: throw ApiError(HttpStatusCode.LengthRequired, "Falta el tamaño del archivo")
+                if (size > 512L * 1024 * 1024) throw ApiError(HttpStatusCode.PayloadTooLarge, "La base es demasiado grande (máximo 512 MB)")
+                s.tenants.replaceWith(c.business, call.receiveChannel().toByteArray())
+                s.tenants.repo(c.business).applyLocal(Op.LogEvent("Pasó los datos de un equipo a la nube", ""), "Dueño", "Nube")
+                call.respond(Message(message = "Datos subidos"))
             }
 
             // ---------- Equipos ----------

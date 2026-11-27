@@ -278,7 +278,7 @@ private fun CartBar(app: AppState, modifier: Modifier) {
     ) {
         Row(Modifier.padding(start = 6.dp, end = 16.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { confirmClear = true }) {
-                Icon(Icons.Rounded.DeleteOutline, "Vaciar carrito", tint = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.8f))
+                Icon(Icons.Rounded.DeleteOutline, "Vaciar carrito", tint = androidx.compose.ui.graphics.Color(0xFFFF5C5C), modifier = Modifier.size(26.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text("${app.cartCount.fmtQty()} artículos", color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.7f), fontSize = 12.sp)

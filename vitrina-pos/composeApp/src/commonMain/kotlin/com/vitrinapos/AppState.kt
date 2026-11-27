@@ -183,6 +183,20 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     /** Si el módulo de la pantalla está encendido en Configuración → Módulos. */
     fun moduleOn(screen: Screen): Boolean {
+        // En la nube, además, el plan del negocio dice qué módulos tiene.
+        graph.cloud?.plan?.value?.let { p ->
+            val key = when (screen) {
+                Screen.Taller, is Screen.RepairReceive, is Screen.RepairDetail, is Screen.RepairDeliver, Screen.RepairStatuses -> "taller"
+                Screen.Quotes, is Screen.QuoteEditor -> "cotizaciones"
+                Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> "etiquetas"
+                is Screen.ProductUnits, Screen.ImeiSearch -> "imei"
+                Screen.Inventory, Screen.Purchases, is Screen.PurchaseDetail, Screen.StockCount, is Screen.StockCountDetail, is Screen.SaleReturn -> "inventario"
+                Screen.Activity -> "actividad"
+                Screen.Fiscal, Screen.FiscalEmitter, Screen.FiscalCert, Screen.FiscalDgii, Screen.FiscalSequences -> "facturacion"
+                else -> null
+            }
+            if (key != null && key !in p.modules) return false
+        }
         val s = repo.settings.value
         return when (screen) {
             Screen.Taller, is Screen.RepairReceive, is Screen.RepairDetail, is Screen.RepairDeliver, Screen.RepairStatuses -> s.modTaller
@@ -201,6 +215,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
     }
 
     fun logout() {
+        graph.cloud?.logoutUser()
         clearCart()
         stack.clear()
         tab = Screen.Home

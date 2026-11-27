@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -83,7 +84,7 @@ private fun BusinessType.icon(): ImageVector = when (this) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OnboardingScreen(onConnect: () -> Unit) {
+fun OnboardingScreen(onConnect: () -> Unit, onCloud: (CloudMode) -> Unit = {}) {
     val app = LocalAppState.current
     val scope = com.vitrinapos.ui.components.rememberSafeScope()
     val start = app.settingsNow
@@ -167,6 +168,11 @@ fun OnboardingScreen(onConnect: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp),
                     ) { Text("Continuar", fontSize = 16.sp) }
                     TextButton(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Text("¿Ya tienes Vitrina POS en otro equipo? Conectarme a él") }
+                    if (app.graph.cloudAvailable) Text("Trabajar en la nube (varios equipos, desde cualquier lugar)", fontSize = 13.sp, color = AppTheme.extra.muted, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    if (app.graph.cloudAvailable) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = { onCloud(CloudMode.SIGNUP) }, Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Crear cuenta", maxLines = 1) }
+                        OutlinedButton(onClick = { onCloud(CloudMode.LOGIN) }, Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Entrar", maxLines = 1) }
+                    }
                 }
                 1 -> {
                     Text("¿Qué tipo de negocio tienes?", style = MaterialTheme.typography.headlineSmall)

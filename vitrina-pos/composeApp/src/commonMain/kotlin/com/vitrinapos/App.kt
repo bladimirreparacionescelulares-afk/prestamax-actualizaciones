@@ -122,6 +122,13 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
             val current = app.user
             var unlocked by remember { mutableStateOf(false) }
             var connecting by remember { mutableStateOf(false) }
+            var cloudMode by remember { mutableStateOf<com.vitrinapos.ui.screens.CloudMode?>(null) }
+            // Plan de la nube: al cambiar, se vuelven a revisar los módulos permitidos.
+            graph.cloud?.plan?.collectAsState()
+            // La sesión del usuario venció en la nube y no se pudo renovar: se pide el PIN otra vez.
+            LaunchedEffect(graph.cloud) {
+                graph.cloud?.needPin?.collect { app.lockNow(); app.toast("Vuelve a escribir tu PIN") }
+            }
             val activeUsers = users.filter { it.active == 1L }
             // Si cambian los datos del usuario (rol, activo) se usan los nuevos; si lo desactivan, sale.
             LaunchedEffect(users) {
@@ -130,8 +137,9 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
             }
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 when {
+                    cloudMode != null -> com.vitrinapos.ui.screens.CloudAccountScreen(cloudMode!!, onClose = { cloudMode = null })
                     connecting -> NetworkScreen(onClose = { connecting = false })
-                    !settings.onboarded -> WelcomeScreen(onConnect = { connecting = true })
+                    !settings.onboarded -> WelcomeScreen(onConnect = { connecting = true }, onCloud = { cloudMode = it })
                     activeUsers.isNotEmpty() && current == null -> LoginScreen(activeUsers)
                     activeUsers.isEmpty() && settings.pin.isNotBlank() && !unlocked -> LockScreen(settings.pin) { unlocked = true }
                     else -> {

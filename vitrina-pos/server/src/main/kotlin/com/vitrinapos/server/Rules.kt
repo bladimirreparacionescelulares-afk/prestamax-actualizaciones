@@ -1,5 +1,6 @@
 package com.vitrinapos.server
 
+import com.vitrinapos.net.*
 import com.vitrinapos.data.Op
 import com.vitrinapos.data.Permission
 import com.vitrinapos.data.Permissions
@@ -24,17 +25,6 @@ object Modules {
 /** Estado del pago de un negocio. */
 enum class PlanState { TRIAL, ACTIVE, GRACE, READ_ONLY, SUSPENDED }
 
-@Serializable
-data class Entitlements(
-    val plan: String,
-    val planName: String,
-    val state: String,
-    /** Hasta cuándo puede vender sin pagar (fin de la prueba o del periodo pagado, más la gracia). */
-    val until: Long?,
-    val modules: List<String>,
-    val maxDevices: Int,
-    val maxUsers: Int,
-)
 
 object Rules {
     const val GRACE_DAYS = 7

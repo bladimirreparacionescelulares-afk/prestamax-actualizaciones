@@ -1,5 +1,6 @@
 package com.vitrinapos.server
 
+import com.vitrinapos.net.*
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -77,6 +78,46 @@ class Tenants(private val root: File, private val masterKey: ByteArray, private 
     }
 
     override fun close() = synchronized(open) { open.values.forEach { runCatching { it.close() } }; open.clear() }
+
+    /** ¿El negocio está recién creado (sin productos ni ventas)? Solo entonces se puede reemplazar con los datos de un equipo. */
+    fun isFresh(businessId: Long): Boolean {
+        val r = repo(businessId)
+        return r.db.saleQueries.selectRecent(1).executeAsList().isEmpty() && r.db.productQueries.selectActive().executeAsList().isEmpty()
+    }
+
+    /**
+     * "Pasar mis datos a la nube": reemplaza la base del negocio por la que sube un equipo.
+     * Se revisa que sea una base de Vitrina POS, se pone al día su esquema, se quita lo propio de aquel equipo
+     * y se anota cada fila para que los equipos de la nube la reciban.
+     */
+    fun replaceWith(businessId: Long, bytes: ByteArray) {
+        require(bytes.size > 100 && String(bytes, 0, 15, Charsets.US_ASCII) == "SQLite format 3") { "El archivo no es una base de Vitrina POS" }
+        val dir = dir(businessId)
+        val tmp = File(dir, "subida.db")
+        tmp.writeBytes(bytes)
+        try {
+            JdbcSqliteDriver("jdbc:sqlite:${tmp.path}", Properties(), VitrinaDb.Schema).use { d ->
+                fun run(sql: String) = d.execute(null, sql, 0)
+                // Debe tener las tablas de la app.
+                d.executeQuery(null, "SELECT count(*) FROM product", { c -> c.next(); QueryResult.Value(c.getLong(0)) }, 0)
+                listOf("meta", "outbox", "appliedOp", "device", "changeLog").forEach { run("DELETE FROM $it") }
+                com.vitrinapos.net.RowCodec.tables.values.forEach { t ->
+                    run("INSERT INTO changeLog(tbl, rowKey) SELECT '${t.name}', ${t.key} FROM ${t.name}")
+                }
+                run("INSERT INTO meta(key, content) VALUES ('epoch', '${Secure.token(9)}')")
+            }
+        } catch (e: Exception) {
+            tmp.delete()
+            throw IllegalArgumentException("El archivo no es una base de Vitrina POS válida: ${e.message}")
+        }
+        synchronized(open) {
+            open.remove(businessId)?.let { runCatching { it.close() } }
+            val db = File(dir, "negocio.db")
+            listOf("-wal", "-shm", "-journal").forEach { File(db.path + it).delete() }
+            if (!tmp.renameTo(db)) { tmp.copyTo(db, overwrite = true); tmp.delete() }
+        }
+        log.info("Negocio {}: datos subidos desde un equipo", businessId)
+    }
 
     // ---------- Respaldos ----------
 

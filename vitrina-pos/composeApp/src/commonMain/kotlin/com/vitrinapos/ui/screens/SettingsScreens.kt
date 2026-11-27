@@ -112,6 +112,7 @@ fun MoreScreen() {
     val netText = when (role["role"]) {
         com.vitrinapos.data.NetRole.SERVER -> "Equipo principal"
         com.vitrinapos.data.NetRole.CLIENT -> "Conectado"
+        com.vitrinapos.data.NetRole.CLOUD -> "En la nube"
         else -> "Este equipo trabaja solo"
     }
     val clients by app.repo.clients.collectAsState()
@@ -132,7 +133,7 @@ fun MoreScreen() {
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
         add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
         add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))
-        if (admin && app.graph.client == null) add(MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings))
+        if (admin && app.graph.client == null && app.graph.cloud == null) add(MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings))
         add(MoreItem(Icons.Rounded.Settings, "Configuración", if (admin) "Negocio, impuestos" else "Impresora de este equipo", Screen.Settings))
     }.filter { app.allows(it.screen) }
     Column(Modifier.fillMaxSize()) {
