@@ -279,7 +279,7 @@ fun BranchDetailScreen(id: Long, embedded: Boolean = false) {
                     }
                 }
             }
-            SectionTitle("Existencia baja en esta sucursal")
+            SectionTitle("Existencia baja en esta sucursal", action = if (id != app.repo.branchId && app.allows(Screen.NewTransfer)) "Transferir" else null, onAction = { app.open(Screen.NewTransfer) })
             if (low.isEmpty()) Text("Todo bien.", fontSize = 13.sp, color = AppTheme.extra.muted)
             low.forEach { p ->
                 AppCard {

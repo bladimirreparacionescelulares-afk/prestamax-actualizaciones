@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Checklist
@@ -153,6 +154,10 @@ fun InventoryScreen() {
                 if (canStock) add(Triple(Icons.Rounded.RemoveShoppingCart, "Merma", "Dañado, vencido, pérdida…") to { loss = true })
                 if (app.settings.modImei) add(Triple(Icons.Rounded.PhoneAndroid, "Buscar IMEI", "En existencia o vendido") to { app.open(Screen.ImeiSearch) })
                 if (canStock) add(Triple(Icons.Rounded.History, "Movimientos", "Todo lo que entra y sale") to { app.open(Screen.StockMoves) })
+                if (canStock) {
+                    val pending = app.repo.transfers.value.count { it.status == com.vitrinapos.data.TransferStatus.IN_TRANSIT && it.toBranch == app.repo.branchId }
+                    add(Triple(Icons.Rounded.LocalShipping, "Transferencias", if (pending > 0) "$pending por recibir aquí" else "Pasar mercancía a otra sucursal") to { app.open(Screen.Transfers) })
+                }
             })
             val negative = tracked.filter { it.stock < 0 }
             if (negative.isNotEmpty()) {

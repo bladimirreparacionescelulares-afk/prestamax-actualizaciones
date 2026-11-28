@@ -28,13 +28,14 @@ import kotlin.test.assertTrue
 class SessionParityTest {
 
     /** Un equipo que trabaja con la nube (sin conexión en la prueba), con María como administradora. */
-    private fun cloudGraph(): AppGraph {
+    private fun cloudGraph(extraBranch: String? = null): AppGraph {
         System.setProperty("vitrina.dataDir", Files.createTempDirectory("paridad").toString())
         val p = DesktopPlatform()
         Repository(p).apply {
             runBlocking {
                 saveSettings(settings.value.copy(businessName = "Repuestos Sánchez", onboarded = true))
                 saveUser(null, "María", "2468", Roles.ADMIN, true)
+                extraBranch?.let { saveBranch(null, it, "Calle del Sol #12", "809-555-0199") }
             }
             metaPut("role", NetRole.CLOUD)
             metaPut("cloud.device", "eq_prueba")
@@ -128,6 +129,32 @@ class SessionParityTest {
             }
             graph.repo.close()
         }
+    }
+
+    @Test
+    fun transferenciasYReportesPorSucursalEnLosDos() {
+        for (phone in listOf(true, false)) {
+            val graph = cloudGraph("Sucursal Norte")
+            run(graph, phone = phone, { it.selectTab(Screen.More); it.open(Screen.Transfers) }) {
+                onNodeWithText("Nueva transferencia").assertExists()
+            }
+            run(graph, phone = phone, { it.selectTab(Screen.More); it.open(Screen.Reports) }) {
+                onNodeWithText("Todas las sucursales").assertExists()
+                onNodeWithText("Por sucursal").assertExists()
+            }
+            graph.repo.close()
+        }
+    }
+
+    @Test
+    fun ticketConLosDatosDeLaSucursal() {
+        val graph = cloudGraph("Sucursal Norte")
+        val b = graph.repo.db.branchQueries.selectAll().executeAsList().first { it.name == "Sucursal Norte" }
+        val norte = b.id
+        val sale = com.vitrinapos.db.Sale(1, 7, null, "", 100000, 0, 15254, 100000, 50000, 1, "Efectivo", 100000, 0, "OK", null, 0, "d", null, "María", norte)
+        val text = com.vitrinapos.print.Ticket.forSale(graph.repo.settings.value, sale, emptyList(), branch = b).preview()
+        assertTrue("Sucursal Norte" in text && "Calle del Sol #12" in text && "809-555-0199" in text, text)
+        graph.repo.close()
     }
 
     @Test

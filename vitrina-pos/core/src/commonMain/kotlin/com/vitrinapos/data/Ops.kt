@@ -191,6 +191,18 @@ sealed class Op {
     @Serializable @SerialName("userBranches")
     data class SetUserBranches(val id: Long, val branches: String) : Op()
 
+    /** Envía mercancía de la sucursal de este equipo a otra. */
+    @Serializable @SerialName("transferSend")
+    data class SendTransfer(val toBranch: Long, val lines: List<TransferLine>, val note: String, val user: String) : Op()
+
+    /** Recibe una transferencia en la sucursal de destino. [received]: lo que llegó de cada artículo (vacío = todo). */
+    @Serializable @SerialName("transferReceive")
+    data class ReceiveTransfer(val id: Long, val received: Map<Long, Double>, val note: String, val user: String) : Op()
+
+    /** Cancela una transferencia que todavía no se recibe: la mercancía vuelve a la sucursal de origen. */
+    @Serializable @SerialName("transferCancel")
+    data class CancelTransfer(val id: Long, val reason: String, val user: String) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 

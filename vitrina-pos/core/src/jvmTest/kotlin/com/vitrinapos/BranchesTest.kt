@@ -8,6 +8,9 @@ import com.vitrinapos.data.ProductDraft
 import com.vitrinapos.data.Repository
 import com.vitrinapos.data.Roles
 import com.vitrinapos.data.RuleException
+import com.vitrinapos.data.TransferLine
+import com.vitrinapos.data.TransferStatus
+import com.vitrinapos.data.UnitStatus
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import kotlin.test.Test
@@ -96,6 +99,68 @@ class BranchesTest {
         assertTrue(r.worksAt(users.first { it.id == admin }, MAIN_BRANCH))
         assertEquals(listOf("Ana", "Bladimir"), r.db.branchQueries.usersOfBranch(norte.toString()).executeAsList().map { it.name })
         assertEquals(listOf("Bladimir"), r.db.branchQueries.usersOfBranch(MAIN_BRANCH.toString()).executeAsList().filter { it.branches.isNotEmpty() || it.role == Roles.ADMIN }.map { it.name })
+        r.close()
+    }
+
+    @Test
+    fun transferenciasEntreSucursales(): Unit = runBlocking {
+        val r = repo()
+        val pid = r.saveProduct(draft("Cargador USB-C", "CRG-1", 20.0))
+        val norte = r.saveBranch(null, "Norte", "", "")
+        // Desde la Principal se envían 10 a Norte: salen ya de la Principal, Norte todavía no los tiene.
+        assertFailsWith<RuleException> { r.sendTransfer(MAIN_BRANCH, listOf(TransferLine(pid, 1.0)), "") }
+        assertFailsWith<RuleException> { r.sendTransfer(norte, listOf(TransferLine(pid, 25.0)), "") }
+        val t1 = r.sendTransfer(norte, listOf(TransferLine(pid, 10.0)), "Pedido del lunes")
+        assertEquals(10.0, r.stockByBranch(pid)[MAIN_BRANCH]); assertEquals(0.0, r.stockByBranch(pid)[norte] ?: 0.0)
+        assertEquals(10.0, r.db.productQueries.selectById(pid).executeAsOne().stock, "en camino no cuenta en ninguna")
+        // Se recibe en Norte, no en la Principal.
+        assertFailsWith<RuleException> { r.receiveTransfer(t1) }
+        r.setThisDeviceBranch(norte)
+        r.receiveTransfer(t1)
+        assertEquals(mapOf(MAIN_BRANCH to 10.0, norte to 10.0), r.stockByBranch(pid))
+        assertEquals(TransferStatus.RECEIVED, r.db.transferQueries.selectById(t1).executeAsOne().status)
+        assertFailsWith<RuleException> { r.receiveTransfer(t1) }
+
+        // Llegó diferente: de 4 llegaron 3; hay que decir qué pasó.
+        r.setThisDeviceBranch(MAIN_BRANCH)
+        val t2 = r.sendTransfer(norte, listOf(TransferLine(pid, 4.0)), "")
+        r.setThisDeviceBranch(norte)
+        val item = r.transferItems(t2).single()
+        assertFailsWith<RuleException> { r.receiveTransfer(t2, mapOf(item.id to 3.0), "") }
+        r.receiveTransfer(t2, mapOf(item.id to 3.0), "Una caja vino rota")
+        assertEquals(mapOf(MAIN_BRANCH to 6.0, norte to 13.0), r.stockByBranch(pid))
+        assertEquals(TransferStatus.DIFFERENT, r.db.transferQueries.selectById(t2).executeAsOne().status)
+
+        // Cancelar: solo la que envió y mientras esté en camino; todo vuelve.
+        val t3 = r.sendTransfer(MAIN_BRANCH, listOf(TransferLine(pid, 2.0)), "")
+        assertEquals(11.0, r.stockByBranch(pid)[norte])
+        assertFailsWith<RuleException> { r.cancelTransfer(t3, "") }
+        r.cancelTransfer(t3, "Me equivoqué")
+        assertEquals(mapOf(MAIN_BRANCH to 6.0, norte to 13.0), r.stockByBranch(pid))
+
+        // Kardex de Norte: entradas por transferencia y salida/regreso de la cancelada.
+        val (_, moves) = r.kardex(pid, 0, Long.MAX_VALUE)
+        assertTrue(moves.any { it.type == com.vitrinapos.data.MoveType.TRANSFER_IN && it.qty == 10.0 })
+        assertEquals(13.0, moves.last().balance)
+        assertTrue(r.activity(0, Long.MAX_VALUE).any { it.action == "Recibió una transferencia con diferencia" })
+        r.close()
+    }
+
+    @Test
+    fun transferenciaConImei(): Unit = runBlocking {
+        val r = repo()
+        val pid = r.saveProduct(draft("Samsung A15", "A15", 0.0).copy(serialized = true))
+        r.addUnits(pid, listOf("IMEI-1", "IMEI-2", "IMEI-3"))
+        val norte = r.saveBranch(null, "Norte", "", "")
+        assertFailsWith<RuleException> { r.sendTransfer(norte, listOf(TransferLine(pid, 2.0, listOf("IMEI-1"))), "") }
+        val t = r.sendTransfer(norte, listOf(TransferLine(pid, 2.0, listOf("IMEI-1", "IMEI-2"))), "")
+        assertEquals(UnitStatus.IN_TRANSIT, r.db.inventoryQueries.unitBySerial("IMEI-1").executeAsList().single().status)
+        r.setThisDeviceBranch(norte)
+        r.receiveTransfer(t)
+        val u = r.db.inventoryQueries.unitBySerial("IMEI-2").executeAsList().single()
+        assertEquals(UnitStatus.AVAILABLE, u.status)
+        assertEquals(norte, u.branchId)
+        assertEquals(mapOf(MAIN_BRANCH to 1.0, norte to 2.0), r.stockByBranch(pid))
         r.close()
     }
 

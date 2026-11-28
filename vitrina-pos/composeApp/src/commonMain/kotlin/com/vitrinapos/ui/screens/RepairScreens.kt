@@ -184,7 +184,7 @@ suspend fun AppState.printRepairLabel(r: RepairOrder, measurer: TextMeasurer, co
     }
 }
 
-fun AppState.printRepairReceipt(r: RepairOrder) = print(Ticket.forRepair(settingsNow, r)) { open(Screen.Settings) }
+fun AppState.printRepairReceipt(r: RepairOrder) = print(Ticket.forRepair(settingsNow, r, repo.branchById(r.branchId))) { open(Screen.Settings) }
 
 /** Abre la orden si el texto es un código REP-0042. Devuelve true si lo era. */
 suspend fun AppState.openRepairByCode(text: String): Boolean {
@@ -703,7 +703,7 @@ fun RepairDetailScreen(id: Long) {
         val sid = r?.saleId
         value = if (r != null && sid != null && RepairStatus.isClosed(r.status)) {
             val sale = app.repo.saleById(sid)
-            sale?.let { Ticket.forSale(s, it, app.repo.saleItems(sid), repair = r, ecf = app.repo.ecfForSale(sid).firstOrNull { d -> d.type != 34L }) }
+            sale?.let { Ticket.forSale(s, it, app.repo.saleItems(sid), repair = r, ecf = app.repo.ecfForSale(sid).firstOrNull { d -> d.type != 34L }, branch = app.repo.branchById(it.branchId)) }
         } else null
     }
     if (r == null) {
@@ -839,7 +839,7 @@ fun RepairDetailScreen(id: Long) {
                     Icon(Icons.Rounded.Receipt, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Recibo")
                 }
                 OutlinedButton(
-                    onClick = { app.platform.shareText((deliveryTicket ?: Ticket.forRepair(s, r)).preview(), "${r.code} · ${r.clientName}") },
+                    onClick = { app.platform.shareText((deliveryTicket ?: Ticket.forRepair(s, r, app.repo.branchById(r.branchId))).preview(), "${r.code} · ${r.clientName}") },
                     modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp),
                 ) { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Compartir") }
             }
@@ -874,7 +874,7 @@ fun RepairDetailScreen(id: Long) {
             title = { Text(if (deliveryTicket != null) "Entrega ${r.code}" else "Comprobante ${r.code}") },
             text = {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color.White).verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
-                    TicketPreview(deliveryTicket ?: Ticket.forRepair(s, r), Modifier.padding(12.dp))
+                    TicketPreview(deliveryTicket ?: Ticket.forRepair(s, r, app.repo.branchById(r.branchId)), Modifier.padding(12.dp))
                 }
             },
             confirmButton = { TextButton(onClick = { receipt = false; deliveryTicket?.let { app.print(it) } ?: app.printRepairReceipt(r) }) { Icon(Icons.Rounded.Print, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Imprimir") } },

@@ -477,7 +477,7 @@ fun CheckoutScreen() {
             if (print) {
                 val sale = app.repo.saleById(saleId)
                 val ecf = app.repo.ecfForSale(saleId).firstOrNull { it.type != 34L }
-                if (sale != null) app.print(Ticket.forSale(app.settingsNow, sale, app.repo.saleItems(saleId), ecf = ecf))
+                if (sale != null) app.print(Ticket.forSale(app.settingsNow, sale, app.repo.saleItems(saleId), ecf = ecf, branch = app.repo.branchById(sale.branchId)))
             }
             app.replace(Screen.SaleDetail(saleId))
         }

@@ -278,6 +278,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.StockMoves -> StockMovesScreen()
         Screen.Network -> NetworkScreen()
         Screen.Branches -> com.vitrinapos.ui.screens.BranchesScreen()
+        Screen.Transfers -> com.vitrinapos.ui.screens.TransfersScreen()
+        Screen.NewTransfer -> com.vitrinapos.ui.screens.NewTransferScreen()
         is Screen.BranchDetail -> com.vitrinapos.ui.screens.BranchDetailScreen(screen.id)
         Screen.Users -> UsersScreen()
         Screen.Labels -> LabelsScreen()

@@ -83,6 +83,21 @@ data class PurchaseLine(val productId: Long, val qty: Double, val unitCost: Long
 @Serializable
 data class CountLine(val productId: Long, val counted: Double, val expected: Double)
 
+/** Un artículo de una transferencia entre sucursales (con sus IMEI si se controlan por unidad). */
+@Serializable
+data class TransferLine(val productId: Long, val qty: Double, val serials: List<String> = emptyList())
+
+/** Estado de una transferencia entre sucursales. */
+object TransferStatus {
+    const val IN_TRANSIT = "EN_CAMINO"
+    const val RECEIVED = "RECIBIDA"
+    const val DIFFERENT = "DIFERENTE"
+    const val CANCELLED = "CANCELADA"
+    fun label(s: String) = when (s) {
+        IN_TRANSIT -> "En camino"; RECEIVED -> "Recibida"; DIFFERENT -> "Llegó diferente"; CANCELLED -> "Cancelada"; else -> s
+    }
+}
+
 @Serializable
 data class ReturnLine(val saleItemId: Long, val qty: Double, val restock: Boolean = true, val serials: List<String> = emptyList())
 
@@ -92,7 +107,10 @@ object UnitStatus {
     const val SOLD = "VENDIDO"
     const val LOST = "MERMA"
     const val RETURNED = "DEVUELTO_PROVEEDOR"
-    fun label(s: String) = when (s) { AVAILABLE -> "En existencia"; SOLD -> "Vendido"; LOST -> "Merma"; RETURNED -> "Devuelto al proveedor"; else -> s }
+    const val IN_TRANSIT = "EN_CAMINO"
+    fun label(s: String) = when (s) {
+        AVAILABLE -> "En existencia"; SOLD -> "Vendido"; LOST -> "Merma"; RETURNED -> "Devuelto al proveedor"; IN_TRANSIT -> "En camino a otra sucursal"; else -> s
+    }
 }
 
 /** Motivos de merma. */
@@ -175,7 +193,10 @@ object MoveType {
     const val LOSS = "MERMA"
     const val COUNT = "CONTEO"
     const val RETURN = "DEVOLUCION"
+    const val TRANSFER_OUT = "TRASLADO_SALIDA"
+    const val TRANSFER_IN = "TRASLADO_ENTRADA"
     fun label(t: String) = when (t) {
+        TRANSFER_OUT -> "Enviado a otra sucursal"; TRANSFER_IN -> "Recibido de otra sucursal"
         SALE -> "Venta"; ENTRY -> "Entrada"; ADJUST -> "Ajuste"; VOID -> "Anulación"; INITIAL -> "Stock inicial"
         PURCHASE -> "Compra"; PURCHASE_VOID -> "Compra anulada"; LOSS -> "Merma"; COUNT -> "Conteo físico"; RETURN -> "Devolución"
         else -> t
@@ -258,7 +279,7 @@ class Repository(val platform: CorePlatform) {
     val role: String get() = meta.value["role"] ?: metaGet("role") ?: NetRole.SOLO
 
     /** Sucursal en la que está este equipo (2.2). Sin elegir, la Principal. */
-    val branchId: Long get() = (meta.value["branchId"] ?: metaGet("branchId"))?.toLongOrNull() ?: MAIN_BRANCH
+    val branchId: Long get() = metaGet("branchId")?.toLongOrNull() ?: MAIN_BRANCH
 
     /** Sucursal de la operación que se está aplicando: la del equipo que la hizo. */
     @Volatile private var opBranch: Long = MAIN_BRANCH
@@ -652,6 +673,9 @@ class Repository(val platform: CorePlatform) {
                     is Op.LogEvent -> JsonNull
                     is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
                     is Op.SaveBranch -> JsonPrimitive(saveBranchLocal(op, now))
+                    is Op.SendTransfer -> JsonPrimitive(sendTransferLocal(op, now))
+                    is Op.ReceiveTransfer -> { receiveTransferLocal(op, now); JsonNull }
+                    is Op.CancelTransfer -> { cancelTransferLocal(op, now); JsonNull }
                     is Op.SetUserBranches -> {
                         val ids = op.branches.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
                         driver.execute(null, "UPDATE appUser SET branches = ? WHERE id = ?", 2) { bindString(0, ids.joinToString(",")); bindLong(1, op.id) }
@@ -688,6 +712,103 @@ class Repository(val platform: CorePlatform) {
         // El saldo del kardex es el de la sucursal donde pasó el movimiento.
         db.stockMoveQueries.insert(productId, type, qty, note, at, user, unitCost ?: p?.cost ?: 0, stockAt(productId, branch))
         tagBranch("stockMove", lastRowId(), branch)
+    }
+
+    private fun branchName(id: Long) = db.branchQueries.selectById(id).executeAsOneOrNull()?.name ?: "otra sucursal"
+
+    /** Envía mercancía a otra sucursal: sale de esta ahora y queda "En camino" (dentro de una transacción). */
+    private fun sendTransferLocal(op: Op.SendTransfer, now: Long): Long {
+        if (op.toBranch == opBranch) throw RuleException("Elige otra sucursal: la mercancía ya está en esta")
+        val dest = db.branchQueries.selectById(op.toBranch).executeAsOneOrNull()?.takeIf { it.active == 1L }
+            ?: throw RuleException("La sucursal de destino no existe o está desactivada")
+        val lines = op.lines.filter { it.qty > 0 }
+        if (lines.isEmpty()) throw RuleException("Agrega lo que vas a enviar")
+        val seen = HashSet<String>()
+        val products = lines.groupBy { it.productId }.map { (pid, ls) ->
+            val p = db.productQueries.selectById(pid).executeAsOneOrNull()?.takeIf { it.active == 1L } ?: throw RuleException("Un producto de la transferencia ya no existe")
+            if (p.trackStock != 1L) throw RuleException("${p.fullName} no lleva existencias")
+            val want = ls.sumOf { it.qty }
+            val here = stockAt(pid)
+            if (want > here + 1e-9) throw RuleException("De ${p.fullName} solo hay ${here.fmtQty()} en esta sucursal")
+            if (p.serialized == 1L) ls.forEach { l ->
+                val sn = cleanSerials(l.serials)
+                if (sn.size.toDouble() != l.qty) throw RuleException("${p.fullName}: elige el IMEI de cada unidad")
+                sn.forEach { x ->
+                    if (!seen.add(x)) throw RuleException("El IMEI $x está repetido")
+                    val u = db.inventoryQueries.availableUnit(x).executeAsOneOrNull()
+                    if (u == null || u.productId != pid || u.branchId != opBranch) throw RuleException("El IMEI $x no está en existencia en esta sucursal")
+                }
+            }
+            pid to p
+        }.toMap()
+        val number = db.transferQueries.nextNumber().executeAsOne()
+        db.transferQueries.insert(number, opBranch, op.toBranch, TransferStatus.IN_TRANSIT, op.note.trim(), op.user, now)
+        val id = db.transferQueries.lastId().executeAsOne()
+        val text = "Transferencia #$number a ${dest.name}"
+        for (l in lines) {
+            val p = products.getValue(l.productId)
+            val sn = if (p.serialized == 1L) cleanSerials(l.serials) else emptyList()
+            db.transferQueries.insertItem(id, p.id, p.fullName, l.qty, sn.joinToString(","), p.cost)
+            addStockAt(p.id, -l.qty, now)
+            logMove(p.id, MoveType.TRANSFER_OUT, -l.qty, text, now, op.user)
+            sn.forEach { x -> db.inventoryQueries.availableUnit(x).executeAsOneOrNull()?.let { u ->
+                db.inventoryQueries.setUnitStatus(UnitStatus.IN_TRANSIT, null, text, now, u.id)
+            } }
+        }
+        return id
+    }
+
+    /** Recibe una transferencia en la sucursal de destino; lo que no llegó queda anotado (dentro de una transacción). */
+    private fun receiveTransferLocal(op: Op.ReceiveTransfer, now: Long) {
+        val t = db.transferQueries.selectById(op.id).executeAsOneOrNull() ?: throw RuleException("La transferencia no existe")
+        if (t.status != TransferStatus.IN_TRANSIT) throw RuleException("Esta transferencia ya está ${TransferStatus.label(t.status).lowercase()}")
+        if (t.toBranch != opBranch) throw RuleException("Esta transferencia se recibe en ${branchName(t.toBranch)}")
+        val items = db.transferQueries.items(op.id).executeAsList()
+        var different = false
+        for (it in items) {
+            val got = (op.received[it.id] ?: it.qty)
+            if (got < 0 || got > it.qty + 1e-9) throw RuleException("${it.name}: lo recibido debe estar entre 0 y ${it.qty.fmtQty()}")
+            if (got + 1e-9 < it.qty) different = true
+        }
+        if (different && op.note.isBlank()) throw RuleException("Escribe qué pasó con lo que no llegó")
+        val text = "Transferencia #${t.number} de ${branchName(t.fromBranch)}"
+        for (it in items) {
+            val got = op.received[it.id] ?: it.qty
+            db.transferQueries.setItemReceived(got, it.id)
+            if (got > 0) {
+                addStockAt(it.productId, got, now)
+                logMove(it.productId, MoveType.TRANSFER_IN, got, text, now, op.user, it.cost)
+            }
+            // IMEI: los que llegaron quedan en existencia aquí; los que no, como pérdida.
+            it.serials.split(',').filter { x -> x.isNotBlank() }.forEachIndexed { i, x ->
+                db.inventoryQueries.unitBySerial(x).executeAsList().firstOrNull { u -> u.status == UnitStatus.IN_TRANSIT }?.let { u ->
+                    if (i < got.toInt()) {
+                        db.inventoryQueries.setUnitStatus(UnitStatus.AVAILABLE, null, text, now, u.id)
+                        tagBranch("productUnit", u.id)
+                    } else db.inventoryQueries.setUnitStatus(UnitStatus.LOST, null, "No llegó: $text", now, u.id)
+                }
+            }
+        }
+        db.transferQueries.setReceived(if (different) TransferStatus.DIFFERENT else TransferStatus.RECEIVED, now, op.user, op.note.trim(), op.id)
+    }
+
+    /** Cancela una transferencia en camino: la mercancía vuelve a la sucursal de origen (dentro de una transacción). */
+    private fun cancelTransferLocal(op: Op.CancelTransfer, now: Long) {
+        val t = db.transferQueries.selectById(op.id).executeAsOneOrNull() ?: throw RuleException("La transferencia no existe")
+        if (t.status != TransferStatus.IN_TRANSIT) throw RuleException("Solo se cancela una transferencia que todavía no se recibe")
+        if (t.fromBranch != opBranch) throw RuleException("La cancela la sucursal que la envió (${branchName(t.fromBranch)})")
+        if (op.reason.isBlank()) throw RuleException("Escribe el motivo")
+        val text = "Transferencia #${t.number} cancelada · ${op.reason.trim()}"
+        for (it in db.transferQueries.items(op.id).executeAsList()) {
+            addStockAt(it.productId, it.qty, now, t.fromBranch)
+            logMove(it.productId, MoveType.TRANSFER_IN, it.qty, text, now, op.user, it.cost, branch = t.fromBranch)
+            it.serials.split(',').filter { x -> x.isNotBlank() }.forEach { x ->
+                db.inventoryQueries.unitBySerial(x).executeAsList().firstOrNull { u -> u.status == UnitStatus.IN_TRANSIT }?.let { u ->
+                    db.inventoryQueries.setUnitStatus(UnitStatus.AVAILABLE, null, text, now, u.id)
+                }
+            }
+        }
+        db.transferQueries.setStatus(TransferStatus.CANCELLED, op.id)
     }
 
     /** Crea o cambia una sucursal (dentro de una transacción). */
@@ -1022,6 +1143,13 @@ class Repository(val platform: CorePlatform) {
                         else -> "Cambió una sucursal" to op.name.trim()
                     }
                 }
+            is Op.SendTransfer -> "Envió una transferencia" to join("a ${branchName(op.toBranch)}", "${op.lines.sumOf { it.qty }.fmtQty()} und", op.note)
+            is Op.ReceiveTransfer -> db.transferQueries.selectById(op.id).executeAsOneOrNull()?.let { t ->
+                val items = db.transferQueries.items(op.id).executeAsList()
+                val diff = items.any { (op.received[it.id] ?: it.qty) + 1e-9 < it.qty }
+                (if (diff) "Recibió una transferencia con diferencia" else "Recibió una transferencia") to join("#${t.number} de ${branchName(t.fromBranch)}", op.note)
+            }
+            is Op.CancelTransfer -> db.transferQueries.selectById(op.id).executeAsOneOrNull()?.let { "Canceló una transferencia" to join("#${it.number}", op.reason) }
             is Op.SetUserBranches -> db.appUserQueries.selectById(op.id).executeAsOneOrNull()?.let { u ->
                 val names = op.branches.split(',').mapNotNull { it.trim().toLongOrNull() }.mapNotNull { db.branchQueries.selectById(it).executeAsOneOrNull()?.name }
                 "Cambió las sucursales de un usuario" to "${u.name}: " + names.ifEmpty { listOf("todas") }.joinToString(", ")
@@ -1595,6 +1723,32 @@ class Repository(val platform: CorePlatform) {
 
     /** Sucursales donde trabaja un usuario (vacío = todas). */
     suspend fun setUserBranches(userId: Long, branchIds: List<Long>) { run(Op.SetUserBranches(userId, branchIds.distinct().joinToString(","))) }
+
+    /** Transferencias (las más recientes primero). */
+    val transfers: StateFlow<List<com.vitrinapos.db.Transfer>> = db.transferQueries.selectAll().asFlow().mapToList(io)
+        .stateIn(scope, SharingStarted.Eagerly, db.transferQueries.selectAll().executeAsList())
+
+    suspend fun transferItems(id: Long) = withContext(io) { db.transferQueries.items(id).executeAsList() }
+
+    /** Envía mercancía de la sucursal de este equipo a otra. Devuelve el id de la transferencia. */
+    suspend fun sendTransfer(toBranch: Long, lines: List<TransferLine>, note: String): Long = run(Op.SendTransfer(toBranch, lines, note.trim(), userName)).asId()
+
+    /** Recibe una transferencia. [received]: artículo → cantidad que llegó (vacío = llegó todo). */
+    suspend fun receiveTransfer(id: Long, received: Map<Long, Double> = emptyMap(), note: String = "") { run(Op.ReceiveTransfer(id, received, note.trim(), userName)) }
+
+    suspend fun cancelTransfer(id: Long, reason: String) { run(Op.CancelTransfer(id, reason.trim(), userName)) }
+
+    /** Existencia de todos los productos por sucursal (sucursal → producto → cantidad), para los reportes. */
+    suspend fun stockAllBranches(): Map<Long, Map<Long, Double>> = withContext(io) {
+        val rows = db.branchQueries.stockAll().executeAsList()
+        val withRows = rows.mapTo(HashSet()) { it.productId }
+        val out = rows.groupBy { it.branchId }.mapValues { (_, l) -> l.associate { it.productId to it.qty } }.toMutableMap()
+        val legacy = db.productQueries.selectActive().executeAsList().filter { it.id !in withRows }.associate { it.id to it.stock }
+        if (legacy.isNotEmpty()) out[MAIN_BRANCH] = (out[MAIN_BRANCH] ?: emptyMap()) + legacy
+        out
+    }
+
+    fun branchById(id: Long): Branch? = branches.value.firstOrNull { it.id == id }
 
     /** Sucursales asignadas a un usuario (vacío = todas). */
     fun branchesOf(user: AppUser): List<Long> = user.branches.split(',').mapNotNull { it.trim().toLongOrNull() }

@@ -1,0 +1,27 @@
+-- Versión 9 -> 10: transferencias entre sucursales.
+CREATE TABLE transfer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  fromBranch INTEGER NOT NULL,
+  toBranch INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  receivedAt INTEGER,
+  receivedBy TEXT NOT NULL DEFAULT '',
+  receiveNote TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE transferItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transferId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  received REAL,
+  serials TEXT NOT NULL DEFAULT '',
+  cost INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX transferItem_transfer ON transferItem(transferId);

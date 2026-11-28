@@ -138,10 +138,10 @@ class Ticket(val width: Int) {
 
         fun forSale(
             s: AppSettings, sale: Sale, items: List<SaleItem>, reprint: Boolean = false, repair: com.vitrinapos.db.RepairOrder? = null,
-            ecf: com.vitrinapos.db.EcfDoc? = null,
+            ecf: com.vitrinapos.db.EcfDoc? = null, branch: com.vitrinapos.db.Branch? = null,
         ): Ticket {
             val t = Ticket(s.ticketChars)
-            header(t, s, fiscal = ecf != null)
+            header(t, s, fiscal = ecf != null, branch = branch)
             t.separator()
             if (ecf != null) fiscalHead(t, ecf)
             if (repair != null) {
@@ -203,10 +203,10 @@ class Ticket(val width: Int) {
         /** Corte de caja al cerrar. */
         fun forCashClose(
             s: AppSettings, opened: Long, closed: Long, sm: com.vitrinapos.data.Repository.CashSummary, counted: Long,
-            user: String, notes: String, bills: List<Pair<Long, Int>> = emptyList(),
+            user: String, notes: String, bills: List<Pair<Long, Int>> = emptyList(), branch: com.vitrinapos.db.Branch? = null,
         ): Ticket {
             val t = Ticket(s.ticketChars)
-            header(t, s)
+            header(t, s, branch = branch)
             t.separator()
             t.center("CORTE DE CAJA", Style.Bold)
             t.pair("Apertura", Time.dateTime(opened))
@@ -236,10 +236,10 @@ class Ticket(val width: Int) {
             return t
         }
 
-        fun forRepair(s: AppSettings, r: com.vitrinapos.db.RepairOrder): Ticket {
+        fun forRepair(s: AppSettings, r: com.vitrinapos.db.RepairOrder, branch: com.vitrinapos.db.Branch? = null): Ticket {
             val t = Ticket(s.ticketChars)
             val sym = s.currencySymbol
-            header(t, s)
+            header(t, s, branch = branch)
             t.separator()
             t.center("COMPROBANTE DE RECEPCIÓN", Style.Bold)
             t.center(com.vitrinapos.data.repairCode(r.number), Style.Big)
@@ -292,16 +292,19 @@ class Ticket(val width: Int) {
             return t
         }
 
-        private fun header(t: Ticket, s: AppSettings, fiscal: Boolean = false) {
+        /** Encabezado. Con [branch], el nombre, la dirección y el teléfono de esa sucursal. */
+        private fun header(t: Ticket, s: AppSettings, fiscal: Boolean = false, branch: com.vitrinapos.db.Branch? = null) {
             t.center(s.businessName.ifBlank { "Mi Tienda" }, Style.Big)
+            if (branch != null && branch.id != com.vitrinapos.data.MAIN_BRANCH) t.center(branch.name, Style.Bold)
             if (s.businessTagline.isNotBlank()) t.center(s.businessTagline)
             // En un comprobante fiscal van la razón social y el RNC o la cédula del emisor.
             if (fiscal && s.fiscalName.isNotBlank() && s.fiscalName != s.businessName) t.center(s.fiscalName, Style.Bold)
-            val address = if (fiscal) s.fiscalAddress.ifBlank { s.address } else s.address
+            val address = if (fiscal) s.fiscalAddress.ifBlank { s.address } else branch?.address?.takeIf { it.isNotBlank() } ?: s.address
             if (address.isNotBlank()) t.center(address)
             val id = if (fiscal) s.fiscalRnc.ifBlank { s.taxId } else s.taxId
             val idLabel = if (com.vitrinapos.fiscal.TaxId.digits(id).length == 11) "Cédula" else "RNC"
-            val contact = listOfNotNull(s.phone.takeIf { it.isNotBlank() }?.let { "Tel. $it" }, id.takeIf { it.isNotBlank() }?.let { "$idLabel $it" })
+            val phone = branch?.phone?.takeIf { it.isNotBlank() } ?: s.phone
+            val contact = listOfNotNull(phone.takeIf { it.isNotBlank() }?.let { "Tel. $it" }, id.takeIf { it.isNotBlank() }?.let { "$idLabel $it" })
             if (contact.isNotEmpty()) t.center(contact.joinToString(" · "))
         }
 

@@ -90,6 +90,12 @@ object RowCodec {
         // Sucursales (2.2) y existencia de cada producto en cada sucursal.
         t("branch", "id" to L, "name" to S, "address" to S, "phone" to S, "active" to L, "createdAt" to L),
         t("branchStock", "key" to S, "productId" to L, "branchId" to L, "qty" to D, key = "key"),
+        // Transferencias entre sucursales (2.2b).
+        t(
+            "transfer", "id" to L, "number" to L, "fromBranch" to L, "toBranch" to L, "status" to S, "note" to S, "userName" to S,
+            "createdAt" to L, "receivedAt" to L, "receivedBy" to S, "receiveNote" to S,
+        ),
+        t("transferItem", "id" to L, "transferId" to L, "productId" to L, "name" to S, "qty" to D, "received" to D, "serials" to S, "cost" to L),
     ).associateBy { it.name }
 
     fun read(driver: SqlDriver, table: String, key: String): JsonObject? {

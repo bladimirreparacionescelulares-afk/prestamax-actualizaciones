@@ -102,6 +102,7 @@ fun HomeScreen() {
         ) {
             OfflineBanner()
             PlanBanner()
+            IncomingTransfersBanner()
             // Resumen del día (solo para quien puede ver ventas o reportes)
             if (app.can(com.vitrinapos.data.Permission.SALES_HISTORY) || app.can(com.vitrinapos.data.Permission.REPORTS)) Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))

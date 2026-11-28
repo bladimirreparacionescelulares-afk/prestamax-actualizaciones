@@ -2,6 +2,7 @@ package com.vitrinapos.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -147,8 +148,8 @@ fun SaleDetailScreen(id: Long) {
     var showCreditNote by remember { mutableStateOf(false) }
     var authVoid by remember { mutableStateOf(false) }
     var voidReason by remember { mutableStateOf("") }
-    val ticket = if (showCreditNote && creditNote != null) Ticket.forSale(s, sale, items, ecf = creditNote)
-        else Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id }, ecf = ecf)
+    val ticket = if (showCreditNote && creditNote != null) Ticket.forSale(s, sale, items, ecf = creditNote, branch = app.repo.branchById(sale.branchId))
+        else Ticket.forSale(s, sale, items, repair = repairs.firstOrNull { it.saleId == sale.id }, ecf = ecf, branch = app.repo.branchById(sale.branchId))
     val fresh = Time.now() - sale.createdAt < 120_000
     val voided = sale.status == SaleStatus.VOID
     val returns by produceState(emptyList<com.vitrinapos.db.SaleReturn>(), id, refresh) { value = app.repo.returnsBySale(id) }
@@ -228,7 +229,7 @@ fun SaleDetailScreen(id: Long) {
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp).widthIn(max = 720.dp).align(Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { app.print(if (ecf != null) ticket else Ticket.forSale(s, sale, items, reprint = !fresh)) { app.open(Screen.Settings) } },
+                    OutlinedButton(onClick = { app.print(if (ecf != null) ticket else Ticket.forSale(s, sale, items, reprint = !fresh, branch = app.repo.branchById(sale.branchId))) { app.open(Screen.Settings) } },
                         modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(6.dp)); Text("Imprimir")
                     }
@@ -298,17 +299,32 @@ fun ReportsScreen() {
     val today = Time.startOfDay()
     val from = when (range) { 0 -> today; 1 -> Time.addDays(today, -6); 2 -> Time.addDays(today, -29); else -> Time.startOfMonth() }
     val to = Time.addDays(today, 1)
+    // Sucursales: el administrador ve "Todas" o una; los demás, la suya.
+    val branches by app.repo.branches.collectAsState()
+    val activeBranches = branches.filter { it.active == 1L }
+    val multi = activeBranches.size > 1
+    val seeAll = app.can(com.vitrinapos.data.Permission.SETTINGS)
+    var branchSel by remember { mutableStateOf<Long?>(if (multi && !seeAll) app.repo.branchId else null) }
+    fun inBranch(b: Long) = branchSel == null || b == branchSel
     val data by produceState<Pair<List<Sale>, List<SaleItem>>?>(null, range, recent) {
         value = app.repo.salesBetween(from, to) to app.repo.itemsBetween(from, to)
     }
-    val sales = data?.first.orEmpty().filter { it.status == SaleStatus.OK }
-    val items = data?.second.orEmpty()
-    val extra by produceState<Triple<List<com.vitrinapos.db.SaleReturn>, Long, Long>?>(null, range, recent) {
+    val allSales = data?.first.orEmpty().filter { it.status == SaleStatus.OK }
+    val sales = allSales.filter { inBranch(it.branchId) }
+    val saleIds = sales.mapTo(HashSet()) { it.id }
+    val items = data?.second.orEmpty().filter { it.saleId in saleIds }
+    val extra by produceState<Triple<List<com.vitrinapos.db.SaleReturn>, Long, Long>?>(null, range, recent, branchSel) {
         value = Triple(
-            app.repo.returnsBetween(from, to),
-            app.repo.lossesBetween(from, to).sumOf { (-it.qty * it.unitCost).roundToLong() },
-            app.repo.purchasesBetween(from, to).sumOf { it.total },
+            app.repo.returnsBetween(from, to).filter { inBranch(it.branchId) },
+            app.repo.lossesBetween(from, to).filter { inBranch(it.branchId) }.sumOf { (-it.qty * it.unitCost).roundToLong() },
+            app.repo.purchasesBetween(from, to).filter { inBranch(it.branchId) }.sumOf { it.total },
         )
+    }
+    // Existencias de la sucursal elegida (o de todas).
+    val stockMap by produceState<Map<Long, Double>?>(null, branchSel, products) {
+        value = if (!multi) null else app.repo.stockAllBranches().let { all ->
+            if (branchSel == null) all.values.flatMap { it.entries }.groupBy({ it.key }, { it.value }).mapValues { it.value.sum() } else all[branchSel] ?: emptyMap()
+        }
     }
     val returns = extra?.first.orEmpty()
     val returned = returns.sumOf { it.total }
@@ -321,6 +337,13 @@ fun ReportsScreen() {
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(ranges.size) { i -> CategoryChip(ranges[i], range == i) { range = i } }
         }
+        if (multi && seeAll) {
+            Spacer(Modifier.height(8.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { CategoryChip("Todas las sucursales", branchSel == null) { branchSel = null } }
+                items(activeBranches.size) { i -> val b = activeBranches[i]; CategoryChip(b.name, branchSel == b.id) { branchSel = b.id } }
+            }
+        } else if (multi) Text("Sucursal: ${app.repo.thisBranch?.name.orEmpty()}", fontSize = 13.sp, color = AppTheme.extra.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).widthIn(max = 900.dp).align(Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -332,6 +355,24 @@ fun ReportsScreen() {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatCard("Ventas", sales.size.toString(), Modifier.weight(1f))
                 StatCard("Ticket promedio", Money.format(if (sales.isEmpty()) 0 else total / sales.size, sym), Modifier.weight(1f))
+            }
+
+            // Comparación entre sucursales (solo con "Todas").
+            if (multi && branchSel == null) {
+                SectionTitle("Por sucursal")
+                val perBranch = activeBranches.map { b -> b to allSales.filter { it.branchId == b.id }.sumOf { it.total } }
+                val maxB = perBranch.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
+                AppCard {
+                    perBranch.forEach { (b, amount) ->
+                        Column(Modifier.padding(vertical = 6.dp).clickable { branchSel = b.id }) {
+                            Row { Text(b.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(Money.format(amount, sym), fontWeight = FontWeight.Bold) }
+                            Spacer(Modifier.height(4.dp))
+                            Box(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainer)) {
+                                Box(Modifier.fillMaxWidth(amount.toFloat() / maxB).height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                            }
+                        }
+                    }
+                }
             }
 
             if (range != 0) {
@@ -380,14 +421,15 @@ fun ReportsScreen() {
                 }
             }
 
-            SectionTitle("Inventario")
+            SectionTitle(if (multi) "Inventario · ${if (branchSel == null) "todas las sucursales" else activeBranches.firstOrNull { it.id == branchSel }?.name.orEmpty()}" else "Inventario")
             AppCard {
-                val tracked = products.filter { it.trackStock == 1L && it.stock > 0 }
+                val withStock = stockMap?.let { m -> products.map { it.copy(stock = m[it.id] ?: 0.0) } } ?: products
+                val tracked = withStock.filter { it.trackStock == 1L && it.stock > 0 }
                 KeyValue("Productos activos", products.size.toString())
                 KeyValue("Unidades en existencia", tracked.sumOf { it.stock }.fmtQty())
                 KeyValue("Valor a costo", Money.format(tracked.sumOf { (it.stock * it.cost).roundToLong() }, sym))
                 KeyValue("Valor a precio de venta", Money.format(tracked.sumOf { (it.stock * it.price).roundToLong() }, sym))
-                KeyValue("Con stock bajo", products.count { it.trackStock == 1L && it.stock <= it.minStock }.toString())
+                KeyValue("Con stock bajo", withStock.count { it.trackStock == 1L && it.stock <= it.minStock }.toString())
                 Spacer(Modifier.height(6.dp))
                 OutlinedButton(onClick = { app.open(Screen.Inventory) }, shape = RoundedCornerShape(12.dp)) {
                     Icon(Icons.Rounded.History, null); Spacer(Modifier.width(6.dp)); Text("Ir a Inventario")
@@ -592,7 +634,7 @@ fun CashScreen() {
         scope.launch {
             runCatching { app.repo.closeCashSession(session, counted, notes, authorizedBy) }
                 .onSuccess {
-                    lastClose = com.vitrinapos.print.Ticket.forCashClose(s, session.openedAt, Time.now(), sm, counted, who, notes, billList)
+                    lastClose = com.vitrinapos.print.Ticket.forCashClose(s, session.openedAt, Time.now(), sm, counted, who, notes, billList, branch = app.repo.branchById(session.branchId))
                     amount = null; notes = ""; bills.clear(); app.toast("Caja cerrada")
                 }
                 .onFailure { app.toast(it.message ?: "No se pudo cerrar") }

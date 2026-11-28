@@ -51,6 +51,7 @@ object Rules {
         is Op.SavePurchase, is Op.VoidPurchase, is Op.StockLoss, is Op.ApplyCount, is Op.ReturnSale, is Op.MergeProducts -> Modules.INVENTORY
         is Op.SaveRepair, is Op.SetRepairStatus, is Op.DeliverRepair -> Modules.WORKSHOP
         is Op.AddUnits -> Modules.IMEI
+        is Op.SendTransfer, is Op.ReceiveTransfer, is Op.CancelTransfer -> Modules.INVENTORY
         is Op.SaveQuote, is Op.SetQuoteStatus, is Op.DeleteQuote -> Modules.QUOTES
         is Op.ReserveFiscalBlock, is Op.SaveFiscalRange, is Op.DeleteFiscalRange -> Modules.FISCAL
         is Op.RecordSale -> if (op.fiscal != null || op.ecf != null) Modules.FISCAL else null
@@ -84,6 +85,7 @@ object Rules {
         is Op.SaveFiscalRange, is Op.DeleteFiscalRange -> listOf(Permission.FISCAL)
         is Op.SetUserPermissions, is Op.SaveUser, is Op.SetUserBranches -> listOf(Permission.USERS)
         is Op.SaveBranch -> listOf(Permission.SETTINGS)
+        is Op.SendTransfer, is Op.ReceiveTransfer, is Op.CancelTransfer -> listOf(Permission.ADJUST_STOCK)
         is Op.LogEvent -> null
     }
 

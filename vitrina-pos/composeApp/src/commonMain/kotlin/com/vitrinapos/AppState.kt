@@ -74,6 +74,8 @@ sealed interface Screen {
     data object StockMoves : Screen
     data object Network : Screen
     data object Branches : Screen
+    data object Transfers : Screen
+    data object NewTransfer : Screen
     data class BranchDetail(val id: Long) : Screen
     data object Users : Screen
     data object Labels : Screen
@@ -192,7 +194,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
                 Screen.Quotes, is Screen.QuoteEditor -> "cotizaciones"
                 Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> "etiquetas"
                 is Screen.ProductUnits, Screen.ImeiSearch -> "imei"
-                Screen.Inventory, Screen.Purchases, is Screen.PurchaseDetail, Screen.StockCount, is Screen.StockCountDetail, is Screen.SaleReturn -> "inventario"
+                Screen.Inventory, Screen.Transfers, Screen.NewTransfer, Screen.Purchases, is Screen.PurchaseDetail, Screen.StockCount, is Screen.StockCountDetail, is Screen.SaleReturn -> "inventario"
                 Screen.Activity -> "actividad"
                 Screen.Fiscal, Screen.FiscalEmitter, Screen.FiscalCert, Screen.FiscalDgii, Screen.FiscalSequences -> "facturacion"
                 else -> null
@@ -476,6 +478,7 @@ fun requiredPermission(screen: Screen): List<com.vitrinapos.data.Permission> {
         Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> listOf(Permission.LABELS)
         Screen.Network -> listOf(Permission.NETWORK)
         Screen.Branches, is Screen.BranchDetail -> listOf(Permission.SETTINGS, Permission.REPORTS)
+        Screen.Transfers, Screen.NewTransfer -> listOf(Permission.ADJUST_STOCK)
         Screen.Users, is Screen.UserDetail -> listOf(Permission.USERS)
         Screen.Fiscal, Screen.FiscalEmitter, Screen.FiscalCert, Screen.FiscalDgii, Screen.FiscalSequences -> listOf(Permission.FISCAL)
         Screen.FiscalDocs -> listOf(Permission.FISCAL, Permission.SALES_HISTORY)

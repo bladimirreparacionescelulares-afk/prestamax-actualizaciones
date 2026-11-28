@@ -1,0 +1,58 @@
+-- Transferencias de mercancía entre sucursales (2.2b).
+-- Sale de la sucursal de origen al enviarla; entra a la de destino cuando allá la reciben.
+CREATE TABLE transfer (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number INTEGER NOT NULL,
+  fromBranch INTEGER NOT NULL,
+  toBranch INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  userName TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  receivedAt INTEGER,
+  receivedBy TEXT NOT NULL DEFAULT '',
+  receiveNote TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE transferItem (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transferId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  received REAL,
+  serials TEXT NOT NULL DEFAULT '',
+  cost INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX transferItem_transfer ON transferItem(transferId);
+
+nextNumber:
+SELECT COALESCE(MAX(number), 0) + 1 FROM transfer;
+
+insert:
+INSERT INTO transfer(number, fromBranch, toBranch, status, note, userName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+insertItem:
+INSERT INTO transferItem(transferId, productId, name, qty, received, serials, cost) VALUES (?, ?, ?, ?, NULL, ?, ?);
+
+lastId:
+SELECT last_insert_rowid();
+
+selectAll:
+SELECT * FROM transfer ORDER BY createdAt DESC LIMIT 200;
+
+selectById:
+SELECT * FROM transfer WHERE id = ?;
+
+items:
+SELECT * FROM transferItem WHERE transferId = ? ORDER BY id;
+
+setReceived:
+UPDATE transfer SET status = ?, receivedAt = ?, receivedBy = ?, receiveNote = ? WHERE id = ?;
+
+setItemReceived:
+UPDATE transferItem SET received = ? WHERE id = ?;
+
+setStatus:
+UPDATE transfer SET status = ? WHERE id = ?;

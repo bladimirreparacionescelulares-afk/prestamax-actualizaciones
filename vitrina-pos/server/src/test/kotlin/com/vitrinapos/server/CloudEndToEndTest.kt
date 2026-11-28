@@ -106,6 +106,18 @@ class CloudEndToEndTest {
         cb.pull(); ca.pull()
         assertEquals(3.0, b.productById(pid)!!.stock)
         assertEquals(10.0, a.productById(pid)!!.stock, "la Principal no cambió")
+        // Transferencia por la nube: la Principal envía 5 y la caja Norte los recibe.
+        val t = a.sendTransfer(norte, listOf(com.vitrinapos.data.TransferLine(pid, 5.0)), "Pedido")
+        assertEquals(mapOf(1L to 5.0, norte to 3.0), cloudRepo.stockByBranch(pid))
+        cb.pull()
+        val wrong = runCatching { a.receiveTransfer(t) }.exceptionOrNull()
+        assertTrue(wrong?.message?.contains("Sucursal Norte") == true, "$wrong")
+        b.receiveTransfer(t)
+        assertEquals(mapOf(1L to 5.0, norte to 8.0), cloudRepo.stockByBranch(pid))
+        cb.pull()
+        assertEquals(8.0, b.productById(pid)!!.stock)
+        assertTrue(cloudRepo.activity(0, Long.MAX_VALUE).any { it.action == "Recibió una transferencia" && it.device == "Caja Norte" })
+
         // El dueño mueve la caja Norte a la Principal: desde ahí vende de la Principal.
         ca.setDeviceBranch(credsB.deviceId, 1)
         assertTrue(ca.devices().first { it.id == credsB.deviceId }.branchId == 1L)
