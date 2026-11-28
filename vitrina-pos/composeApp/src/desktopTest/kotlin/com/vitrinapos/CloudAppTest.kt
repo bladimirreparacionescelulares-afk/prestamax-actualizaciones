@@ -98,12 +98,19 @@ class CloudAppTest {
         shoot(a, "95-pc-sucursales", 760, 1280) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Branches) }
         shoot(a, "96-usuario-sucursales", 1100) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.UserDetail(admin.id)) }
         shoot(a, "97-inicio-sucursal") { it.repo.currentUser.value = admin; it.selectTab(Screen.Home) }
+        // Transferencia de la Principal a Norte y reportes por sucursal.
+        a.repo.sendTransfer(norte, listOf(com.vitrinapos.data.TransferLine(pid, 2.0)), "Pedido del lunes")
+        a.cloud!!.pull(); Thread.sleep(500)
+        shoot(a, "98-transferencias") { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Transfers) }
+        shoot(a, "99-nueva-transferencia") { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.NewTransfer) }
+        shoot(a, "100-reportes-sucursales", 1300) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Reports) }
+        shoot(a, "101-pc-reportes", 760, 1280) { it.repo.currentUser.value = admin; it.selectTab(Screen.Reports) }
 
         // Otra PC entra con la cuenta y recibe todo.
         val b = graph("Caja 2")
         b.cloudLogin(email, "Clave2026", url = url)
         assertEquals(NetRole.CLOUD, b.repo.metaGet("role"))
-        assertEquals(5.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
+        assertEquals(3.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
         assertEquals(1, b.repo.db.saleQueries.selectRecent(10).executeAsList().size)
 
         // La sesión del usuario se abre sola con el PIN al entrar (como en la pantalla de PIN).
@@ -112,7 +119,7 @@ class CloudAppTest {
         b.repo.openCashSession(50000)
         val pb = b.repo.db.productQueries.selectById(pid).executeAsOne()
         b.repo.recordSale(listOf(CartLine.of(pb, 1.0)), null, 0, PaymentMethods.CASH, 100000, null)
-        assertEquals(4.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
+        assertEquals(2.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
         // Con la sesión del administrador se ven los equipos del negocio.
         assertEquals(setOf("Caja 1", "Caja 2"), b.cloud!!.devices().map { it.name }.toSet())
 
@@ -133,13 +140,13 @@ class CloudAppTest {
         shoot(b, "92-pc-sesion-cerrada", 760, 1280) { }
         // Al volver a entrar, todo se descarga de nuevo.
         b.cloudLogin(email, "Clave2026", url = url)
-        assertEquals(4.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
+        assertEquals(2.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
         assertEquals(2, b.repo.db.saleQueries.selectRecent(10).executeAsList().size)
         assertTrue(!b.signedOut)
         b.leaveCloud()
         assertEquals(NetRole.SOLO, b.repo.metaGet("role"))
         assertTrue(b.cloud == null)
-        assertEquals(4.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
+        assertEquals(2.0, b.repo.db.productQueries.selectById(pid).executeAsOne().stock)
         // Al abrir la app otra vez sigue sola (no intenta conectarse).
         b.repo.close()
         a.leaveCloud(); a.repo.close()

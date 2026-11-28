@@ -1,6 +1,6 @@
 # Vitrina POS 2.0 — la nube
 
-Estado: **2.0a–2.0d, 2.1 y 2.2a hechas** (28/11/2026). 2.1: sesión con la cuenta del negocio (Iniciar sesión, varios negocios, Cambiar de usuario, Cerrar sesión de la cuenta). 2.2a: sucursales con inventario por sucursal (tablas branch y branchStock; product.stock es el total), equipo en una sucursal (lo decide el dueño en la nube), usuarios por sucursal y límite por plan. Siguen 2.2b (transferencias y reportes por sucursal), 2.3 (empleados con correo) y 2.0e (panel web). Servidor: `server/instalar.sh` (en el Droplet: `vitrina-actualizar`).
+Estado: **2.0a–2.0d, 2.1, 2.2a y 2.2b hechas** (28/11/2026). 2.1: sesión con la cuenta del negocio (Iniciar sesión, varios negocios, Cambiar de usuario, Cerrar sesión de la cuenta). 2.2a: sucursales con inventario por sucursal (tablas branch y branchStock; product.stock es el total), equipo en una sucursal (lo decide el dueño en la nube), usuarios por sucursal y límite por plan. 2.2b: transferencias entre sucursales (tablas transfer y transferItem: sale al enviar, entra al recibir, "Llegó diferente", cancelar), reportes por sucursal y ticket con los datos de la sucursal. Siguen 2.3 (empleados con correo) y 2.0e (panel web). Servidor: `server/instalar.sh` (en el Droplet: `vitrina-actualizar`).
 
 Propuesta visual: https://claude.ai/artifact/AfyLU9DEuaEVVWgQu6XZ9w
 
