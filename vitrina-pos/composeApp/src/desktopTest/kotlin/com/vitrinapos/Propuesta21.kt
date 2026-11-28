@@ -43,8 +43,8 @@ import kotlin.test.Test
  */
 class Propuesta21 {
     @OptIn(ExperimentalComposeUiApi::class)
-    private fun shot(dir: File, name: String, h: Int = 900, content: @Composable () -> Unit) {
-        ImageComposeScene(824, h * 2, Density(2f)) {
+    private fun shot(dir: File, name: String, h: Int = 900, w: Int = 412, content: @Composable () -> Unit) {
+        ImageComposeScene(w * 2, h * 2, Density(2f)) {
             VitrinaTheme(dark = false) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { content() } }
         }.use { sc ->
             var t = 0L
@@ -77,6 +77,23 @@ class Propuesta21 {
         shot(dir, "18-reportes") { ReportsMock() }
         shot(dir, "19-usuario-sucursales", 1100) { UserMock() }
         shot(dir, "20-nombre-invalido") { Dimmed({ MoreMock() }) { BadNameDialog() } }
+
+        // ---- Computadora (Windows y Mac): mismas opciones, otra distribución ----
+        val pc = 1280; val ph = 760
+        shot(dir, "pc-01-iniciar-sesion", ph, pc) { Splash { LoginMock() } }
+        shot(dir, "pc-02-elegir-negocio", ph, pc) { Splash { ChooseBusinessMock() } }
+        shot(dir, "pc-03-elegir-sucursal", ph, pc) { Splash { ChooseBranchMock() } }
+        shot(dir, "pc-04-quien-usa", ph, pc) { Splash { WhoMock() } }
+        shot(dir, "pc-05-pin", ph, pc) { Splash { PinMock() } }
+        shot(dir, "pc-06-inicio", ph, pc) { Desk("Inicio") { HomeMock() } }
+        shot(dir, "pc-07-menu-usuario", ph, pc) { Desk("Inicio", userMenu = true) { HomeMock() } }
+        shot(dir, "pc-08-cerrar-cuenta", ph, pc) { Dimmed({ Desk("Inicio") { HomeMock() } }, narrow = true) { CloseAccountDialog(pending = 0) } }
+        shot(dir, "pc-09-cerrar-pendientes", ph, pc) { Dimmed({ Desk("Inicio") { HomeMock() } }, narrow = true) { CloseAccountDialog(pending = 2) } }
+        shot(dir, "pc-10-sesion-cerrada", ph, pc) { Splash { LoginMock(after = true) } }
+        shot(dir, "pc-11-sucursales", ph, pc) { Desk("Más") { Row { Box(Modifier.weight(1f)) { BranchesMock() }; Box(Modifier.weight(1.2f)) { BranchDetailMock() } } } }
+        shot(dir, "pc-12-transferir", ph, pc) { Desk("Más") { Row { Box(Modifier.weight(1f)) { TransferMock() }; Box(Modifier.weight(1f)) { ReceiveMock() } } } }
+        shot(dir, "pc-13-reportes", ph, pc) { Desk("Reportes") { ReportsMock() } }
+        shot(dir, "pc-14-usuario", ph, pc) { Desk("Más") { Row { Box(Modifier.weight(1f)) { UserMock() }; Box(Modifier.weight(1f)) { NewBranchMock() } } } }
     }
 }
 
@@ -134,11 +151,11 @@ private fun Choice(title: String, sub: String, icon: ImageVector, selected: Bool
 }
 
 @Composable
-private fun Dimmed(back: @Composable () -> Unit, dialog: @Composable () -> Unit) {
+private fun Dimmed(back: @Composable () -> Unit, narrow: Boolean = false, dialog: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         back()
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
-            Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.padding(22.dp).fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.padding(22.dp).then(if (narrow) Modifier.width(460.dp) else Modifier.fillMaxWidth())) {
                 Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { dialog() }
             }
         }
@@ -534,5 +551,88 @@ private fun BadNameDialog() {
     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
         TextButton(onClick = {}) { Text("Cancelar") }
         TextButton(onClick = {}, enabled = false) { Text("Guardar") }
+    }
+}
+
+
+// ---------------- computadora ----------------
+
+/** Pantallas de entrada en la computadora: marca a la izquierda, formulario al centro. */
+@Composable
+private fun Splash(content: @Composable () -> Unit) {
+    Row(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primary).padding(48.dp), contentAlignment = Alignment.CenterStart) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Vitrina POS", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                Text("Vende, controla tu inventario y tus sucursales desde cualquier equipo.", color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp)
+                Text("Celular · Windows · Mac", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(440.dp).fillMaxHeight()) { content() }
+        }
+    }
+}
+
+/** La app en la computadora: barra lateral con la sucursal arriba y el usuario al pie. */
+@Composable
+private fun Desk(selected: String, userMenu: Boolean = false, content: @Composable () -> Unit) {
+    val ex = AppTheme.extra
+    Row(Modifier.fillMaxSize()) {
+        Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.width(240.dp).fillMaxHeight()) {
+            Column(Modifier.fillMaxHeight().padding(12.dp)) {
+                Row(Modifier.padding(8.dp, 8.dp, 8.dp, 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Avatar("Repuestos Sánchez", 38.dp, square = true); Spacer(Modifier.width(10.dp))
+                    Column { Text("Repuestos Sánchez", fontWeight = FontWeight.Bold, fontSize = 14.sp); Muted("● Nube · en línea", 11) }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primaryContainer).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Store, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text("Sucursal Principal", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.height(6.dp))
+                Column(Modifier.weight(1f)) {
+                    listOf(
+                        Icons.Rounded.Home to "Inicio", Icons.Rounded.ShoppingCart to "Vender", Icons.Rounded.GridView to "Catálogo",
+                        Icons.Rounded.Inventory2 to "Inventario", Icons.Rounded.People to "Clientes", Icons.Rounded.BarChart to "Reportes",
+                        Icons.Rounded.PointOfSale to "Caja", Icons.Rounded.Settings to "Configuración", Icons.Rounded.MoreHoriz to "Más",
+                    ).forEach { (i, t) ->
+                        val sel = t == selected
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (sel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent).padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(i, null, tint = if (sel) MaterialTheme.colorScheme.primary else ex.muted, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(12.dp))
+                            Text(t, color = if (sel) MaterialTheme.colorScheme.onPrimaryContainer else ex.muted, fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium)
+                        }
+                    }
+                }
+                if (userMenu) Surface(shape = RoundedCornerShape(14.dp), shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                    Column(Modifier.padding(8.dp)) {
+                        Muted("dueno@repuestossanchez.com", 11)
+                        Spacer(Modifier.height(4.dp))
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.SwitchAccount, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                            Text("Cambiar de usuario", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Rounded.Logout, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                            Text("Cerrar sesión de la cuenta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Avatar("María", 34.dp); Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) { Text("María", fontWeight = FontWeight.SemiBold, fontSize = 14.sp); Muted("Cajera", 11) }
+                    Icon(if (userMenu) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess, null, tint = ex.muted)
+                }
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) { content() }
     }
 }
