@@ -105,6 +105,8 @@ private val sideItems = listOf(
     NavItem(Screen.Cash, "Caja", Icons.Rounded.PointOfSale),
     NavItem(Screen.Network, "Trabajo en red", Icons.Rounded.Lan),
     NavItem(Screen.Settings, "Configuración", Icons.Rounded.Settings),
+    // Inventario, Actividad, Usuarios, Facturación, Respaldo y lo demás.
+    NavItem(Screen.More, "Más", Icons.Rounded.MoreHoriz),
 )
 
 /** Pantallas que ocupan todo el alto (sin barra de pestañas). */
@@ -331,7 +333,8 @@ private fun SideBar(app: AppState) {
     val ex = AppTheme.extra
     val s = app.settings
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.width(220.dp).fillMaxHeight()) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.fillMaxHeight()) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(Modifier.padding(8.dp, 8.dp, 8.dp, 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(s.businessName, 38.dp, square = true)
                 Spacer(Modifier.width(10.dp))
@@ -357,6 +360,30 @@ private fun SideBar(app: AppState) {
                         Text(app.cart.size.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(ex.cta).padding(horizontal = 7.dp, vertical = 2.dp))
                     }
+                }
+            }
+        }
+            // Quién está usando la app, con el botón para salir (vuelve a pedir el PIN). Siempre visible al pie.
+            val me = app.user
+            if (me != null) Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Avatar(me.name, 34.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(me.name, fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
+                        Text(com.vitrinapos.data.Roles.label(me.role), fontSize = 11.sp, color = ex.muted, maxLines = 1)
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).clickable { app.logout() }.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Cerrar sesión", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

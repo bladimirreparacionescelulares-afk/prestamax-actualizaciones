@@ -241,6 +241,9 @@ class Screenshots {
         other.becomeSolo(); other.repo.close()
         graph.becomeSolo()
 
+        // Computadora con un usuario dentro: menú "Más" y "Cerrar sesión" en la barra lateral.
+        shoot(graph, File(outDir, "72-windows-sesion.png"), 1366, 800, 1f) { app -> app.repo.currentUser.value = admin; app.selectTab(Screen.More) }
+
         // Aviso de actualización
         shoot(graph, File(outDir, "70-actualizacion.png"), 412, 900, 2f) { app ->
             app.repo.currentUser.value = admin; app.selectTab(Screen.Home)
