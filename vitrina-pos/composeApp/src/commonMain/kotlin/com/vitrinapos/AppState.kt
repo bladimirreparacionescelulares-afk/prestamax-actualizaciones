@@ -216,6 +216,7 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
 
     fun logout() {
         graph.cloud?.logoutUser()
+        lockedUserId = null
         clearCart()
         stack.clear()
         tab = Screen.Home

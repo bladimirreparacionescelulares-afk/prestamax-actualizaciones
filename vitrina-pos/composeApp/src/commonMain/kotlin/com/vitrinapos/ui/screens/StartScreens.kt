@@ -113,7 +113,8 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
 @Composable
 fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
     val app = LocalAppState.current
-    var selected by remember { mutableStateOf(users.firstOrNull { it.id == app.lockedUserId } ?: if (users.size == 1) users.first() else null) }
+    // Al cerrar sesión siempre se elige quién entra; solo el bloqueo por inactividad vuelve directo al mismo usuario.
+    var selected by remember { mutableStateOf(users.firstOrNull { it.id == app.lockedUserId }) }
     var lastPin by remember { mutableStateOf("") }
     val chosen = selected
     if (chosen == null) {
@@ -123,8 +124,11 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Spacer(Modifier.height(24.dp))
-            Text(app.settings.businessName, style = MaterialTheme.typography.headlineSmall)
-            Text("¿Quién va a usar la app?", color = AppTheme.extra.muted)
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Storefront, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+            }
+            Text("Iniciar sesión", style = MaterialTheme.typography.headlineSmall)
+            Text(app.settings.businessName + " · ¿Quién va a usar la app?", color = AppTheme.extra.muted, textAlign = TextAlign.Center)
             Column(Modifier.widthIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 users.forEach { u ->
                     AppCard(Modifier.fillMaxWidth(), onClick = { selected = u }) {
@@ -154,7 +158,7 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
                 // En la nube, el mismo PIN abre la sesión del usuario en el servidor.
                 app.graph.cloud?.userEntered(chosen.id, lastPin)
             },
-            onBack = if (users.size > 1) ({ selected = null }) else null,
+            onBack = { selected = null; app.lockedUserId = null },
         )
     }
 }
