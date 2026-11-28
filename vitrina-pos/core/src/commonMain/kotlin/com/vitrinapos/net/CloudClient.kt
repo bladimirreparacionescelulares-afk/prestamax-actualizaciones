@@ -38,8 +38,8 @@ import java.net.URLEncoder
 /** Dirección del servidor de Vitrina POS en la nube. */
 object Cloud {
     const val DEFAULT_URL = "https://api.facturaprord.online"
-    /** Se enciende cuando el servidor esté publicado (2.0d). Mientras, la nube solo aparece en pruebas. */
-    const val ENABLED = false
+    /** La nube está publicada en api.facturaprord.online (2.0d). */
+    const val ENABLED = true
 }
 
 /**

@@ -1,6 +1,6 @@
 # Vitrina POS 2.0 — la nube
 
-Estado: **2.0a, 2.0b y 2.0c hechas** (27/11/2026). La app ya sabe trabajar con la nube (crear cuenta, entrar, pasar datos, equipos, PIN en el servidor, módulos del plan), pero las opciones quedan ocultas (`Cloud.ENABLED = false`) hasta publicar el servidor. Siguen 2.0d (DigitalOcean) y 2.0e (panel web). Detalles del servidor: `server/LEEME.md`.
+Estado: **2.0a–2.0d hechas** (28/11/2026). Servidor en DigitalOcean (Droplet `vitrina-api`, NYC1) con HTTPS en `api.facturaprord.online`; DNS del dominio en Hostinger; correos con Resend. La app 1.13.0 ya muestra la nube. Instalar o actualizar el servidor: `server/instalar.sh` (en el Droplet: `vitrina-actualizar`). Sigue 2.0e (panel web).
 
 Propuesta visual: https://claude.ai/artifact/AfyLU9DEuaEVVWgQu6XZ9w
 
