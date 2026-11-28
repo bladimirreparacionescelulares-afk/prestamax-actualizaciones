@@ -131,7 +131,7 @@ private fun BranchList(selected: Long?, onOpen: (Long) -> Unit) {
                             Text(
                                 if (b.active == 0L) "Desactivada"
                                 else listOfNotNull(
-                                    "Hoy ${Money.format(total, sym)}" + if (count > 0) " · $count ventas" else "",
+                                    "Hoy ${Money.format(total, sym)}" + if (count > 0) " · $count ${if (count == 1L) "venta" else "ventas"}" else "",
                                     if (cloud != null) "$devs ${if (devs == 1) "equipo" else "equipos"}" else null,
                                     "$ppl ${if (ppl == 1) "usuario" else "usuarios"}",
                                 ).joinToString(" · "),

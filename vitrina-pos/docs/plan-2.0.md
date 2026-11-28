@@ -1,6 +1,6 @@
 # Vitrina POS 2.0 — la nube
 
-Estado: **2.0a–2.0d hechas** (28/11/2026). Servidor en DigitalOcean (Droplet `vitrina-api`, NYC1) con HTTPS en `api.facturaprord.online`; DNS del dominio en Hostinger; correos con Resend. La app 1.13.0 ya muestra la nube. Instalar o actualizar el servidor: `server/instalar.sh` (en el Droplet: `vitrina-actualizar`). Sigue 2.0e (panel web).
+Estado: **2.0a–2.0d, 2.1 y 2.2a hechas** (28/11/2026). 2.1: sesión con la cuenta del negocio (Iniciar sesión, varios negocios, Cambiar de usuario, Cerrar sesión de la cuenta). 2.2a: sucursales con inventario por sucursal (tablas branch y branchStock; product.stock es el total), equipo en una sucursal (lo decide el dueño en la nube), usuarios por sucursal y límite por plan. Siguen 2.2b (transferencias y reportes por sucursal), 2.3 (empleados con correo) y 2.0e (panel web). Servidor: `server/instalar.sh` (en el Droplet: `vitrina-actualizar`).
 
 Propuesta visual: https://claude.ai/artifact/AfyLU9DEuaEVVWgQu6XZ9w
 

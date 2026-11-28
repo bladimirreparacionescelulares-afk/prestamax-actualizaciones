@@ -89,6 +89,16 @@ class CloudAppTest {
         shoot(a, "80-nube-panel", 1500) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Network) }
         shoot(a, "81-nube-inicio") { it.repo.currentUser.value = admin; it.selectTab(Screen.Home) }
 
+        // Sucursales: una nueva; la Caja 1 sigue en la Principal.
+        val norte = a.repo.saveBranch(null, "Sucursal Norte", "Calle del Sol #12, Santiago", "809-555-0199")
+        a.cloud!!.pull()
+        Thread.sleep(800)
+        shoot(a, "93-sucursales", 1000) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Branches) }
+        shoot(a, "94-sucursal-detalle", 1100) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.BranchDetail(norte)) }
+        shoot(a, "95-pc-sucursales", 760, 1280) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.Branches) }
+        shoot(a, "96-usuario-sucursales", 1100) { it.repo.currentUser.value = admin; it.selectTab(Screen.More); it.open(Screen.UserDetail(admin.id)) }
+        shoot(a, "97-inicio-sucursal") { it.repo.currentUser.value = admin; it.selectTab(Screen.Home) }
+
         // Otra PC entra con la cuenta y recibe todo.
         val b = graph("Caja 2")
         b.cloudLogin(email, "Clave2026", url = url)

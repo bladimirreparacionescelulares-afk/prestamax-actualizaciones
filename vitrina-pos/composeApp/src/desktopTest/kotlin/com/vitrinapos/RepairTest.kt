@@ -197,7 +197,7 @@ class RepairTest {
         val day = 86_400_000L
         val now = com.vitrinapos.data.Time.now()
         val r = com.vitrinapos.db.RepairOrder(1, 1, null, "Ana Gómez", "8095550101", "", "TELEFONO", "Apple", "iPhone 11", "", "", "NONE", "", "Batería",
-            "", "", "", 250000, 50000, 30000, null, "", RepairStatus.READY, "", "", 0, 30, null, null, now - 100 * day, now - 95 * day)
+            "", "", "", 250000, 50000, 30000, null, "", RepairStatus.READY, "", "", 0, 30, null, null, now - 100 * day, now - 95 * day, 1L)
         assertTrue(RepairStatus.isReady(r.status))
         assertEquals(95, r.daysWaiting(now))
         assertTrue(r.isAbandoned(90, now))
