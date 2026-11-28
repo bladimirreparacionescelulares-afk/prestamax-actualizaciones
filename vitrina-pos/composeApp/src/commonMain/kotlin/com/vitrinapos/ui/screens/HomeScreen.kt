@@ -91,6 +91,8 @@ fun HomeScreen() {
     Column(Modifier.fillMaxSize()) {
         val me = app.user
         ScreenHeader(s.businessName, subtitle = Time.greeting() + (me?.let { ", ${it.name.substringBefore(' ')}" } ?: "")) {
+            BranchPill()
+            Spacer(Modifier.width(6.dp))
             NetworkPill { app.open(if (app.can(com.vitrinapos.data.Permission.NETWORK)) Screen.Network else Screen.More) }
             SquareIconButton(Icons.Rounded.Settings, "Configuración") { app.open(Screen.Settings) }
         }

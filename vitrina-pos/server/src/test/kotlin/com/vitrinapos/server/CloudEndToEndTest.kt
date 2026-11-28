@@ -73,6 +73,49 @@ class CloudEndToEndTest {
     }
 
     @Test
+    fun sucursalesEnLaNube(): Unit = runBlocking {
+        val creds = CloudClient.signup(url, SignupRequest("suc@tienda.com", "Clave2026", "Bladimir", "Repuestos Sánchez", "PHONES", "1234", "Caja Principal", "Android"))
+        val (a, ca) = device(creds)
+        ca.pull()
+        val admin = a.db.appUserQueries.selectAll().executeAsList().single()
+        a.currentUser.value = admin
+        assertTrue(ca.loginUser(admin.id, "1234"))
+        a.openCashSession(100000)
+        val pid = a.saveProduct(ProductDraft(null, "Cargador USB-C", "CRG-1", null, null, 30000, 85000, 10.0, 1.0, "und", true, true, null, ""))
+        ca.pull()
+        // Una sucursal nueva (plan Pro de prueba: sin límite).
+        val norte = a.saveBranch(null, "Sucursal Norte", "Santiago", "")
+        ca.pull()
+        assertEquals(setOf("Principal", "Sucursal Norte"), a.branches.value.map { it.name }.toSet().ifEmpty { a.db.branchQueries.selectAll().executeAsList().map { it.name }.toSet() })
+        // Un equipo nuevo entra eligiendo la sucursal Norte.
+        assertEquals(listOf("Principal", "Sucursal Norte"), CloudClient.branches(url, "suc@tienda.com", "Clave2026", creds.businessId).map { it.name })
+        val credsB = CloudClient.login(url, LoginRequest("suc@tienda.com", "Clave2026", "Caja Norte", "Windows", creds.businessId, norte))
+        val (b, cb) = device(credsB)
+        cb.pull()
+        assertEquals(norte, b.branchId, "el equipo sabe en qué sucursal está")
+        b.currentUser.value = b.db.appUserQueries.selectAll().executeAsList().single()
+        assertTrue(cb.loginUser(admin.id, "1234"))
+        b.openCashSession(50000)
+        // En Norte no hay existencia todavía: no se puede vender lo que solo está en la Principal.
+        val noStock = runCatching { b.recordSale(listOf(CartLine.of(b.productById(pid)!!, 1.0)), null, 0, PaymentMethods.CASH, 100000, null) }.exceptionOrNull()
+        assertTrue(noStock?.message?.contains("sucursal") == true, "$noStock")
+        b.registerEntry(listOf(com.vitrinapos.data.EntryLine(pid, 4.0, null)), null, "Pedido")
+        b.recordSale(listOf(CartLine.of(b.productById(pid)!!, 1.0)), null, 0, PaymentMethods.CASH, 100000, null)
+        val cloudRepo = server.tenants.repo(creds.businessId)
+        assertEquals(mapOf(1L to 10.0, norte to 3.0), cloudRepo.stockByBranch(pid))
+        cb.pull(); ca.pull()
+        assertEquals(3.0, b.productById(pid)!!.stock)
+        assertEquals(10.0, a.productById(pid)!!.stock, "la Principal no cambió")
+        // El dueño mueve la caja Norte a la Principal: desde ahí vende de la Principal.
+        ca.setDeviceBranch(credsB.deviceId, 1)
+        assertTrue(ca.devices().first { it.id == credsB.deviceId }.branchId == 1L)
+        // Plan Esencial: una sola sucursal.
+        server.control.setPlan(creds.businessId, "esencial")
+        val limit = runCatching { a.saveBranch(null, "Sucursal Este", "", "") }.exceptionOrNull()
+        assertTrue(limit is HttpStatusException && limit.code == 403, "$limit")
+    }
+
+    @Test
     fun variosNegociosYCerrarSesionDeLaCuenta(): Unit = runBlocking {
         val first = CloudClient.signup(url, SignupRequest("multi@tienda.com", "Clave2026", "Bladimir", "Repuestos Sánchez", "PHONES", "1234", "Caja 1", "Android"))
         assertEquals(listOf("Repuestos Sánchez"), CloudClient.businesses(url, "multi@tienda.com", "Clave2026").map { it.name })

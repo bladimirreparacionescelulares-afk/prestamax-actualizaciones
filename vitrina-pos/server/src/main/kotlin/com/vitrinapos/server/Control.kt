@@ -10,7 +10,7 @@ import java.sql.Timestamp
 import java.time.Instant
 
 @Serializable
-data class PlanInfo(val id: String, val name: String, val monthly: Long, val yearly: Long, val maxDevices: Int, val maxUsers: Int, val modules: List<String>)
+data class PlanInfo(val id: String, val name: String, val monthly: Long, val yearly: Long, val maxDevices: Int, val maxUsers: Int, val modules: List<String>, val maxBranches: Int = 1)
 
 @Serializable
 data class Account(val id: Long, val email: String, val name: String, val mustChange: Boolean)
@@ -59,8 +59,8 @@ class ControlStore(jdbcUrl: String) : AutoCloseable {
 
     // ---------- Planes ----------
 
-    fun plans(): List<PlanInfo> = q("SELECT id, nombre, precio_mensual, precio_anual, max_equipos, max_usuarios FROM plan WHERE activo ORDER BY orden") {
-        PlanInfo(it.getString(1), it.getString(2), it.getLong(3), it.getLong(4), it.getInt(5), it.getInt(6), emptyList())
+    fun plans(): List<PlanInfo> = q("SELECT id, nombre, precio_mensual, precio_anual, max_equipos, max_usuarios, max_sucursales FROM plan WHERE activo ORDER BY orden") {
+        PlanInfo(it.getString(1), it.getString(2), it.getLong(3), it.getLong(4), it.getInt(5), it.getInt(6), emptyList(), it.getInt(7))
     }.map { p -> p.copy(modules = q("SELECT modulo FROM plan_modulo WHERE plan_id = ? ORDER BY modulo", p.id) { it.getString(1) }) }
 
     fun plan(id: String): PlanInfo? = plans().firstOrNull { it.id == id }
@@ -137,16 +137,19 @@ class ControlStore(jdbcUrl: String) : AutoCloseable {
 
     // ---------- Equipos ----------
 
-    fun addDevice(id: String, businessId: Long, name: String, platform: String, secretHash: String) =
-        u("INSERT INTO equipo(id, negocio_id, nombre, plataforma, secreto_hash) VALUES (?, ?, ?, ?, ?)", id, businessId, name.take(60), platform.take(30), secretHash)
+    fun addDevice(id: String, businessId: Long, name: String, platform: String, secretHash: String, branchId: Long = 1) =
+        u("INSERT INTO equipo(id, negocio_id, nombre, plataforma, secreto_hash, sucursal_id) VALUES (?, ?, ?, ?, ?, ?)", id, businessId, name.take(60), platform.take(30), secretHash, branchId)
 
     fun deviceSecretHash(id: String): Pair<Device, String>? =
-        q("SELECT id, negocio_id, nombre, plataforma, creado, ultimo_uso, revocado, secreto_hash FROM equipo WHERE id = ?", id) { device(it) to it.getString(8) }.firstOrNull()
+        q("SELECT id, negocio_id, nombre, plataforma, creado, ultimo_uso, revocado, sucursal_id, secreto_hash FROM equipo WHERE id = ?", id) { device(it) to it.getString(9) }.firstOrNull()
+
+    /** Cambia la sucursal de un equipo del negocio. */
+    fun setDeviceBranch(businessId: Long, id: String, branchId: Long) = u("UPDATE equipo SET sucursal_id = ? WHERE id = ? AND negocio_id = ?", branchId, id, businessId)
 
     fun device(id: String): Device? = deviceSecretHash(id)?.first
 
     fun devices(businessId: Long): List<Device> =
-        q("SELECT id, negocio_id, nombre, plataforma, creado, ultimo_uso, revocado FROM equipo WHERE negocio_id = ? ORDER BY creado", businessId, map = ::device)
+        q("SELECT id, negocio_id, nombre, plataforma, creado, ultimo_uso, revocado, sucursal_id FROM equipo WHERE negocio_id = ? ORDER BY creado", businessId, map = ::device)
 
     fun activeDeviceCount(businessId: Long): Int = q("SELECT count(*) FROM equipo WHERE negocio_id = ? AND NOT revocado", businessId) { it.getInt(1) }.single()
 
@@ -155,7 +158,7 @@ class ControlStore(jdbcUrl: String) : AutoCloseable {
     fun renameDevice(businessId: Long, id: String, name: String) = u("UPDATE equipo SET nombre = ? WHERE id = ? AND negocio_id = ?", name.take(60), id, businessId)
 
     private fun device(r: ResultSet) = Device(
-        r.getString(1), r.getLong(2), r.getString(3), r.getString(4), r.getTimestamp(5).time, r.getTimestamp(6)?.time, r.getBoolean(7),
+        r.getString(1), r.getLong(2), r.getString(3), r.getString(4), r.getTimestamp(5).time, r.getTimestamp(6)?.time, r.getBoolean(7), r.getLong(8),
     )
 
     // ---------- Recuperar la contraseña ----------
@@ -184,7 +187,7 @@ class ControlStore(jdbcUrl: String) : AutoCloseable {
         q("SELECT accion, detalle, creado FROM admin_actividad ORDER BY id DESC LIMIT ?", limit) { Triple(it.getString(1), it.getString(2), it.getTimestamp(3).time) }
 
     companion object {
-        val MIGRATIONS = listOf(1 to "V1__inicial.sql")
+        val MIGRATIONS = listOf(1 to "V1__inicial.sql", 2 to "V2__sucursales.sql")
     }
 }
 

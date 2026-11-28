@@ -116,6 +116,21 @@ class SessionParityTest {
     }
 
     @Test
+    fun sucursalesEnCelularYComputadora() {
+        for (phone in listOf(true, false)) {
+            val graph = cloudGraph()
+            run(graph, phone = phone, { it.selectTab(Screen.More) }) {
+                onNodeWithText("Sucursales").performClick()
+                settle()
+                // La pantalla de sucursales (en la computadora, con el detalle al lado).
+                onNode(hasText("Productos, precios y clientes son los mismos", substring = true)).assertExists()
+                assertTrue(onAllNodesWithText("Principal").fetchSemanticsNodes().isNotEmpty())
+            }
+            graph.repo.close()
+        }
+    }
+
+    @Test
     fun cerrarCuentaSinConexionConVentasPendientesNoDejaSalir() {
         val graph = cloudGraph()
         // Una venta guardada sin conexión.

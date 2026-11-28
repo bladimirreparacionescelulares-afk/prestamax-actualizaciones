@@ -140,6 +140,8 @@ class CloudClient(
         _plan.value = r.entitlements
         repo.metaPut("cloud.plan", json.encodeToString(Entitlements.serializer(), r.entitlements))
         repo.metaPut("cloud.deviceName", r.deviceName)
+        // La sucursal de este equipo la decide el dueño en la nube.
+        if (repo.metaGet("branchId") != r.branchId.toString()) repo.metaPut("branchId", r.branchId.toString())
         r.token
     }
 
@@ -300,6 +302,13 @@ class CloudClient(
 
     suspend fun revokeDevice(id: String) { send("POST", "/v1/equipos/${enc(id)}/quitar", "{}") }
 
+    /** Cambia la sucursal de un equipo del negocio (el dueño o un administrador). */
+    suspend fun setDeviceBranch(deviceId: String, branchId: Long) {
+        send("POST", "/v1/equipos/${enc(deviceId)}/sucursal", json.encodeToString(DeviceBranchRequest.serializer(), DeviceBranchRequest(branchId)))
+        // Si es este equipo, se toma la sucursal nueva de una vez.
+        if (deviceId == this.deviceId) { tokenLock.withLock { deviceToken = null }; ensureDeviceToken() }
+    }
+
     /** "Cerrar sesión de la cuenta": este equipo se da de baja en la nube (deja de contar en el plan). */
     suspend fun leave() { send("POST", "/v1/sesion/salir", "{}") }
 
@@ -358,6 +367,10 @@ class CloudClient(
         /** Los negocios de la cuenta (para elegir con cuál trabajar en este equipo). */
         fun businesses(base: String, email: String, password: String): List<BusinessChoice> =
             post(base, "/v1/sesion/negocios", json.encodeToString(AccountRequest.serializer(), AccountRequest(email.trim(), password)), ListSerializer(BusinessChoice.serializer()))
+
+        /** Sucursales de un negocio (para elegir en cuál está este equipo antes de autorizarlo). */
+        fun branches(base: String, email: String, password: String, businessId: Long): List<BranchInfo> =
+            post(base, "/v1/sesion/sucursales", json.encodeToString(BranchesRequest.serializer(), BranchesRequest(email.trim(), password, businessId)), ListSerializer(BranchInfo.serializer()))
 
         /** Otro negocio con la misma cuenta; este equipo queda autorizado en él. */
         fun newBusiness(base: String, r: NewBusinessRequest): DeviceCredentials =

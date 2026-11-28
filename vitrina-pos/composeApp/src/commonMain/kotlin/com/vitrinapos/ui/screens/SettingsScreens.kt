@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.SwitchAccount
 import androidx.compose.material.icons.rounded.Inventory2
@@ -134,6 +135,8 @@ fun MoreScreen() {
         if (fiscalScreen == Screen.Fiscal || s.fiscalEnabled) add(MoreItem(Icons.Rounded.Receipt, "Facturación electrónica", if (s.fiscalEnabled) "Activa · ${com.vitrinapos.fiscal.DgiiEnv.of(s.fiscalEnv).title}" else "e-CF de la DGII", fiscalScreen))
         add(MoreItem(Icons.Rounded.Print, "Impresora", if (s.printerName.isNotBlank()) "${s.paperWidthMm} mm · ${s.printerName}" else "Sin configurar", Screen.Settings))
         add(MoreItem(Icons.Rounded.Lan, "Trabajo en red", netText, Screen.Network))
+        val branchList = app.repo.branches.collectAsState().value.filter { it.active == 1L }
+        add(MoreItem(Icons.Rounded.Store, "Sucursales", if (branchList.size > 1) "${branchList.size} sucursales · aquí: ${app.repo.thisBranch?.name ?: "Principal"}" else "Locales del negocio", Screen.Branches))
         add(MoreItem(Icons.Rounded.Badge, "Usuarios", if (users.isEmpty()) "Sin usuarios" else "${users.count { it.active == 1L }} activos", Screen.Users))
         if (admin && app.graph.client == null && app.graph.cloud == null) add(MoreItem(Icons.Rounded.CloudUpload, "Respaldo", if (s.lastBackupAt > 0) "Último: ${Time.shortDate(s.lastBackupAt)}" else "Nunca", Screen.Settings))
         add(MoreItem(Icons.Rounded.Settings, "Configuración", if (admin) "Negocio, impuestos" else "Impresora de este equipo", Screen.Settings))

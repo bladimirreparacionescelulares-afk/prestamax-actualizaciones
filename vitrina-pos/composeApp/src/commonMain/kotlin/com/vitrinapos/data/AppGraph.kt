@@ -177,9 +177,9 @@ class AppGraph(val platform: Platform) {
     }
 
     /** Entra con la cuenta del negocio: este equipo se autoriza y recibe los datos de la nube. */
-    suspend fun cloudLogin(email: String, password: String, businessId: Long? = null, url: String = cloudUrl): DeviceCredentials {
+    suspend fun cloudLogin(email: String, password: String, businessId: Long? = null, url: String = cloudUrl, branchId: Long? = null): DeviceCredentials {
         checkCanJoin()
-        val creds = CloudClient.login(url, LoginRequest(email.trim(), password, deviceName, platform.platformName, businessId))
+        val creds = CloudClient.login(url, LoginRequest(email.trim(), password, deviceName, platform.platformName, businessId, branchId))
         join(creds, email.trim().lowercase(), url)
         return creds
     }

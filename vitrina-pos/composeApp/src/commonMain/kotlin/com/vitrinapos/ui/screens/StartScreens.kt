@@ -137,7 +137,8 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
                 color = AppTheme.extra.muted, textAlign = TextAlign.Center,
             )
             Column(Modifier.widthIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                users.forEach { u ->
+                // Solo los usuarios de la sucursal de este equipo (los administradores, en todas).
+                users.filter { app.repo.worksAt(it) }.forEach { u ->
                     AppCard(Modifier.fillMaxWidth(), onClick = { selected = u }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             com.vitrinapos.ui.components.Avatar(u.name, 46.dp)

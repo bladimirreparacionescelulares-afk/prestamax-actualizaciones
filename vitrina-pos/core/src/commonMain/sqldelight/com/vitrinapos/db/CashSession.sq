@@ -7,7 +7,8 @@ CREATE TABLE cashSession (
   countedAmount INTEGER,
   notes TEXT NOT NULL DEFAULT '',
   deviceId TEXT NOT NULL DEFAULT '',
-  userName TEXT NOT NULL DEFAULT ''
+  userName TEXT NOT NULL DEFAULT '',
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 -- Entradas y salidas de efectivo de una caja (gastos, retiros, cambio, devoluciones).

@@ -82,7 +82,8 @@ object Rules {
         is Op.DeliverRepair -> listOf(Permission.WORKSHOP_DELIVER)
         is Op.ReserveFiscalBlock -> listOf(Permission.SELL, Permission.FISCAL)
         is Op.SaveFiscalRange, is Op.DeleteFiscalRange -> listOf(Permission.FISCAL)
-        is Op.SetUserPermissions, is Op.SaveUser -> listOf(Permission.USERS)
+        is Op.SetUserPermissions, is Op.SaveUser, is Op.SetUserBranches -> listOf(Permission.USERS)
+        is Op.SaveBranch -> listOf(Permission.SETTINGS)
         is Op.LogEvent -> null
     }
 

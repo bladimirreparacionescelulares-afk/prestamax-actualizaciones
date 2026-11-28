@@ -15,7 +15,8 @@ CREATE TABLE purchase (
   status TEXT NOT NULL DEFAULT 'OK',
   note TEXT NOT NULL DEFAULT '',
   userName TEXT NOT NULL DEFAULT '',
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX purchase_created ON purchase(createdAt);
@@ -42,7 +43,8 @@ CREATE TABLE productUnit (
   saleId INTEGER,
   note TEXT NOT NULL DEFAULT '',
   createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  updatedAt INTEGER NOT NULL,
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX productUnit_serial ON productUnit(serial);
@@ -58,7 +60,8 @@ CREATE TABLE saleReturn (
   reason TEXT NOT NULL DEFAULT '',
   deviceId TEXT NOT NULL DEFAULT '',
   userName TEXT NOT NULL DEFAULT '',
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX saleReturn_sale ON saleReturn(saleId);
@@ -85,7 +88,8 @@ CREATE TABLE stockCount (
   diffQty REAL NOT NULL DEFAULT 0,
   diffValue INTEGER NOT NULL DEFAULT 0,
   userName TEXT NOT NULL DEFAULT '',
-  createdAt INTEGER NOT NULL
+  createdAt INTEGER NOT NULL,
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE stockCountItem (

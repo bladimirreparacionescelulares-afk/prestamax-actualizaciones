@@ -660,6 +660,32 @@ fun UserDetailScreen(id: Long) {
                 }
             }
             Text("Nombre, rol, PIN y si está activo.", fontSize = 12.sp, color = AppTheme.extra.muted)
+            // Sucursales donde trabaja (solo si el negocio tiene más de una).
+            val branchList = app.repo.branches.collectAsState().value.filter { it.active == 1L }
+            if (branchList.size > 1) {
+                SectionTitle("Sucursales donde trabaja")
+                if (admin) Text("Los administradores trabajan en todas las sucursales.", fontSize = 13.sp, color = AppTheme.extra.muted)
+                else {
+                    val mine = app.repo.branchesOf(u)
+                    branchList.forEach { b ->
+                        val on = mine.isEmpty() || b.id in mine
+                        AppCard {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(b.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+                                    val current = if (mine.isEmpty()) branchList.map { it.id } else mine
+                                    val next = if (v) current + b.id else current - b.id
+                                    if (next.isEmpty()) { app.toast("Debe trabajar en al menos una sucursal"); return@Switch }
+                                    // Todas encendidas = "todas" (también las que se creen después).
+                                    val save = if (branchList.all { it.id in next }) emptyList() else next
+                                    scope.launch { runCatching { app.repo.setUserBranches(u.id, save) }.onFailure { app.toast(cloudError(it)) } }
+                                })
+                            }
+                        }
+                    }
+                    Text("En los equipos de las demás sucursales, ${u.name} no aparece en \"¿Quién va a usar la app?\".", fontSize = 12.sp, color = AppTheme.extra.muted)
+                }
+            }
             SectionTitle("Qué puede ver y hacer")
             if (admin) {
                 AppCard(color = MaterialTheme.colorScheme.primaryContainer) {

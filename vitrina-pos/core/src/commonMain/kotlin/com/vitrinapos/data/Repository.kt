@@ -7,6 +7,8 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import com.vitrinapos.db.AppUser
+import com.vitrinapos.db.Branch
+import com.vitrinapos.db.BranchStock
 import com.vitrinapos.db.CashSession
 import com.vitrinapos.db.Category
 import com.vitrinapos.db.Client
@@ -205,6 +207,9 @@ class OfflineException(message: String) : IOException(message)
 /** Una regla del negocio impide la operación (caja cerrada, sin stock…). El mensaje se muestra tal cual. */
 class RuleException(message: String) : IllegalStateException(message)
 
+/** La sucursal Principal: a ella pasa todo lo que había antes de las sucursales. */
+const val MAIN_BRANCH = 1L
+
 /** Problema con el nombre de un usuario (null si está bien). Debe tener letras: así no se confunde con un PIN. */
 fun userNameProblem(name: String): String? = when {
     name.isBlank() -> "Escribe el nombre de la persona"
@@ -252,9 +257,20 @@ class Repository(val platform: CorePlatform) {
 
     val role: String get() = meta.value["role"] ?: metaGet("role") ?: NetRole.SOLO
 
+    /** Sucursal en la que está este equipo (2.2). Sin elegir, la Principal. */
+    val branchId: Long get() = (meta.value["branchId"] ?: metaGet("branchId"))?.toLongOrNull() ?: MAIN_BRANCH
+
+    /** Sucursal de la operación que se está aplicando: la del equipo que la hizo. */
+    @Volatile private var opBranch: Long = MAIN_BRANCH
+
     init {
         // Cajas abiertas antes de que existiera el trabajo en red pertenecen a este equipo.
         if (role != NetRole.CLIENT) db.cashSessionQueries.claimOrphans(deviceId)
+        // Toda base que guarda los datos (sola, principal o la de la nube) tiene la sucursal Principal.
+        if (role != NetRole.CLIENT && role != NetRole.CLOUD && db.branchQueries.selectById(MAIN_BRANCH).executeAsOneOrNull() == null)
+            synchronized(writeLock) {
+                driver.execute(null, "INSERT OR IGNORE INTO branch(id, name, address, phone, active, createdAt) VALUES ($MAIN_BRANCH, 'Principal', '', '', 1, 0)", 0)
+            }
     }
 
     /** Se asigna cuando este equipo está conectado a un principal. */
@@ -287,8 +303,66 @@ class Repository(val platform: CorePlatform) {
     private fun localSettings(m: Map<String, String>) =
         m.filterKeys { it.startsWith("s.") }.mapKeys { it.key.removePrefix("s.") }
 
-    val products: StateFlow<List<Product>> = db.productQueries.selectActive().asFlow().mapToList(io)
-        .stateIn(scope, SharingStarted.Eagerly, db.productQueries.selectActive().executeAsList())
+    /** Productos con la existencia de la sucursal de este equipo (en product.stock está el total del negocio). */
+    val products: StateFlow<List<Product>> = combine(
+        db.productQueries.selectActive().asFlow().mapToList(io), db.branchQueries.stockAll().asFlow().mapToList(io), meta,
+    ) { ps, rows, m -> atBranch(ps, rows, branchOf(m)) }
+        .stateIn(scope, SharingStarted.Eagerly, atBranch(db.productQueries.selectActive().executeAsList(), db.branchQueries.stockAll().executeAsList(), branchId))
+
+    /** Sucursales del negocio. */
+    val branches: StateFlow<List<Branch>> = db.branchQueries.selectAll().asFlow().mapToList(io)
+        .stateIn(scope, SharingStarted.Eagerly, db.branchQueries.selectAll().executeAsList())
+
+    private fun branchOf(m: Map<String, String>) = m["branchId"]?.toLongOrNull() ?: MAIN_BRANCH
+
+    /** La existencia de cada producto en la sucursal (sin filas de sucursal, todo es de la Principal). */
+    private fun atBranch(ps: List<Product>, rows: List<BranchStock>, branch: Long): List<Product> {
+        val withRows = rows.mapTo(HashSet()) { it.productId }
+        val here = rows.filter { it.branchId == branch }.associate { it.productId to it.qty }
+        return ps.map { p ->
+            val q = here[p.id] ?: if (branch == MAIN_BRANCH && p.id !in withRows) p.stock else 0.0
+            if (q == p.stock) p else p.copy(stock = q)
+        }
+    }
+
+    /** Existencia de un producto en cada sucursal (para la ficha del producto). */
+    suspend fun stockByBranch(productId: Long): Map<Long, Double> = withContext(io) {
+        val rows = db.branchQueries.rowsOfProduct(productId).executeAsList()
+        if (rows.isEmpty()) mapOf(MAIN_BRANCH to (db.productQueries.selectById(productId).executeAsOneOrNull()?.stock ?: 0.0))
+        else rows.associate { it.branchId to it.qty }
+    }
+
+    /** Existencia del producto en una sucursal (dentro de una transacción). */
+    fun stockAt(productId: Long, branch: Long = opBranch): Double {
+        db.branchQueries.stockOf(productId, branch).executeAsOneOrNull()?.let { return it }
+        if (branch != MAIN_BRANCH || db.branchQueries.rowsOfProduct(productId).executeAsList().isNotEmpty()) return 0.0
+        return db.productQueries.selectById(productId).executeAsOneOrNull()?.stock ?: 0.0
+    }
+
+    /** Crea la fila de la sucursal; si el producto no tenía ninguna, lo que había queda en la Principal. */
+    private fun ensureBranchRow(productId: Long, branch: Long) {
+        if (db.branchQueries.rowsOfProduct(productId).executeAsList().isEmpty()) {
+            val legacy = db.productQueries.selectById(productId).executeAsOneOrNull()?.stock ?: 0.0
+            db.branchQueries.ensureRow("$productId:$MAIN_BRANCH", productId, MAIN_BRANCH, legacy)
+        }
+        db.branchQueries.ensureRow("$productId:$branch", productId, branch, 0.0)
+    }
+
+    /** Suma (o resta) existencias en una sucursal y en el total del producto. Todo cambio de stock pasa por aquí. */
+    private fun addStockAt(productId: Long, delta: Double, now: Long, branch: Long = opBranch) {
+        ensureBranchRow(productId, branch)
+        db.branchQueries.addQty(delta, "$productId:$branch")
+        db.productQueries.addStock(delta, now, productId)
+    }
+
+    private fun setStockAt(productId: Long, qty: Double, now: Long, branch: Long = opBranch) =
+        addStockAt(productId, qty - stockAt(productId, branch), now, branch)
+
+    /** Anota la sucursal en una fila recién creada (venta, caja, compra, IMEI…). */
+    private fun tagBranch(table: String, id: Long, branch: Long = opBranch) =
+        driver.execute(null, "UPDATE $table SET branchId = ? WHERE id = ?", 2) { bindLong(0, branch); bindLong(1, id) }
+
+    private fun lastRowId(): Long = db.branchQueries.lastId().executeAsOne()
 
     val categories: StateFlow<List<Category>> = db.categoryQueries.selectAll().asFlow().mapToList(io)
         .stateIn(scope, SharingStarted.Eagerly, db.categoryQueries.selectAll().executeAsList())
@@ -342,8 +416,9 @@ class Repository(val platform: CorePlatform) {
      * Aplica una operación en la base de datos de este equipo (solo o principal).
      * [actor] y [device]: quién la hizo y desde qué equipo (por defecto, el usuario y el equipo de aquí).
      */
-    fun applyLocal(op: Op, actor: String? = null, device: String? = null): JsonElement {
+    fun applyLocal(op: Op, actor: String? = null, device: String? = null, branch: Long = branchId): JsonElement {
         val result = synchronized(writeLock) {
+            opBranch = branch
             val now = Time.now()
             db.transactionWithResult<JsonElement> {
                 // Se describe antes de aplicar, para ver los valores anteriores (precio viejo, nombre de lo que se borra…).
@@ -371,6 +446,7 @@ class Repository(val platform: CorePlatform) {
                                 d.unit.ifBlank { "und" }, if (d.taxable) 1 else 0, if (d.trackStock) 1 else 0, d.imagePath, d.description.trim(), now, now,
                             )
                             val id = db.productQueries.lastId().executeAsOne()
+                            db.branchQueries.ensureRow("$id:$opBranch", id, opBranch, d.initialStock)
                             db.productQueries.setService(if (d.isService) 1 else 0, id)
                             saveExtras(d, id)
                             if (d.initialStock != 0.0) logMove(id, MoveType.INITIAL, d.initialStock, "", now, op.user)
@@ -407,9 +483,10 @@ class Repository(val platform: CorePlatform) {
                         if (op.note.isBlank()) throw RuleException("Escribe el motivo del ajuste")
                         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull()
                         if (p?.serialized == 1L) throw RuleException("Este producto se controla por IMEI: registra los IMEI o usa una merma")
-                        if (p != null && op.newStock != p.stock) {
-                            db.productQueries.setStock(op.newStock, now, op.productId)
-                            logMove(op.productId, MoveType.ADJUST, op.newStock - p.stock, op.note, now, op.user)
+                        val here = stockAt(op.productId)
+                        if (p != null && op.newStock != here) {
+                            setStockAt(op.productId, op.newStock, now)
+                            logMove(op.productId, MoveType.ADJUST, op.newStock - here, op.note, now, op.user)
                         }
                         JsonNull
                     }
@@ -420,7 +497,7 @@ class Repository(val platform: CorePlatform) {
                             if (l.qty == 0.0) continue
                             if (db.productQueries.selectById(l.productId).executeAsOneOrNull()?.serialized == 1L)
                                 throw RuleException("Los productos con IMEI entran con una compra")
-                            db.productQueries.addStock(l.qty, now, l.productId)
+                            addStockAt(l.productId, l.qty, now)
                             if (l.newCost != null) db.productQueries.setCost(l.newCost, now, l.productId)
                             logMove(l.productId, MoveType.ENTRY, l.qty, text, now, op.user)
                         }
@@ -468,8 +545,8 @@ class Repository(val platform: CorePlatform) {
                                 val pid = item.productId ?: continue
                                 val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: continue
                                 if (p.trackStock == 1L) {
-                                    db.productQueries.addStock(item.qty, now, pid)
-                                    logMove(pid, MoveType.VOID, item.qty, "Anulación venta #${sale.number}", now, op.user)
+                                    addStockAt(pid, item.qty, now, sale.branchId)
+                                    logMove(pid, MoveType.VOID, item.qty, "Anulación venta #${sale.number}", now, op.user, branch = sale.branchId)
                                 }
                             }
                         }
@@ -506,6 +583,7 @@ class Repository(val platform: CorePlatform) {
                         if (op.amount < 0) throw RuleException("El efectivo inicial no puede ser negativo")
                         if (db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull() == null)
                             db.cashSessionQueries.open(now, op.amount, op.deviceId, op.user)
+                            tagBranch("cashSession", lastRowId())
                         JsonNull
                     }
                     is Op.CashMove -> {
@@ -573,6 +651,12 @@ class Repository(val platform: CorePlatform) {
                     is Op.MergeProducts -> { mergeLocal(op, now); JsonNull }
                     is Op.LogEvent -> JsonNull
                     is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
+                    is Op.SaveBranch -> JsonPrimitive(saveBranchLocal(op, now))
+                    is Op.SetUserBranches -> {
+                        val ids = op.branches.split(',').mapNotNull { it.trim().toLongOrNull() }.distinct()
+                        driver.execute(null, "UPDATE appUser SET branches = ? WHERE id = ?", 2) { bindString(0, ids.joinToString(",")); bindLong(1, op.id) }
+                        JsonNull
+                    }
                     is Op.SaveUser -> JsonPrimitive(
                         run {
                             // El nombre es de la persona: sin letras parece un PIN y se mostraría en pantalla.
@@ -599,9 +683,28 @@ class Repository(val platform: CorePlatform) {
     }
 
     /** Anota un movimiento en el kardex con el saldo y el costo después del cambio (dentro de una transacción). */
-    private fun logMove(productId: Long, type: String, qty: Double, note: String, at: Long, user: String, unitCost: Long? = null) {
+    private fun logMove(productId: Long, type: String, qty: Double, note: String, at: Long, user: String, unitCost: Long? = null, branch: Long = opBranch) {
         val p = db.productQueries.selectById(productId).executeAsOneOrNull()
-        db.stockMoveQueries.insert(productId, type, qty, note, at, user, unitCost ?: p?.cost ?: 0, p?.stock ?: 0.0)
+        // El saldo del kardex es el de la sucursal donde pasó el movimiento.
+        db.stockMoveQueries.insert(productId, type, qty, note, at, user, unitCost ?: p?.cost ?: 0, stockAt(productId, branch))
+        tagBranch("stockMove", lastRowId(), branch)
+    }
+
+    /** Crea o cambia una sucursal (dentro de una transacción). */
+    private fun saveBranchLocal(op: Op.SaveBranch, now: Long): Long {
+        val name = op.name.trim()
+        if (name.isBlank()) throw RuleException("Escribe el nombre de la sucursal")
+        val all = db.branchQueries.selectAll().executeAsList()
+        if (all.any { it.id != op.id && it.name.equals(name, true) }) throw RuleException("Ya hay una sucursal que se llama $name")
+        if (op.id == null) {
+            db.branchQueries.insert(name, op.address.trim(), op.phone.trim(), 1, now)
+            return lastRowId()
+        }
+        if (!op.active && op.id == MAIN_BRANCH) throw RuleException("La sucursal Principal no se puede desactivar")
+        if (!op.active && db.branchQueries.stockAll().executeAsList().any { it.branchId == op.id && it.qty > 1e-9 })
+            throw RuleException("Esa sucursal todavía tiene mercancía. Pásala a otra sucursal antes de desactivarla.")
+        db.branchQueries.update(name, op.address.trim(), op.phone.trim(), if (op.active) 1 else 0, op.id)
+        return op.id
     }
 
     /** IMEI y variante del producto. Al crear una variante de otro producto, este entra al grupo. */
@@ -644,6 +747,7 @@ class Repository(val platform: CorePlatform) {
             op.paymentMethod, op.note.trim(), op.user, now,
         )
         val id = db.inventoryQueries.lastId().executeAsOne()
+        tagBranch("purchase", id)
         val text = listOf("Compra #$number", op.supplierName.trim(), ncf).filter { it.isNotBlank() }.joinToString(" · ")
         for (l in lines) {
             val p = db.productQueries.selectById(l.productId).executeAsOne()
@@ -654,10 +758,10 @@ class Repository(val platform: CorePlatform) {
             val avg = if (old + l.qty > 0) ((old * p.cost + l.qty * l.unitCost) / (old + l.qty)).roundToLong() else l.unitCost
             db.productQueries.setCost(avg, now, p.id)
             if (p.trackStock == 1L) {
-                db.productQueries.addStock(l.qty, now, p.id)
+                addStockAt(p.id, l.qty, now)
                 logMove(p.id, MoveType.PURCHASE, l.qty, text, now, op.user, l.unitCost)
             }
-            sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, l.unitCost, id, "", now, now) }
+            sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, l.unitCost, id, "", now, now); tagBranch("productUnit", lastRowId()) }
         }
         return id
     }
@@ -670,9 +774,11 @@ class Repository(val platform: CorePlatform) {
         // Primero se revisa que todo siga en existencia.
         for (it in items) {
             val p = db.productQueries.selectById(it.productId).executeAsOneOrNull() ?: continue
-            if (p.trackStock == 1L && p.stock + 1e-9 < it.qty) throw RuleException("No se puede anular: de ${p.fullName} solo quedan ${p.stock.fmtQty()}")
+            val here = stockAt(p.id, pu.branchId)
+            if (p.trackStock == 1L && here + 1e-9 < it.qty) throw RuleException("No se puede anular: de ${p.fullName} solo quedan ${here.fmtQty()} en la sucursal de la compra")
             it.serials.split(',').filter { s -> s.isNotBlank() }.forEach { sn ->
-                if (db.inventoryQueries.availableUnit(sn).executeAsOneOrNull() == null) throw RuleException("No se puede anular: el IMEI $sn ya no está en existencia")
+                if (db.inventoryQueries.availableUnit(sn).executeAsOneOrNull()?.takeIf { u -> u.branchId == pu.branchId } == null)
+                    throw RuleException("No se puede anular: el IMEI $sn ya no está en existencia")
             }
         }
         for (it in items) {
@@ -680,8 +786,8 @@ class Repository(val platform: CorePlatform) {
             val left = p.stock - it.qty
             if (left > 0) db.productQueries.setCost(((p.stock * p.cost - it.qty * it.unitCost) / left).roundToLong().coerceAtLeast(0), now, p.id)
             if (p.trackStock == 1L) {
-                db.productQueries.addStock(-it.qty, now, p.id)
-                logMove(p.id, MoveType.PURCHASE_VOID, -it.qty, "Compra #${pu.number} anulada · ${op.reason.trim()}", now, op.user, it.unitCost)
+                addStockAt(p.id, -it.qty, now, pu.branchId)
+                logMove(p.id, MoveType.PURCHASE_VOID, -it.qty, "Compra #${pu.number} anulada · ${op.reason.trim()}", now, op.user, it.unitCost, branch = pu.branchId)
             }
             it.serials.split(',').filter { s -> s.isNotBlank() }.forEach { sn ->
                 db.inventoryQueries.availableUnit(sn).executeAsOneOrNull()?.let { u ->
@@ -697,7 +803,8 @@ class Repository(val platform: CorePlatform) {
         if (op.reason.isBlank()) throw RuleException("Elige el motivo de la merma")
         val p = db.productQueries.selectById(op.productId).executeAsOneOrNull() ?: throw RuleException("El producto no existe")
         if (p.trackStock != 1L) throw RuleException("Este producto no lleva existencias")
-        if (op.qty > p.stock + 1e-9) throw RuleException("De ${p.fullName} solo hay ${p.stock.fmtQty()}")
+        val here = stockAt(p.id)
+        if (op.qty > here + 1e-9) throw RuleException("De ${p.fullName} solo hay ${here.fmtQty()} en esta sucursal")
         val limit = currentSettings().approvalAmount
         if (limit > 0 && op.qty * p.cost > limit && op.authorizedBy.isBlank())
             throw RuleException("Una merma de ${Money.format((op.qty * p.cost).roundToLong(), currentSettings().currencySymbol)} necesita un administrador")
@@ -707,37 +814,39 @@ class Repository(val platform: CorePlatform) {
             if (sn.size.toDouble() != op.qty) throw RuleException("Elige el IMEI de cada unidad")
             sn.forEach { s ->
                 val u = db.inventoryQueries.availableUnit(s).executeAsOneOrNull()
-                if (u == null || u.productId != p.id) throw RuleException("El IMEI $s no está en existencia")
+                if (u == null || u.productId != p.id || u.branchId != opBranch) throw RuleException("El IMEI $s no está en existencia en esta sucursal")
                 db.inventoryQueries.setUnitStatus(UnitStatus.LOST, null, text, now, u.id)
             }
         }
-        db.productQueries.addStock(-op.qty, now, p.id)
+        addStockAt(p.id, -op.qty, now)
         logMove(p.id, MoveType.LOSS, -op.qty, text, now, op.user)
     }
 
     /** Conteo físico. Devuelve el id del conteo. */
     private fun applyCountLocal(op: Op.ApplyCount, now: Long): Long {
         if (op.lines.isEmpty()) throw RuleException("No contaste ningún producto")
-        data class Row(val p: Product, val line: CountLine, val real: Double)
+        data class Row(val p: Product, val line: CountLine, val real: Double, val here: Double)
         val rows = op.lines.mapNotNull { l ->
             if (l.counted < 0) throw RuleException("Las cantidades contadas no pueden ser negativas")
             val p = db.productQueries.selectById(l.productId).executeAsOneOrNull() ?: return@mapNotNull null
             if (p.trackStock != 1L || p.serialized == 1L) return@mapNotNull null
             // Lo que se vendió o entró mientras se contaba se descuenta de lo contado.
-            Row(p, l, (l.counted + (p.stock - l.expected)).coerceAtLeast(0.0))
+            val here = stockAt(p.id)
+            Row(p, l, (l.counted + (here - l.expected)).coerceAtLeast(0.0), here)
         }
         if (rows.isEmpty()) throw RuleException("Ninguno de los productos contados lleva existencias (los de IMEI se revisan en su ficha)")
         val number = db.inventoryQueries.nextCountNumber().executeAsOne()
-        val diffQty = rows.sumOf { it.real - it.p.stock }
-        val diffValue = rows.sumOf { ((it.real - it.p.stock) * it.p.cost).roundToLong() }
+        val diffQty = rows.sumOf { it.real - it.here }
+        val diffValue = rows.sumOf { ((it.real - it.here) * it.p.cost).roundToLong() }
         db.inventoryQueries.insertCount(number, op.note.trim(), rows.size.toLong(), diffQty, diffValue, op.user, now)
         val id = db.inventoryQueries.lastId().executeAsOne()
+        tagBranch("stockCount", id)
         val text = listOf("Conteo #$number", op.note.trim()).filter { it.isNotBlank() }.joinToString(" · ")
         for (r in rows) {
             db.inventoryQueries.insertCountItem(id, r.p.id, r.p.fullName, r.line.expected, r.line.counted, r.p.cost)
-            val diff = r.real - r.p.stock
+            val diff = r.real - r.here
             if (kotlin.math.abs(diff) > 1e-9) {
-                db.productQueries.setStock(r.real, now, r.p.id)
+                setStockAt(r.p.id, r.real, now)
                 logMove(r.p.id, MoveType.COUNT, diff, text, now, op.user)
             }
         }
@@ -802,12 +911,13 @@ class Repository(val platform: CorePlatform) {
         }
         db.inventoryQueries.insertReturn(op.saleId, total, tax, cost, op.refundMethod, op.reason.trim(), op.deviceId, op.user, now)
         val id = db.inventoryQueries.lastId().executeAsOne()
+        tagBranch("saleReturn", id)
         for (r in rows) {
             db.inventoryQueries.insertReturnItem(id, r.item.id, r.item.productId, r.item.name, r.line.qty, r.amount, if (r.line.restock) 1 else 0, r.serials.joinToString(","))
             val pid = r.item.productId ?: continue
             val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: continue
             if (r.line.restock && p.trackStock == 1L) {
-                db.productQueries.addStock(r.line.qty, now, pid)
+                addStockAt(pid, r.line.qty, now)
                 logMove(pid, MoveType.RETURN, r.line.qty, "Devolución venta #${sale.number} · ${op.reason.trim()}", now, op.user, r.item.cost)
             }
             r.serials.forEach { sn ->
@@ -816,6 +926,7 @@ class Repository(val platform: CorePlatform) {
                         if (r.line.restock) UnitStatus.AVAILABLE else UnitStatus.LOST, null,
                         "Devuelto de la venta #${sale.number}" + if (r.line.restock) "" else " (dañado)", now, u.id,
                     )
+                    tagBranch("productUnit", u.id)
                 }
             }
         }
@@ -831,6 +942,14 @@ class Repository(val platform: CorePlatform) {
         val all = listOf(keep) + others
         val units = all.sumOf { it.stock.coerceAtLeast(0.0) }
         val cost = if (units > 0) (all.sumOf { it.stock.coerceAtLeast(0.0) * it.cost } / units).roundToLong() else keep.cost
+        // Existencias por sucursal: las de los que se unen pasan al que queda.
+        val byBranch = HashMap<Long, Double>()
+        for (x in all) {
+            val rows = db.branchQueries.rowsOfProduct(x.id).executeAsList()
+            if (rows.isEmpty()) byBranch.merge(MAIN_BRANCH, x.stock, Double::plus) else rows.forEach { byBranch.merge(it.branchId, it.qty, Double::plus) }
+        }
+        all.forEach { db.branchQueries.deleteOfProduct(it.id) }
+        byBranch.forEach { (b, q) -> db.branchQueries.ensureRow("${keep.id}:$b", keep.id, b, q) }
         for (o in others) {
             for (t in listOf("saleItem", "stockMove", "purchaseItem", "productUnit", "quoteItem", "stockCountItem", "saleReturnItem")) {
                 driver.execute(null, "UPDATE $t SET productId = ? WHERE productId = ?", 2) { bindLong(0, keep.id); bindLong(1, o.id) }
@@ -848,10 +967,10 @@ class Repository(val platform: CorePlatform) {
             driver.execute(null, "UPDATE product SET name = ? WHERE id = ?", 2) { bindString(0, n); bindLong(1, keep.id) }
         }
         // El kardex queda con el saldo acumulado de todos los movimientos unidos.
-        var bal = 0.0
+        val bal = HashMap<Long, Double>()
         db.stockMoveQueries.kardex(keep.id, 0, Long.MAX_VALUE).executeAsList().forEach { m ->
-            bal += m.qty
-            driver.execute(null, "UPDATE stockMove SET balance = ? WHERE id = ?", 2) { bindDouble(0, bal); bindLong(1, m.id) }
+            val b = bal.merge(m.branchId, m.qty, Double::plus)!!
+            driver.execute(null, "UPDATE stockMove SET balance = ? WHERE id = ?", 2) { bindDouble(0, b); bindLong(1, m.id) }
         }
         logMove(keep.id, MoveType.ADJUST, 0.0, "Unido con " + others.joinToString(", ") { it.fullName }, now, "")
     }
@@ -895,6 +1014,18 @@ class Repository(val platform: CorePlatform) {
             }
             is Op.CashMove -> "${CashMoveType.label(op.kind)} de caja" to join(m(op.amount), op.note)
             is Op.SetUserPermissions -> db.appUserQueries.selectById(op.id).executeAsOneOrNull()?.let { "Cambió permisos" to it.name }
+            is Op.SaveBranch -> if (op.id == null) "Creó una sucursal" to op.name.trim()
+                else db.branchQueries.selectById(op.id).executeAsOneOrNull()?.let { old ->
+                    when {
+                        old.active == 1L && !op.active -> "Desactivó una sucursal" to old.name
+                        old.active == 0L && op.active -> "Activó una sucursal" to old.name
+                        else -> "Cambió una sucursal" to op.name.trim()
+                    }
+                }
+            is Op.SetUserBranches -> db.appUserQueries.selectById(op.id).executeAsOneOrNull()?.let { u ->
+                val names = op.branches.split(',').mapNotNull { it.trim().toLongOrNull() }.mapNotNull { db.branchQueries.selectById(it).executeAsOneOrNull()?.name }
+                "Cambió las sucursales de un usuario" to "${u.name}: " + names.ifEmpty { listOf("todas") }.joinToString(", ")
+            }
             is Op.SaveUser -> {
                 val old = op.id?.let { db.appUserQueries.selectById(it).executeAsOneOrNull() }
                 when {
@@ -941,11 +1072,12 @@ class Repository(val platform: CorePlatform) {
         if (sn.toSet().size != sn.size) throw RuleException("Hay IMEI repetidos")
         sn.forEach { if (db.inventoryQueries.availableUnit(it).executeAsOneOrNull() != null) throw RuleException("El IMEI $it ya está en existencia") }
         // Primero se le pone IMEI a lo que ya está en existencia; lo que sobre entra como existencia nueva.
-        val untagged = (p.stock - db.inventoryQueries.countAvailable(p.id).executeAsOne()).coerceAtLeast(0.0).toInt()
-        sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, p.cost, null, "Registrado en existencia", now, now) }
+        val tagged = db.inventoryQueries.unitsByProduct(p.id).executeAsList().count { it.status == UnitStatus.AVAILABLE && it.branchId == opBranch }
+        val untagged = (stockAt(p.id) - tagged).coerceAtLeast(0.0).toInt()
+        sn.forEach { db.inventoryQueries.insertUnit(p.id, it, UnitStatus.AVAILABLE, p.cost, null, "Registrado en existencia", now, now); tagBranch("productUnit", lastRowId()) }
         val extra = sn.size - untagged
         if (extra > 0) {
-            db.productQueries.addStock(extra.toDouble(), now, p.id)
+            addStockAt(p.id, extra.toDouble(), now)
             logMove(p.id, MoveType.ENTRY, extra.toDouble(), "Alta por IMEI", now, op.user)
         }
     }
@@ -976,6 +1108,7 @@ class Repository(val platform: CorePlatform) {
             d.warrantyDays.toLong(), now, now,
         )
         val id = db.repairQueries.lastId().executeAsOne()
+        tagBranch("repairOrder", id)
         db.repairQueries.insertEvent(id, RepairStatus.RECEIVED, if (d.deposit > 0) "Abono ${Money.format(d.deposit, settings.value.currencySymbol)}" else "", op.userName, now)
         if (d.deposit > 0) {
             // El abono es un cobro: entra en Caja, en Ventas y en Reportes.
@@ -1013,6 +1146,7 @@ class Repository(val platform: CorePlatform) {
                 if (!seen.add(sn)) throw RuleException("El IMEI $sn está repetido en la venta")
                 val u = db.inventoryQueries.availableUnit(sn).executeAsOneOrNull()
                 if (u == null || u.productId != p.id) throw RuleException("El IMEI $sn no está disponible para ${p.fullName}")
+                if (u.branchId != opBranch) throw RuleException("El IMEI $sn está en otra sucursal")
             }
         }
         if (currentSettings().requireCash && db.cashSessionQueries.selectOpen(op.deviceId).executeAsOneOrNull() == null)
@@ -1021,8 +1155,9 @@ class Repository(val platform: CorePlatform) {
             op.lines.filter { it.productId != null && it.trackStock }.groupBy { it.productId!! }.forEach { (pid, ls) ->
                 val p = db.productQueries.selectById(pid).executeAsOneOrNull() ?: return@forEach
                 val want = ls.sumOf { it.qty }
-                if (p.trackStock == 1L && want > p.stock + 1e-9)
-                    throw RuleException(if (p.stock <= 0) "${p.name}: no hay existencias" else "${p.name}: solo quedan ${p.stock.fmtQty()}")
+                val here = stockAt(pid)
+                if (p.trackStock == 1L && want > here + 1e-9)
+                    throw RuleException(if (here <= 0) "${p.name}: no hay existencias en esta sucursal" else "${p.name}: solo quedan ${here.fmtQty()}")
             }
         }
     }
@@ -1080,10 +1215,11 @@ class Repository(val platform: CorePlatform) {
             op.deviceId, op.userId, op.userName,
         )
         val saleId = db.saleQueries.lastId().executeAsOne()
+        tagBranch("sale", saleId)
         for (l in lines) {
             db.saleQueries.insertItem(saleId, l.productId, l.name, l.code, l.qty, l.price, l.cost, if (l.taxable) 1 else 0, l.serials.joinToString(","))
             if (l.productId != null && l.trackStock) {
-                db.productQueries.addStock(-l.qty, op.createdAt, l.productId)
+                addStockAt(l.productId, -l.qty, op.createdAt)
                 logMove(l.productId, MoveType.SALE, -l.qty, "Venta #$number", op.createdAt, op.userName, l.cost)
             }
             for (sn in l.serials) {
@@ -1140,6 +1276,7 @@ class Repository(val platform: CorePlatform) {
                     "status" to JsonPrimitive(SaleStatus.OK), "quoteId" to (op.quoteId?.let { JsonPrimitive(it) } ?: JsonNull),
                     "createdAt" to JsonPrimitive(op.createdAt), "deviceId" to JsonPrimitive(op.deviceId),
                     "userId" to (op.userId?.let { JsonPrimitive(it) } ?: JsonNull), "userName" to JsonPrimitive(op.userName),
+                    "branchId" to JsonPrimitive(branchId),
                 )))
                 op.lines.forEachIndexed { i, l ->
                     RowCodec.upsert(driver, "saleItem", JsonObject(mapOf(
@@ -1149,11 +1286,11 @@ class Repository(val platform: CorePlatform) {
                         "serials" to JsonPrimitive(l.serials.joinToString(",")),
                     )))
                     if (l.productId != null && l.trackStock) {
-                        db.productQueries.addStock(-l.qty, op.createdAt, l.productId)
+                        addStockAt(l.productId, -l.qty, op.createdAt, branchId)
                         RowCodec.upsert(driver, "stockMove", JsonObject(mapOf(
                             "id" to JsonPrimitive(pid * 1000 - 500 - i), "productId" to JsonPrimitive(l.productId), "type" to JsonPrimitive(MoveType.SALE),
                             "qty" to JsonPrimitive(-l.qty), "note" to JsonPrimitive("Venta pendiente P${-number}"), "createdAt" to JsonPrimitive(op.createdAt),
-                            "userName" to JsonPrimitive(op.userName),
+                            "userName" to JsonPrimitive(op.userName), "branchId" to JsonPrimitive(branchId),
                         )))
                     }
                 }
@@ -1271,7 +1408,10 @@ class Repository(val platform: CorePlatform) {
 
     suspend fun deleteCategory(id: Long) { run(Op.DeleteCategory(id)) }
 
-    suspend fun productById(id: Long): Product? = withContext(io) { db.productQueries.selectById(id).executeAsOneOrNull() }
+    /** El producto con la existencia de la sucursal de este equipo. */
+    suspend fun productById(id: Long): Product? = withContext(io) {
+        db.productQueries.selectById(id).executeAsOneOrNull()?.let { p -> atBranch(listOf(p), db.branchQueries.rowsOfProduct(id).executeAsList(), branchId).first() }
+    }
 
     suspend fun productByCode(code: String): Product? = withContext(io) { db.productQueries.selectByCode(code.trim()).executeAsOneOrNull() }
 
@@ -1295,8 +1435,10 @@ class Repository(val platform: CorePlatform) {
 
     // ---------- Inventario (1.9) ----------
 
-    val availableUnits: StateFlow<List<com.vitrinapos.db.ProductUnit>> = db.inventoryQueries.availableUnits().asFlow().mapToList(io)
-        .stateIn(scope, SharingStarted.Eagerly, db.inventoryQueries.availableUnits().executeAsList())
+    /** IMEI en existencia en la sucursal de este equipo. */
+    val availableUnits: StateFlow<List<com.vitrinapos.db.ProductUnit>> = combine(db.inventoryQueries.availableUnits().asFlow().mapToList(io), meta) { us, m ->
+        val b = branchOf(m); us.filter { it.branchId == b }
+    }.stateIn(scope, SharingStarted.Eagerly, db.inventoryQueries.availableUnits().executeAsList().filter { it.branchId == branchId })
 
     val purchases: StateFlow<List<com.vitrinapos.db.Purchase>> = db.inventoryQueries.purchases(300).asFlow().mapToList(io)
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
@@ -1368,11 +1510,13 @@ class Repository(val platform: CorePlatform) {
     suspend fun searchUnits(q: String) = withContext(io) { db.inventoryQueries.searchUnits(q.trim().uppercase()).executeAsList() }
 
     /** Kardex de un producto: saldo anterior y movimientos del periodo. */
-    suspend fun kardex(productId: Long, from: Long, to: Long): Pair<Double, List<StockMove>> = withContext(io) {
-        db.stockMoveQueries.balanceBefore(productId, from).executeAsOne() to db.stockMoveQueries.kardex(productId, from, to).executeAsList()
+    /** Kardex de un producto en una sucursal (por defecto, la de este equipo): saldo inicial y movimientos. */
+    suspend fun kardex(productId: Long, from: Long, to: Long, branch: Long = branchId): Pair<Double, List<StockMove>> = withContext(io) {
+        val all = db.stockMoveQueries.kardex(productId, 0, to).executeAsList().filter { it.branchId == branch }
+        all.filter { it.createdAt < from }.sumOf { it.qty } to all.filter { it.createdAt >= from }
     }
 
-    suspend fun movesByProduct(productId: Long): List<StockMove> = withContext(io) { db.stockMoveQueries.selectByProduct(productId).executeAsList() }
+    suspend fun movesByProduct(productId: Long): List<StockMove> = withContext(io) { db.stockMoveQueries.selectByProduct(productId).executeAsList().filter { it.branchId == branchId } }
 
     suspend fun recentMoves(limit: Long = 100) = withContext(io) { db.stockMoveQueries.selectRecent(limit).executeAsList() }
 
@@ -1444,6 +1588,40 @@ class Repository(val platform: CorePlatform) {
     suspend fun deleteFiscalRange(id: Long) { run(Op.DeleteFiscalRange(id)) }
 
     /** Guarda los permisos de un usuario ("" vuelve a los de su rol). */
+    // ---------- Sucursales (2.2) ----------
+
+    suspend fun saveBranch(id: Long?, name: String, address: String, phone: String, active: Boolean = true): Long =
+        run(Op.SaveBranch(id, name, address, phone, active)).asId()
+
+    /** Sucursales donde trabaja un usuario (vacío = todas). */
+    suspend fun setUserBranches(userId: Long, branchIds: List<Long>) { run(Op.SetUserBranches(userId, branchIds.distinct().joinToString(","))) }
+
+    /** Sucursales asignadas a un usuario (vacío = todas). */
+    fun branchesOf(user: AppUser): List<Long> = user.branches.split(',').mapNotNull { it.trim().toLongOrNull() }
+
+    /** ¿El usuario trabaja en esta sucursal? Los administradores y los que no tienen sucursales asignadas, en todas. */
+    fun worksAt(user: AppUser, branch: Long = branchId): Boolean =
+        user.role == Roles.ADMIN || branchesOf(user).let { it.isEmpty() || branch in it }
+
+    /** En qué sucursal está este equipo (en la nube lo decide el dueño en Equipos). */
+    fun setThisDeviceBranch(id: Long) = metaPut("branchId", id.toString())
+
+    /** Sucursal de este equipo (null si todavía no llegó la lista de sucursales). */
+    val thisBranch: Branch? get() = branches.value.firstOrNull { it.id == branchId }
+
+    /** Ventas de un periodo por sucursal: sucursal → (cantidad, total). */
+    suspend fun salesByBranch(from: Long, to: Long): Map<Long, Pair<Long, Long>> = withContext(io) {
+        db.branchQueries.salesByBranch(from, to).executeAsList().associate { it.branchId to (it.sales to it.total) }
+    }
+
+    /** Productos con poca existencia en una sucursal. */
+    suspend fun lowStockAt(branch: Long) = withContext(io) { db.branchQueries.lowStockByBranch(branch).executeAsList() }
+
+    /** Productos con existencia y unidades por sucursal. */
+    suspend fun stockSummaryByBranch(): Map<Long, Pair<Long, Double>> = withContext(io) {
+        db.branchQueries.stockByBranch().executeAsList().associate { it.branchId to (it.products to (it.units ?: 0.0)) }
+    }
+
     suspend fun setUserPermissions(id: Long, permissions: Set<Permission>?) {
         run(Op.SetUserPermissions(id, permissions?.let { Permissions.encode(it).ifEmpty { "NONE" } } ?: ""))
     }

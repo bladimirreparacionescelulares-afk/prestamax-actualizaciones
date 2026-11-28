@@ -181,6 +181,16 @@ sealed class Op {
     @Serializable @SerialName("units")
     data class AddUnits(val productId: Long, val serials: List<String>, val user: String) : Op()
 
+    // ---------- Sucursales (2.2) ----------
+
+    /** Crea o cambia una sucursal. */
+    @Serializable @SerialName("branch")
+    data class SaveBranch(val id: Long?, val name: String, val address: String, val phone: String, val active: Boolean) : Op()
+
+    /** Sucursales donde trabaja un usuario: ids separados por coma ("" = todas). */
+    @Serializable @SerialName("userBranches")
+    data class SetUserBranches(val id: Long, val branches: String) : Op()
+
     @Serializable @SerialName("user")
     data class SaveUser(val id: Long?, val name: String, val pinHash: String?, val role: String, val active: Boolean) : Op()
 

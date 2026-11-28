@@ -29,7 +29,8 @@ CREATE TABLE repairOrder (
   deliveredAt INTEGER,
   saleId INTEGER,
   createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  updatedAt INTEGER NOT NULL,
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX repair_status ON repairOrder(status);

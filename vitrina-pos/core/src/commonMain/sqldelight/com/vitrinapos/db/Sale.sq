@@ -17,7 +17,8 @@ CREATE TABLE sale (
   createdAt INTEGER NOT NULL,
   deviceId TEXT NOT NULL DEFAULT '',
   userId INTEGER,
-  userName TEXT NOT NULL DEFAULT ''
+  userName TEXT NOT NULL DEFAULT '',
+  branchId INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX sale_created ON sale(createdAt);

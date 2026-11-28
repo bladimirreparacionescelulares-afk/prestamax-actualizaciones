@@ -1,6 +1,7 @@
 package com.vitrinapos.server
 
 import com.vitrinapos.net.*
+import com.vitrinapos.data.MAIN_BRANCH
 import com.vitrinapos.AppInfo
 import com.vitrinapos.data.AppSettings
 import com.vitrinapos.data.BusinessType
@@ -64,25 +65,6 @@ class ApiError(val status: HttpStatusCode, message: String) : RuntimeException(m
 
 // ================= Pedidos y respuestas =================
 
-@Serializable data class SignupRequest(
-    val email: String, val password: String, val name: String, val businessName: String, val businessType: String = "",
-    val ownerPin: String, val deviceName: String = "", val platform: String = "",
-)
-@Serializable data class LoginRequest(val email: String, val password: String, val deviceName: String, val platform: String = "", val businessId: Long? = null)
-@Serializable data class DeviceCredentials(val deviceId: String, val deviceSecret: String, val businessId: Long, val businessName: String, val mustChangePassword: Boolean = false)
-@Serializable data class TokenRequest(val deviceId: String, val deviceSecret: String)
-@Serializable data class TokenResponse(val token: String, val expires: Long, val epoch: String, val entitlements: Entitlements, val deviceName: String)
-@Serializable data class UserLoginRequest(val userId: Long, val pin: String)
-@Serializable data class UserTokenResponse(val token: String, val expires: Long, val userName: String, val role: String)
-@Serializable data class OwnerLoginRequest(val email: String, val password: String, val businessId: Long? = null)
-@Serializable data class OwnerTokenResponse(val token: String, val expires: Long, val businessId: Long, val mustChangePassword: Boolean)
-@Serializable data class OpRequest(val opId: String, val op: Op)
-@Serializable data class ForgotRequest(val email: String)
-@Serializable data class ResetRequest(val email: String, val code: String, val newPassword: String)
-@Serializable data class ChangePasswordRequest(val email: String, val oldPassword: String, val newPassword: String)
-@Serializable data class Message(val ok: Boolean = true, val message: String = "")
-@Serializable data class ErrorBody(val ok: Boolean = false, val error: String)
-@Serializable data class RenameRequest(val name: String)
 
 // Panel administrativo
 @Serializable data class AdminBusiness(
@@ -110,7 +92,7 @@ class VitrinaServer(val config: Config, val control: ControlStore, val tenants: 
         val state = Rules.state(sub, biz.suspended)
         val modules = ((plan?.modules ?: listOf(Modules.SALES)) + control.extraModules(businessId)).distinct().sorted()
         val until = sub?.let { maxOf(it.paidUntil ?: 0, it.trialUntil ?: 0) }?.takeIf { it > 0 }
-        return Entitlements(plan?.id ?: "", plan?.name ?: "", state.name, until, modules, plan?.maxDevices ?: 1, plan?.maxUsers ?: 1)
+        return Entitlements(plan?.id ?: "", plan?.name ?: "", state.name, until, modules, plan?.maxDevices ?: 1, plan?.maxUsers ?: 1, plan?.maxBranches ?: 1)
     }
 
     fun epoch(repo: Repository): String = repo.metaGet("epoch") ?: Secure.token(9).also { repo.metaPut("epoch", it) }
@@ -159,13 +141,19 @@ class VitrinaServer(val config: Config, val control: ControlStore, val tenants: 
         return registerDevice(id, r.deviceName, r.platform, acc.mustChange)
     }
 
-    fun registerDevice(businessId: Long, name: String, platform: String, mustChange: Boolean): DeviceCredentials {
+    /** Sucursales activas del negocio. */
+    fun branchesOf(businessId: Long): List<BranchInfo> =
+        tenants.repo(businessId).db.branchQueries.selectAll().executeAsList().filter { it.active == 1L }.map { BranchInfo(it.id, it.name, it.address) }
+
+    fun registerDevice(businessId: Long, name: String, platform: String, mustChange: Boolean, branchId: Long? = null): DeviceCredentials {
         val ent = entitlements(businessId)
         if (control.activeDeviceCount(businessId) >= ent.maxDevices)
             throw ApiError(HttpStatusCode.Forbidden, "Tu plan permite ${ent.maxDevices} ${if (ent.maxDevices == 1) "equipo" else "equipos"}. Quita uno en Más → Equipos o cambia de plan.")
         val id = "eq_" + Secure.token(9)
         val secret = Secure.token(32)
-        control.addDevice(id, businessId, name.trim().ifBlank { "Equipo" }, platform, Secure.sha256(secret))
+        // La sucursal pedida, si existe y está activa; si no, la Principal.
+        val branch = branchId?.takeIf { b -> branchesOf(businessId).any { it.id == b } } ?: MAIN_BRANCH
+        control.addDevice(id, businessId, name.trim().ifBlank { "Equipo" }, platform, Secure.sha256(secret), branch)
         return DeviceCredentials(id, secret, businessId, control.business(businessId)!!.name, mustChange)
     }
 
@@ -288,13 +276,20 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 if (!loginLimit.allow("login:" + call.ip())) throw ApiError(HttpStatusCode.TooManyRequests, "Demasiados intentos. Espera un minuto.")
                 val acc = s.checkOwner(r.email, r.password)
                 val biz = s.businessFor(acc, r.businessId)
-                call.respond(s.registerDevice(biz.id, r.deviceName, r.platform, acc.mustChange))
+                call.respond(s.registerDevice(biz.id, r.deviceName, r.platform, acc.mustChange, r.branchId))
             }
             post("/sesion/negocios") {
                 // Los negocios de la cuenta, para que el equipo elija con cuál trabajar.
                 val r = call.receive<AccountRequest>()
                 if (!loginLimit.allow("login:" + call.ip())) throw ApiError(HttpStatusCode.TooManyRequests, "Demasiados intentos. Espera un minuto.")
                 call.respond(s.businessChoices(s.checkOwner(r.email, r.password)))
+            }
+            post("/sesion/sucursales") {
+                // Las sucursales de un negocio, para elegir en cuál está el equipo antes de autorizarlo.
+                val r = call.receive<BranchesRequest>()
+                if (!loginLimit.allow("login:" + call.ip())) throw ApiError(HttpStatusCode.TooManyRequests, "Demasiados intentos. Espera un minuto.")
+                val acc = s.checkOwner(r.email, r.password)
+                call.respond(s.branchesOf(s.businessFor(acc, r.businessId).id))
             }
             post("/negocios") {
                 // Otro negocio con la misma cuenta.
@@ -316,7 +311,7 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 s.control.touchDevice(d.id)
                 val exp = System.currentTimeMillis() + VitrinaServer.DEVICE_TTL
                 val repo = s.tenants.repo(d.businessId)
-                call.respond(TokenResponse(Secure.sign(s.config.tokenSecret, Claims("eq", d.businessId, d.id, exp = exp)), exp, s.epoch(repo), s.entitlements(d.businessId), d.name))
+                call.respond(TokenResponse(Secure.sign(s.config.tokenSecret, Claims("eq", d.businessId, d.id, exp = exp)), exp, s.epoch(repo), s.entitlements(d.businessId), d.name, d.branchId))
             }
             post("/sesion/usuario") {
                 // Un empleado entra con su PIN en un equipo autorizado.
@@ -407,7 +402,12 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 if (previous != null) {
                     call.respond(ApiResponse(result = Json.parseToJsonElement(previous), last = repo.maxSeq())); return@post
                 }
-                val result = repo.applyLocal(Rules.stamp(op, user, ctx.device.id), user?.name ?: "Dueño", ctx.device.name)
+                // Sucursales que permite el plan.
+                if (op is Op.SaveBranch && op.id == null && ent.maxBranches > 0 &&
+                    repo.db.branchQueries.selectAll().executeAsList().count { it.active == 1L } >= ent.maxBranches)
+                    throw ApiError(HttpStatusCode.Forbidden, "Tu plan permite ${ent.maxBranches} ${if (ent.maxBranches == 1) "sucursal" else "sucursales"}. Cambia de plan para agregar otra.")
+                // La operación es de la sucursal del equipo que la hizo (la decide el dueño, no el equipo).
+                val result = repo.applyLocal(Rules.stamp(op, user, ctx.device.id), user?.name ?: "Dueño", ctx.device.name, ctx.device.branchId)
                 if (r.opId.isNotBlank()) repo.saveAppliedResult(r.opId, result.toString())
                 call.respond(ApiResponse(result = result, last = repo.maxSeq()))
             }
@@ -465,6 +465,14 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 if (s.control.revokeDevice(biz, call.parameters["id"].orEmpty()) == 0) throw ApiError(HttpStatusCode.NotFound, "Ese equipo no existe")
                 s.tenants.repo(biz).applyLocal(Op.LogEvent("Quitó el acceso a un equipo", call.parameters["id"].orEmpty()), "Dueño", "Nube")
                 call.respond(Message(message = "El equipo ya no tiene acceso"))
+            }
+            post("/equipos/{id}/sucursal") {
+                // El dueño (o un administrador) cambia la sucursal de un equipo.
+                val biz = s.manager(call)
+                val b = call.receive<DeviceBranchRequest>().branchId
+                if (s.branchesOf(biz).none { it.id == b }) throw ApiError(HttpStatusCode.BadRequest, "Esa sucursal no existe o está desactivada")
+                if (s.control.setDeviceBranch(biz, call.parameters["id"].orEmpty(), b) == 0) throw ApiError(HttpStatusCode.NotFound, "Ese equipo no existe")
+                call.respond(Message(message = "Sucursal cambiada"))
             }
             post("/equipos/{id}/nombre") {
                 val biz = s.manager(call)

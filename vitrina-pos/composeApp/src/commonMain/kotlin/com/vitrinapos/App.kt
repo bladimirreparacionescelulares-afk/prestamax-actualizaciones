@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -276,6 +277,8 @@ fun ScreenContent(screen: Screen, wide: Boolean) {
         Screen.Cash -> CashScreen()
         Screen.StockMoves -> StockMovesScreen()
         Screen.Network -> NetworkScreen()
+        Screen.Branches -> com.vitrinapos.ui.screens.BranchesScreen()
+        is Screen.BranchDetail -> com.vitrinapos.ui.screens.BranchDetailScreen(screen.id)
         Screen.Users -> UsersScreen()
         Screen.Labels -> LabelsScreen()
         Screen.LabelDesigner -> LabelDesignerScreen()
@@ -355,6 +358,21 @@ private fun SideBar(app: AppState) {
                         Text(if (online) "● Nube · en línea" else "● Nube · sin conexión", fontSize = 11.sp, color = if (online) ex.ok else ex.warn, maxLines = 1)
                     }
                 }
+            }
+            // Sucursal de este equipo (si el negocio tiene más de una).
+            val branchList = app.repo.branches.collectAsState().value
+            if (branchList.count { it.active == 1L } > 1) app.repo.thisBranch?.let { b ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp).clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .clickable { if (app.allows(Screen.Branches)) app.open(Screen.Branches) }.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Store, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(b.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                }
+                Spacer(Modifier.height(6.dp))
             }
             sideItems.filter { (s.modTaller || it.screen != Screen.Taller) && (s.modQuotes || it.screen != Screen.Quotes) && (s.modLabels || it.screen != Screen.Labels) && app.allows(it.screen) }.forEach { item ->
                 val selected = app.tab == item.screen

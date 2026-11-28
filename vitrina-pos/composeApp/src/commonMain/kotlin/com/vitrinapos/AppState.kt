@@ -73,6 +73,8 @@ sealed interface Screen {
     data object Cash : Screen
     data object StockMoves : Screen
     data object Network : Screen
+    data object Branches : Screen
+    data class BranchDetail(val id: Long) : Screen
     data object Users : Screen
     data object Labels : Screen
     data object LabelDesigner : Screen
@@ -473,6 +475,7 @@ fun requiredPermission(screen: Screen): List<com.vitrinapos.data.Permission> {
         Screen.RepairStatuses -> listOf(Permission.SETTINGS)
         Screen.Labels, Screen.LabelDesigner, Screen.LabelPrinter -> listOf(Permission.LABELS)
         Screen.Network -> listOf(Permission.NETWORK)
+        Screen.Branches, is Screen.BranchDetail -> listOf(Permission.SETTINGS, Permission.REPORTS)
         Screen.Users, is Screen.UserDetail -> listOf(Permission.USERS)
         Screen.Fiscal, Screen.FiscalEmitter, Screen.FiscalCert, Screen.FiscalDgii, Screen.FiscalSequences -> listOf(Permission.FISCAL)
         Screen.FiscalDocs -> listOf(Permission.FISCAL, Permission.SALES_HISTORY)

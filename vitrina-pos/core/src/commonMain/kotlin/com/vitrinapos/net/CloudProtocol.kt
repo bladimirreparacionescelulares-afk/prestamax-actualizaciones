@@ -13,10 +13,10 @@ import kotlinx.serialization.Serializable
     val email: String, val password: String, val name: String, val businessName: String, val businessType: String = "",
     val ownerPin: String, val deviceName: String = "", val platform: String = "",
 )
-@Serializable data class LoginRequest(val email: String, val password: String, val deviceName: String, val platform: String = "", val businessId: Long? = null)
+@Serializable data class LoginRequest(val email: String, val password: String, val deviceName: String, val platform: String = "", val businessId: Long? = null, val branchId: Long? = null)
 @Serializable data class DeviceCredentials(val deviceId: String, val deviceSecret: String, val businessId: Long, val businessName: String, val mustChangePassword: Boolean = false)
 @Serializable data class TokenRequest(val deviceId: String, val deviceSecret: String)
-@Serializable data class TokenResponse(val token: String, val expires: Long, val epoch: String, val entitlements: Entitlements, val deviceName: String)
+@Serializable data class TokenResponse(val token: String, val expires: Long, val epoch: String, val entitlements: Entitlements, val deviceName: String, val branchId: Long = 1)
 @Serializable data class UserLoginRequest(val userId: Long, val pin: String)
 @Serializable data class UserTokenResponse(val token: String, val expires: Long, val userName: String, val role: String)
 @Serializable data class OwnerLoginRequest(val email: String, val password: String, val businessId: Long? = null)
@@ -32,6 +32,10 @@ import kotlinx.serialization.Serializable
 @Serializable data class AccountRequest(val email: String, val password: String)
 /** Un negocio de la cuenta, para elegir con cuál trabajar en este equipo. */
 @Serializable data class BusinessChoice(val id: Long, val name: String, val planName: String, val state: String, val devices: Int, val branches: Int = 1)
+/** Una sucursal del negocio, para elegir en cuál está el equipo al entrar. */
+@Serializable data class BranchInfo(val id: Long, val name: String, val address: String = "")
+@Serializable data class BranchesRequest(val email: String, val password: String, val businessId: Long)
+@Serializable data class DeviceBranchRequest(val branchId: Long)
 /** Otro negocio con la misma cuenta (correo y contraseña de esa cuenta). */
 @Serializable data class NewBusinessRequest(
     val email: String, val password: String, val businessName: String, val businessType: String = "",
@@ -50,8 +54,10 @@ data class Entitlements(
     val modules: List<String>,
     val maxDevices: Int,
     val maxUsers: Int,
+    /** Sucursales que permite el plan (0 = sin límite). */
+    val maxBranches: Int = 1,
 )
 
 /** Un equipo autorizado del negocio. */
 @Serializable
-data class Device(val id: String, val businessId: Long, val name: String, val platform: String, val created: Long, val lastUse: Long?, val revoked: Boolean)
+data class Device(val id: String, val businessId: Long, val name: String, val platform: String, val created: Long, val lastUse: Long?, val revoked: Boolean, val branchId: Long = 1)

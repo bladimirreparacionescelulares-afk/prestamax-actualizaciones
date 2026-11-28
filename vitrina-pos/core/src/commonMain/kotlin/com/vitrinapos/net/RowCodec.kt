@@ -38,7 +38,7 @@ object RowCodec {
         t(
             "sale", "id" to L, "number" to L, "clientId" to L, "clientName" to S, "gross" to L, "discount" to L, "tax" to L, "total" to L,
             "costTotal" to L, "taxIncluded" to L, "paymentMethod" to S, "received" to L, "changeDue" to L, "status" to S, "quoteId" to L,
-            "createdAt" to L, "deviceId" to S, "userId" to L, "userName" to S,
+            "createdAt" to L, "deviceId" to S, "userId" to L, "userName" to S, "branchId" to L,
         ),
         t("saleItem", "id" to L, "saleId" to L, "productId" to L, "name" to S, "code" to S, "qty" to D, "price" to L, "cost" to L, "taxable" to L, "serials" to S),
         t(
@@ -46,39 +46,39 @@ object RowCodec {
             "taxIncluded" to L, "validDays" to L, "notes" to S, "status" to S, "saleId" to L, "createdAt" to L, "updatedAt" to L, "userName" to S,
         ),
         t("quoteItem", "id" to L, "quoteId" to L, "productId" to L, "name" to S, "code" to S, "qty" to D, "price" to L, "taxable" to L, "imagePath" to S),
-        t("stockMove", "id" to L, "productId" to L, "type" to S, "qty" to D, "note" to S, "createdAt" to L, "userName" to S, "unitCost" to L, "balance" to D),
+        t("stockMove", "id" to L, "productId" to L, "type" to S, "qty" to D, "note" to S, "createdAt" to L, "userName" to S, "unitCost" to L, "balance" to D, "branchId" to L),
         t(
             "purchase", "id" to L, "number" to L, "supplierId" to L, "supplierName" to S, "supplierRnc" to S, "ncf" to S, "docDate" to L,
-            "subtotal" to L, "tax" to L, "total" to L, "paymentMethod" to S, "status" to S, "note" to S, "userName" to S, "createdAt" to L,
+            "subtotal" to L, "tax" to L, "total" to L, "paymentMethod" to S, "status" to S, "note" to S, "userName" to S, "createdAt" to L, "branchId" to L,
         ),
         t("purchaseItem", "id" to L, "purchaseId" to L, "productId" to L, "name" to S, "qty" to D, "unitCost" to L, "serials" to S),
         t(
             "productUnit", "id" to L, "productId" to L, "serial" to S, "status" to S, "cost" to L, "purchaseId" to L, "saleId" to L,
-            "note" to S, "createdAt" to L, "updatedAt" to L,
+            "note" to S, "createdAt" to L, "updatedAt" to L, "branchId" to L,
         ),
         t(
             "saleReturn", "id" to L, "saleId" to L, "total" to L, "tax" to L, "cost" to L, "method" to S, "reason" to S, "deviceId" to S,
-            "userName" to S, "createdAt" to L,
+            "userName" to S, "createdAt" to L, "branchId" to L,
         ),
         t(
             "saleReturnItem", "id" to L, "returnId" to L, "saleItemId" to L, "productId" to L, "name" to S, "qty" to D, "amount" to L,
             "restock" to L, "serials" to S,
         ),
-        t("stockCount", "id" to L, "number" to L, "note" to S, "products" to L, "diffQty" to D, "diffValue" to L, "userName" to S, "createdAt" to L),
+        t("stockCount", "id" to L, "number" to L, "note" to S, "products" to L, "diffQty" to D, "diffValue" to L, "userName" to S, "createdAt" to L, "branchId" to L),
         t("auditLog", "id" to L, "action" to S, "detail" to S, "userName" to S, "device" to S, "createdAt" to L),
         t("stockCountItem", "id" to L, "countId" to L, "productId" to L, "name" to S, "expected" to D, "counted" to D, "cost" to L),
         t(
             "cashSession", "id" to L, "openedAt" to L, "openingAmount" to L, "closedAt" to L, "expectedAmount" to L, "countedAmount" to L,
-            "notes" to S, "deviceId" to S, "userName" to S,
+            "notes" to S, "deviceId" to S, "userName" to S, "branchId" to L,
         ),
         t("cashMove", "id" to L, "sessionId" to L, "type" to S, "amount" to L, "note" to S, "userName" to S, "createdAt" to L),
-        t("appUser", "id" to L, "name" to S, "pinHash" to S, "role" to S, "active" to L, "createdAt" to L, "permissions" to S),
+        t("appUser", "id" to L, "name" to S, "pinHash" to S, "role" to S, "active" to L, "createdAt" to L, "permissions" to S, "branches" to S),
         t(
             "repairOrder", "id" to L, "number" to L, "clientId" to L, "clientName" to S, "clientPhone" to S, "clientEmail" to S,
             "deviceType" to S, "brand" to S, "model" to S, "serial" to S, "color" to S, "unlockType" to S, "unlockCode" to S,
             "problem" to S, "conditionText" to S, "accessories" to S, "photos" to S, "estimate" to L, "deposit" to L, "diagnosisFee" to L,
             "estimatedAt" to L, "technician" to S, "status" to S, "notes" to S, "receivedBy" to S, "total" to L, "warrantyDays" to L,
-            "deliveredAt" to L, "saleId" to L, "createdAt" to L, "updatedAt" to L,
+            "deliveredAt" to L, "saleId" to L, "createdAt" to L, "updatedAt" to L, "branchId" to L,
         ),
         t("repairEvent", "id" to L, "repairId" to L, "status" to S, "note" to S, "userName" to S, "createdAt" to L),
         t("fiscalSequence", "id" to L, "type" to L, "fromNo" to L, "toNo" to L, "expiresAt" to L, "deviceId" to S, "parentId" to L, "createdAt" to L),
@@ -87,6 +87,9 @@ object RowCodec {
             "total" to L, "buyerRnc" to S, "buyerName" to S, "refEncf" to S, "trackId" to S, "message" to S, "attempts" to L, "sentAt" to L,
             "deviceId" to S, "env" to S, "createdAt" to L, "updatedAt" to L,
         ),
+        // Sucursales (2.2) y existencia de cada producto en cada sucursal.
+        t("branch", "id" to L, "name" to S, "address" to S, "phone" to S, "active" to L, "createdAt" to L),
+        t("branchStock", "key" to S, "productId" to L, "branchId" to L, "qty" to D, key = "key"),
     ).associateBy { it.name }
 
     fun read(driver: SqlDriver, table: String, key: String): JsonObject? {
@@ -116,6 +119,8 @@ object RowCodec {
                 val v = row[name]
                 // Columna que no viene (equipo con una versión anterior): se usa el valor por defecto de la tabla.
                 if (v == null) {
+                    // Sin sucursal (equipo anterior a la 2.2): es de la sucursal Principal.
+                    if (name == "branchId") { bindLong(i, 1); return@forEachIndexed }
                     when (type) { T.L -> bindLong(i, 0); T.D -> bindDouble(i, 0.0); T.S -> bindString(i, "") }
                     return@forEachIndexed
                 }

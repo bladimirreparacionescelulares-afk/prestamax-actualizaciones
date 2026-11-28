@@ -1,0 +1,69 @@
+-- Sucursales del negocio (2.2). La sucursal 1 es "Principal": a ella pasa todo lo que había antes.
+CREATE TABLE branch (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  createdAt INTEGER NOT NULL DEFAULT 0
+);
+
+-- Existencia de cada producto en cada sucursal. La clave es "producto:sucursal".
+-- product.stock sigue siendo el total del negocio (la suma de todas las sucursales).
+CREATE TABLE branchStock (
+  key TEXT NOT NULL PRIMARY KEY,
+  productId INTEGER NOT NULL,
+  branchId INTEGER NOT NULL,
+  qty REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX branchStock_branch ON branchStock(branchId);
+CREATE INDEX branchStock_product ON branchStock(productId);
+
+selectAll:
+SELECT * FROM branch ORDER BY id;
+
+selectById:
+SELECT * FROM branch WHERE id = ?;
+
+insert:
+INSERT INTO branch(name, address, phone, active, createdAt) VALUES (?, ?, ?, ?, ?);
+
+update:
+UPDATE branch SET name = ?, address = ?, phone = ?, active = ? WHERE id = ?;
+
+lastId:
+SELECT last_insert_rowid();
+
+stockAll:
+SELECT * FROM branchStock;
+
+stockOf:
+SELECT qty FROM branchStock WHERE productId = ? AND branchId = ?;
+
+rowsOfProduct:
+SELECT * FROM branchStock WHERE productId = ?;
+
+ensureRow:
+INSERT OR IGNORE INTO branchStock(key, productId, branchId, qty) VALUES (?, ?, ?, ?);
+
+addQty:
+UPDATE branchStock SET qty = qty + ? WHERE key = ?;
+
+deleteOfProduct:
+DELETE FROM branchStock WHERE productId = ?;
+
+stockByBranch:
+SELECT branchId, COUNT(*) AS products, SUM(qty) AS units FROM branchStock WHERE qty > 0 GROUP BY branchId;
+
+salesByBranch:
+SELECT branchId, COUNT(*) AS sales, COALESCE(SUM(total), 0) AS total FROM sale WHERE createdAt >= ? AND createdAt < ? AND status = 'OK' GROUP BY branchId;
+
+lowStockByBranch:
+SELECT product.id, product.name, product.variantName, product.minStock, branchStock.qty FROM branchStock
+JOIN product ON product.id = branchStock.productId
+WHERE branchStock.branchId = ? AND product.active = 1 AND product.trackStock = 1 AND branchStock.qty <= product.minStock
+ORDER BY branchStock.qty, product.name LIMIT 20;
+
+usersOfBranch:
+SELECT * FROM appUser WHERE active = 1 AND (branches = '' OR (',' || branches || ',') LIKE ('%,' || ? || ',%')) ORDER BY name;

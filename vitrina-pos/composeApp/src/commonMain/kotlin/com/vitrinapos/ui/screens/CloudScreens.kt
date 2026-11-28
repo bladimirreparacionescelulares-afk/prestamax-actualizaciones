@@ -1,6 +1,9 @@
 package com.vitrinapos.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Store
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import com.vitrinapos.net.NewBusinessRequest
@@ -88,7 +91,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Qué se hace en la pantalla de cuenta de la nube. */
-enum class CloudMode { LOGIN, SIGNUP, MIGRATE, FORGOT, CHOOSE, NEW_BUSINESS }
+enum class CloudMode { LOGIN, SIGNUP, MIGRATE, FORGOT, CHOOSE, NEW_BUSINESS, BRANCH }
 
 /** Mensaje claro para errores de la nube. */
 fun cloudError(e: Throwable): String = when (e) {
@@ -160,6 +163,11 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
     var error by remember { mutableStateOf<String?>(null) }
     var confirmReplace by remember { mutableStateOf(false) }
     var choices by remember { mutableStateOf<List<BusinessChoice>>(emptyList()) }
+    // Sucursal de este equipo (si el negocio tiene varias).
+    var chosenBusiness by remember { mutableStateOf<Long?>(null) }
+    var branchChoices by remember { mutableStateOf<List<com.vitrinapos.net.BranchInfo>>(emptyList()) }
+    var chosenBranch by remember { mutableStateOf<Long?>(null) }
+    var deviceName by remember { mutableStateOf(graph.deviceName) }
     // Recuperar contraseña
     var codeSent by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
@@ -184,10 +192,21 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
 
     suspend fun done(message: String) = withContext(kotlinx.coroutines.Dispatchers.Main) { app.toast(message); onClose() }
 
-    /** Autoriza este equipo en el negocio elegido y recibe sus datos. */
-    suspend fun enter(businessId: Long?) {
+    /** Autoriza este equipo en el negocio elegido y recibe sus datos. Si el negocio tiene varias sucursales, primero se elige. */
+    suspend fun enter(businessId: Long?, branch: Long? = null) {
+        if (businessId != null && branch == null) {
+            val list = try { CloudClient.branches(graph.cloudUrl, email, password, businessId) }
+                catch (e: HttpStatusException) { if (e.code == 404) emptyList() else throw e }
+            if (list.size > 1) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    chosenBusiness = businessId; branchChoices = list; chosenBranch = list.first().id; go(CloudMode.BRANCH)
+                }
+                return
+            }
+        }
         step = "Recibiendo los datos de la nube…"
-        val creds = graph.cloudLogin(email, password, businessId)
+        if (deviceName.isNotBlank()) graph.setDeviceName(deviceName)
+        val creds = graph.cloudLogin(email, password, businessId, branchId = branch)
         if (creds.mustChangePassword) mustChange = password else done("Listo: entraste a ${creds.businessName}")
     }
 
@@ -223,6 +242,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
                 }
             }
             CloudMode.CHOOSE -> {}
+            CloudMode.BRANCH -> run { enter(chosenBusiness, chosenBranch ?: com.vitrinapos.data.MAIN_BRANCH) }
             CloudMode.SIGNUP, CloudMode.MIGRATE, CloudMode.NEW_BUSINESS -> {
                 val pwdOk = if (mode == CloudMode.NEW_BUSINESS) password.isNotBlank() else passwordProblem(password) == null
                 if (emailError != null || !pwdOk || nameError != null || business.isBlank() || type == null || pinError != null) return
@@ -261,6 +281,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
 
     fun back() {
         when {
+            mode == CloudMode.BRANCH -> go(if (choices.size > 1) CloudMode.CHOOSE else CloudMode.LOGIN)
             mode == CloudMode.NEW_BUSINESS -> go(CloudMode.CHOOSE)
             mode == CloudMode.FORGOT || mode == CloudMode.CHOOSE -> go(CloudMode.LOGIN)
             entry && mode == CloudMode.SIGNUP -> go(CloudMode.LOGIN)
@@ -280,7 +301,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
             } else Spacer(Modifier.height(20.dp))
             Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                 Icon(
-                    when (mode) { CloudMode.CHOOSE, CloudMode.NEW_BUSINESS -> Icons.Rounded.Business; CloudMode.LOGIN -> if (entry) Icons.Rounded.Storefront else Icons.Rounded.Cloud; else -> Icons.Rounded.Cloud },
+                    when (mode) { CloudMode.CHOOSE, CloudMode.NEW_BUSINESS -> Icons.Rounded.Business; CloudMode.BRANCH -> Icons.Rounded.Place; CloudMode.LOGIN -> if (entry) Icons.Rounded.Storefront else Icons.Rounded.Cloud; else -> Icons.Rounded.Cloud },
                     null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp),
                 )
             }
@@ -292,6 +313,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
                     CloudMode.FORGOT -> "Recuperar la contraseña"
                     CloudMode.CHOOSE -> "¿Con qué negocio vas a trabajar?"
                     CloudMode.NEW_BUSINESS -> "Otro negocio con tu cuenta"
+                    CloudMode.BRANCH -> "¿En qué sucursal está este equipo?"
                 },
                 style = MaterialTheme.typography.headlineSmall,
             )
@@ -307,6 +329,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
                     CloudMode.FORGOT -> if (codeSent) "Te enviamos un código de 6 números a ${email.trim()}. Vence en 30 minutos." else "Te enviaremos un código al correo de la cuenta."
                     CloudMode.CHOOSE -> "Tu correo administra varios negocios. Elige uno; para cambiar después, cierra la sesión de la cuenta."
                     CloudMode.NEW_BUSINESS -> "Se crea con la misma cuenta (${email.trim()}), con su propia prueba gratis. Tú serás su administrador."
+                    CloudMode.BRANCH -> "Las ventas y el inventario de este equipo serán de esa sucursal. Después se puede cambiar en Más → Sucursales."
                 },
                 color = AppTheme.extra.muted,
             )
@@ -332,6 +355,24 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
                         }
                     }
                 }
+            }
+
+            if (mode == CloudMode.BRANCH) {
+                branchChoices.forEach { b ->
+                    val sel = chosenBranch == b.id
+                    AppCard(onClick = { chosenBranch = b.id }, color = if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Store, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(b.name, fontWeight = if (sel) FontWeight.Bold else FontWeight.SemiBold, fontSize = 16.sp)
+                                if (b.address.isNotBlank()) Text(b.address, fontSize = 13.sp, color = AppTheme.extra.muted)
+                            }
+                            if (sel) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                TextInput(deviceName, { deviceName = it.take(40) }, "Nombre de este equipo", placeholder = "Caja 2")
             }
 
             if (needsBusinessForm) {
@@ -390,6 +431,7 @@ fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() ->
                         CloudMode.NEW_BUSINESS -> "Crear negocio"
                         CloudMode.FORGOT -> if (codeSent) "Cambiar contraseña" else "Enviar código"
                         CloudMode.CHOOSE -> ""
+                        CloudMode.BRANCH -> "Continuar"
                     },
                     fontSize = 16.sp,
                 )
@@ -578,8 +620,11 @@ fun CloudPanel() {
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(d.name, fontWeight = FontWeight.SemiBold)
-                        Text(listOf(d.platform, d.lastUse?.let { "Usado ${Time.dateTime(it)}" } ?: "Sin usar todavía").filter { it.isNotBlank() }.joinToString(" · "),
-                            fontSize = 12.sp, color = ex.muted)
+                        val branchList = app.repo.branches.collectAsState().value
+                        Text(listOfNotNull(
+                            branchList.takeIf { l -> l.count { it.active == 1L } > 1 }?.firstOrNull { it.id == d.branchId }?.name,
+                            d.platform.takeIf { it.isNotBlank() }, d.lastUse?.let { "Usado ${Time.dateTime(it)}" } ?: "Sin usar todavía",
+                        ).joinToString(" · "), fontSize = 12.sp, color = ex.muted)
                     }
                     if (d.id == cloud.deviceId) Pill("Este equipo", ex.ok, ex.okSoft)
                     else TextButton(onClick = { revoke = d }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
@@ -656,7 +701,8 @@ fun AccountBar() {
         Icon(if (st.state == LinkState.OFFLINE) Icons.Rounded.CloudOff else Icons.Rounded.Cloud, null,
             tint = if (st.state == LinkState.OFFLINE) AppTheme.extra.warn else AppTheme.extra.ok, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(meta["cloud.businessName"] ?: app.settings.businessName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+        val branchName = app.repo.branches.collectAsState().value.let { l -> if (l.count { it.active == 1L } > 1) l.firstOrNull { it.id == app.repo.branchId }?.name else null }
+        Text(listOfNotNull(meta["cloud.businessName"] ?: app.settings.businessName, branchName).joinToString(" · "), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
         Text(app.graph.cloudEmail.orEmpty(), fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 170.dp))
     }
