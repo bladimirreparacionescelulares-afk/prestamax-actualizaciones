@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.SwitchAccount
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Badge
@@ -146,15 +148,18 @@ fun MoreScreen() {
         ) {
             val me = app.repo.currentUser.value
             if (me != null) item(span = { GridItemSpan(maxLineSpan) }) {
-                AppCard(onClick = { app.logout() }) {
+                AppCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(me.name, 40.dp)
+                        Avatar(me.name, 44.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(me.name, fontWeight = FontWeight.SemiBold)
                             Text(com.vitrinapos.data.Roles.label(me.role), fontSize = 12.sp, color = AppTheme.extra.muted)
                         }
-                        Text("Cambiar de usuario", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    androidx.compose.material3.OutlinedButton(onClick = { app.logout() }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Rounded.SwitchAccount, null); Spacer(Modifier.width(8.dp)); Text("Cambiar de usuario")
                     }
                 }
             }
@@ -182,6 +187,25 @@ fun MoreScreen() {
                     Text(item.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(item.sub, fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            // Cuenta del negocio en la nube: correo, plan y "Cerrar sesión de la cuenta".
+            val cloud = app.graph.cloud
+            if (cloud != null) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle("Cuenta") }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    val plan by cloud.plan.collectAsState()
+                    AppCard(onClick = { if (app.allows(Screen.Network)) app.open(Screen.Network) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Cloud, null, tint = AppTheme.extra.ok)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(app.graph.cloudEmail.orEmpty(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(listOfNotNull(s.businessName, plan?.let { "Plan " + it.planName }).joinToString(" · "), fontSize = 12.sp, color = AppTheme.extra.muted)
+                            }
+                        }
+                    }
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) { CloseAccountButton() }
             }
         }
     }

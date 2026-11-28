@@ -205,6 +205,13 @@ class OfflineException(message: String) : IOException(message)
 /** Una regla del negocio impide la operación (caja cerrada, sin stock…). El mensaje se muestra tal cual. */
 class RuleException(message: String) : IllegalStateException(message)
 
+/** Problema con el nombre de un usuario (null si está bien). Debe tener letras: así no se confunde con un PIN. */
+fun userNameProblem(name: String): String? = when {
+    name.isBlank() -> "Escribe el nombre de la persona"
+    name.none { it.isLetter() } -> "Escribe el nombre de la persona, no números"
+    else -> null
+}
+
 /** Tipos de movimiento de efectivo en la caja. */
 object CashMoveType {
     const val IN = "ENTRADA"
@@ -567,6 +574,11 @@ class Repository(val platform: CorePlatform) {
                     is Op.LogEvent -> JsonNull
                     is Op.SetUserPermissions -> { db.appUserQueries.setPermissions(op.permissions, op.id); JsonNull }
                     is Op.SaveUser -> JsonPrimitive(
+                        run {
+                            // El nombre es de la persona: sin letras parece un PIN y se mostraría en pantalla.
+                            val oldName = op.id?.let { db.appUserQueries.selectById(it).executeAsOneOrNull()?.name }
+                            if (op.name.trim() != oldName) userNameProblem(op.name)?.let { throw RuleException(it) }
+                        }.let {
                         if (op.id == null) {
                             db.appUserQueries.insert(op.name.trim(), op.pinHash ?: "", op.role, if (op.active) 1 else 0, now)
                             db.appUserQueries.lastId().executeAsOne()
@@ -574,6 +586,7 @@ class Repository(val platform: CorePlatform) {
                             db.appUserQueries.update(op.name.trim(), op.role, if (op.active) 1 else 0, op.id)
                             if (op.pinHash != null) db.appUserQueries.setPin(op.pinHash, op.id)
                             op.id
+                        }
                         },
                     )
                 }

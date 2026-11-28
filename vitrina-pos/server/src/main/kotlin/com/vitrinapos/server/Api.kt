@@ -126,13 +126,37 @@ class VitrinaServer(val config: Config, val control: ControlStore, val tenants: 
         if (control.accountByEmail(email) != null) throw ApiError(HttpStatusCode.Conflict, "Ya hay una cuenta con ese correo. Entra o recupera la contraseña.")
         val type = BusinessType.of(r.businessType)
         val (accountId, businessId) = control.createAccount(email, Secure.hashPassword(r.password), r.name, r.businessName, type?.name ?: "", config.trialPlan, config.trialDays)
-        // La base del negocio: módulos según el tipo, datos básicos y el administrador con su PIN.
-        val repo = tenants.repo(businessId)
-        val base = AppSettings(businessName = r.businessName.trim(), currencySymbol = "RD$", onboarded = true)
-        repo.saveSettings(type?.apply(base) ?: base)
-        repo.saveUser(null, r.name.trim(), r.ownerPin, Roles.ADMIN, true)
+        seedBusiness(businessId, r.businessName, type, r.name, r.ownerPin)
         log.info("Cuenta nueva {} · negocio {}", accountId, businessId)
         return if (r.deviceName.isNotBlank()) registerDevice(businessId, r.deviceName, r.platform, false) else null
+    }
+
+    /** Prepara la base de un negocio nuevo: módulos según el tipo, datos básicos y el administrador con su PIN. */
+    private suspend fun seedBusiness(businessId: Long, businessName: String, type: BusinessType?, ownerName: String, ownerPin: String) {
+        val repo = tenants.repo(businessId)
+        val base = AppSettings(businessName = businessName.trim(), currencySymbol = "RD$", onboarded = true)
+        repo.saveSettings(type?.apply(base) ?: base)
+        repo.saveUser(null, ownerName.trim(), ownerPin, Roles.ADMIN, true)
+    }
+
+    /** Los negocios de la cuenta, para elegir con cuál trabajar. */
+    fun businessChoices(acc: Account): List<BusinessChoice> = control.businessesOf(acc.id).map { b ->
+        val e = entitlements(b.id)
+        BusinessChoice(b.id, b.name, e.planName, e.state, control.activeDeviceCount(b.id))
+    }
+
+    /** Otro negocio con la misma cuenta; autoriza este equipo en él. */
+    suspend fun newBusiness(r: NewBusinessRequest): DeviceCredentials {
+        val acc = checkOwner(r.email, r.password)
+        if (r.businessName.isBlank()) throw ApiError(HttpStatusCode.BadRequest, "Escribe el nombre del negocio")
+        if (r.ownerName.isBlank()) throw ApiError(HttpStatusCode.BadRequest, "Escribe tu nombre")
+        if (!r.ownerPin.matches(Regex("\\d{4,6}"))) throw ApiError(HttpStatusCode.BadRequest, "El PIN lleva de 4 a 6 números")
+        if (control.businessesOf(acc.id).size >= MAX_BUSINESSES) throw ApiError(HttpStatusCode.Forbidden, "Esta cuenta ya tiene $MAX_BUSINESSES negocios")
+        val type = BusinessType.of(r.businessType)
+        val id = control.createBusiness(acc.id, r.businessName, type?.name ?: "", config.trialPlan, config.trialDays)
+        seedBusiness(id, r.businessName, type, r.ownerName, r.ownerPin)
+        log.info("Negocio nuevo {} para la cuenta {}", id, acc.id)
+        return registerDevice(id, r.deviceName, r.platform, acc.mustChange)
     }
 
     fun registerDevice(businessId: Long, name: String, platform: String, mustChange: Boolean): DeviceCredentials {
@@ -169,6 +193,7 @@ class VitrinaServer(val config: Config, val control: ControlStore, val tenants: 
         const val DEVICE_TTL = 60 * 60_000L
         const val USER_TTL = 8 * 60 * 60_000L
         const val OWNER_TTL = 30 * 60_000L
+        const val MAX_BUSINESSES = 10
     }
 }
 
@@ -264,6 +289,24 @@ fun Application.vitrinaApi(s: VitrinaServer) {
                 val acc = s.checkOwner(r.email, r.password)
                 val biz = s.businessFor(acc, r.businessId)
                 call.respond(s.registerDevice(biz.id, r.deviceName, r.platform, acc.mustChange))
+            }
+            post("/sesion/negocios") {
+                // Los negocios de la cuenta, para que el equipo elija con cuál trabajar.
+                val r = call.receive<AccountRequest>()
+                if (!loginLimit.allow("login:" + call.ip())) throw ApiError(HttpStatusCode.TooManyRequests, "Demasiados intentos. Espera un minuto.")
+                call.respond(s.businessChoices(s.checkOwner(r.email, r.password)))
+            }
+            post("/negocios") {
+                // Otro negocio con la misma cuenta.
+                if (!loginLimit.allow("alta:" + call.ip())) throw ApiError(HttpStatusCode.TooManyRequests, "Demasiados intentos. Espera un minuto.")
+                call.respond(HttpStatusCode.Created, s.newBusiness(call.receive()))
+            }
+            post("/sesion/salir") {
+                // "Cerrar sesión de la cuenta": el equipo se da de baja y deja de contar en el plan.
+                val ctx = s.device(call)
+                s.control.revokeDevice(ctx.claims.business, ctx.device.id)
+                s.tenants.repo(ctx.claims.business).applyLocal(Op.LogEvent("Cerró la sesión de la cuenta en el equipo", ctx.device.name), "Dueño", ctx.device.name)
+                call.respond(Message(message = "Sesión cerrada"))
             }
             post("/sesion/ficha") {
                 // El equipo pide su ficha de 1 hora con su llave.

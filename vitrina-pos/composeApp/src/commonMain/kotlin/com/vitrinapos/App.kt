@@ -34,6 +34,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.SwitchAccount
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.GridView
@@ -138,10 +142,14 @@ fun App(graph: AppGraph, onReady: (AppState) -> Unit = {}) {
                 app.repo.currentUser.value = activeUsers.firstOrNull { it.id == u.id }
             }
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                com.vitrinapos.ui.screens.CloseAccountDialog()
                 when {
                     cloudMode != null -> com.vitrinapos.ui.screens.CloudAccountScreen(cloudMode!!, onClose = { cloudMode = null })
                     connecting -> NetworkScreen(onClose = { connecting = false })
-                    !settings.onboarded -> WelcomeScreen(onConnect = { connecting = true }, onCloud = { cloudMode = it })
+                    // Equipo nuevo o sesión de la cuenta cerrada: primero se inicia sesión con la cuenta del negocio.
+                    !settings.onboarded -> com.vitrinapos.ui.screens.CloudAccountScreen(
+                        com.vitrinapos.ui.screens.CloudMode.LOGIN, entry = true, onLan = { connecting = true }, onClose = {},
+                    )
                     activeUsers.isNotEmpty() && current == null -> LoginScreen(activeUsers)
                     activeUsers.isEmpty() && settings.pin.isNotBlank() && !unlocked -> LockScreen(settings.pin) { unlocked = true }
                     else -> {
@@ -341,6 +349,11 @@ private fun SideBar(app: AppState) {
                 Column {
                     Text("Vitrina POS", style = MaterialTheme.typography.titleMedium)
                     Text(s.businessName, style = MaterialTheme.typography.bodySmall, color = ex.muted, maxLines = 1)
+                    app.graph.cloud?.let { c ->
+                        val st by c.status.collectAsState()
+                        val online = st.state == com.vitrinapos.net.LinkState.ONLINE
+                        Text(if (online) "● Nube · en línea" else "● Nube · sin conexión", fontSize = 11.sp, color = if (online) ex.ok else ex.warn, maxLines = 1)
+                    }
                 }
             }
             sideItems.filter { (s.modTaller || it.screen != Screen.Taller) && (s.modQuotes || it.screen != Screen.Quotes) && (s.modLabels || it.screen != Screen.Labels) && app.allows(it.screen) }.forEach { item ->
@@ -363,11 +376,13 @@ private fun SideBar(app: AppState) {
                 }
             }
         }
-            // Quién está usando la app, con el botón para salir (vuelve a pedir el PIN). Siempre visible al pie.
+            // Quién está usando la app, siempre visible al pie. Al tocarlo: Cambiar de usuario / Cerrar sesión de la cuenta.
             val me = app.user
-            if (me != null) Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp)) {
+            if (me != null) Box(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp)) {
+                var menu by remember { mutableStateOf(false) }
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(10.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
+                        .clickable { menu = true }.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Avatar(me.name, 34.dp)
@@ -376,14 +391,22 @@ private fun SideBar(app: AppState) {
                         Text(me.name, fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 14.sp)
                         Text(com.vitrinapos.data.Roles.label(me.role), fontSize = 11.sp, color = ex.muted, maxLines = 1)
                     }
+                    Icon(if (menu) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess, "Opciones de la sesión", tint = ex.muted)
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).clickable { app.logout() }.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text("Cerrar sesión", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    app.graph.cloudEmail?.takeIf { app.graph.cloud != null }?.let {
+                        Text(it, fontSize = 12.sp, color = ex.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    }
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Cambiar de usuario", fontWeight = FontWeight.SemiBold) },
+                        leadingIcon = { Icon(Icons.Rounded.SwitchAccount, null, tint = MaterialTheme.colorScheme.primary) },
+                        onClick = { menu = false; app.logout() },
+                    )
+                    if (app.graph.cloud != null) androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Cerrar sesión de la cuenta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Logout, null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = { menu = false; app.askCloseAccount = true },
+                    )
                 }
             }
         }

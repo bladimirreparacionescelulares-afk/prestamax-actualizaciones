@@ -103,6 +103,13 @@ class ControlStore(jdbcUrl: String) : AutoCloseable {
 
     // ---------- Negocios y suscripciones ----------
 
+    /** Otro negocio para una cuenta que ya existe (con su prueba gratis). */
+    fun createBusiness(accountId: Long, businessName: String, type: String, trialPlan: String, trialDays: Int): Long = tx { c ->
+        val biz = c.q("INSERT INTO negocio(cuenta_id, nombre, tipo) VALUES (?, ?, ?) RETURNING id", accountId, businessName.trim(), type) { it.getLong(1) }.single()
+        c.u("INSERT INTO suscripcion(negocio_id, plan_id, prueba_hasta) VALUES (?, ?, now() + make_interval(days => ?))", biz, trialPlan, trialDays)
+        biz
+    }
+
     fun businessesOf(accountId: Long): List<Business> = q("SELECT id, cuenta_id, nombre, tipo, suspendido FROM negocio WHERE cuenta_id = ? ORDER BY id", accountId, map = ::business)
     fun business(id: Long): Business? = q("SELECT id, cuenta_id, nombre, tipo, suspendido FROM negocio WHERE id = ?", id, map = ::business).firstOrNull()
     fun allBusinesses(): List<Business> = q("SELECT id, cuenta_id, nombre, tipo, suspendido FROM negocio ORDER BY id", map = ::business)

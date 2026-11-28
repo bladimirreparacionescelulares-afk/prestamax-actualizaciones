@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -73,8 +74,8 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
             if (entered == pin) onUnlock() else { error = true; entered = "" }
         }
     }
-    Column(
-        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+    EntryFrame { Column(
+        Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -107,6 +108,7 @@ fun LockScreen(pin: String, onUnlock: () -> Unit) {
             }
         }
     }
+    }
 }
 
 /** Entrada con usuario y PIN cuando hay usuarios configurados. */
@@ -117,18 +119,23 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
     var selected by remember { mutableStateOf(users.firstOrNull { it.id == app.lockedUserId }) }
     var lastPin by remember { mutableStateOf("") }
     val chosen = selected
-    if (chosen == null) {
+    if (chosen == null) EntryFrame {
         Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(24.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Spacer(Modifier.height(24.dp))
+            // En la nube: negocio y cuenta de este equipo.
+            AccountBar()
+            Spacer(Modifier.height(8.dp))
             Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.Storefront, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
             }
-            Text("Iniciar sesión", style = MaterialTheme.typography.headlineSmall)
-            Text(app.settings.businessName + " · ¿Quién va a usar la app?", color = AppTheme.extra.muted, textAlign = TextAlign.Center)
+            Text("¿Quién va a usar la app?", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            Text(
+                (if (app.graph.cloud == null) app.settings.businessName + " · " else "") + "Cada persona entra con su PIN.",
+                color = AppTheme.extra.muted, textAlign = TextAlign.Center,
+            )
             Column(Modifier.widthIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 users.forEach { u ->
                     AppCard(Modifier.fillMaxWidth(), onClick = { selected = u }) {
@@ -139,10 +146,14 @@ fun LoginScreen(users: List<com.vitrinapos.db.AppUser>) {
                                 Text(u.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                                 Text(com.vitrinapos.data.Roles.label(u.role), color = AppTheme.extra.muted, fontSize = 13.sp)
                             }
+                            Icon(Icons.Rounded.Lock, null, tint = AppTheme.extra.muted)
                         }
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            // Salir por completo de la cuenta del negocio (para entrar con otra o a otro negocio).
+            CloseAccountButton(Modifier.widthIn(max = 460.dp).fillMaxWidth(), outlined = false)
         }
     } else {
         PinPad(
@@ -199,8 +210,8 @@ fun PinPad(
         }
     }
     fun submit() { if (entered.length >= 4 && !locked) handle(check(entered, true), true) }
-    Column(
-        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+    EntryFrame { Column(
+        Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -247,5 +258,5 @@ fun PinPad(
             Spacer(Modifier.height(16.dp))
             TextButton(onClick = onBack) { Text("Cambiar de usuario") }
         }
-    }
+    } }
 }

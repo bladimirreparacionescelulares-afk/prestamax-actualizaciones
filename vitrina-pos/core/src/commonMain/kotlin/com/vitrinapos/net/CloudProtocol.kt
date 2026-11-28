@@ -28,6 +28,15 @@ import kotlinx.serialization.Serializable
 @Serializable data class Message(val ok: Boolean = true, val message: String = "")
 @Serializable data class ErrorBody(val ok: Boolean = false, val error: String)
 @Serializable data class RenameRequest(val name: String)
+/** Correo y contraseña para ver los negocios de la cuenta (antes de autorizar el equipo). */
+@Serializable data class AccountRequest(val email: String, val password: String)
+/** Un negocio de la cuenta, para elegir con cuál trabajar en este equipo. */
+@Serializable data class BusinessChoice(val id: Long, val name: String, val planName: String, val state: String, val devices: Int, val branches: Int = 1)
+/** Otro negocio con la misma cuenta (correo y contraseña de esa cuenta). */
+@Serializable data class NewBusinessRequest(
+    val email: String, val password: String, val businessName: String, val businessType: String = "",
+    val ownerName: String, val ownerPin: String, val deviceName: String = "", val platform: String = "",
+)
 
 
 /** Lo que el plan del negocio permite (módulos, equipos, usuarios) y su estado de pago. */

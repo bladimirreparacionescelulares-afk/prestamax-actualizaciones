@@ -1,6 +1,17 @@
 package com.vitrinapos.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import com.vitrinapos.net.NewBusinessRequest
+import com.vitrinapos.net.BusinessChoice
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Business
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,7 +88,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Qué se hace en la pantalla de cuenta de la nube. */
-enum class CloudMode { LOGIN, SIGNUP, MIGRATE, FORGOT }
+enum class CloudMode { LOGIN, SIGNUP, MIGRATE, FORGOT, CHOOSE, NEW_BUSINESS }
 
 /** Mensaje claro para errores de la nube. */
 fun cloudError(e: Throwable): String = when (e) {
@@ -106,19 +117,37 @@ private fun PasswordInput(value: String, onChange: (String) -> Unit, label: Stri
     )
 }
 
+/** Marco de las pantallas de entrada: en la computadora, la marca a la izquierda y el formulario a la derecha. */
+@Composable
+fun EntryFrame(content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        if (maxWidth >= 840.dp) Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primary).padding(48.dp), contentAlignment = Alignment.CenterStart) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Vitrina POS", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                    Text("Vende, controla tu inventario y tus sucursales desde cualquier equipo.", color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp)
+                    Text("Celular · Windows · Mac", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = 460.dp).fillMaxHeight()) { content() } }
+        } else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { Box(Modifier.widthIn(max = 560.dp).fillMaxHeight()) { content() } }
+    }
+}
+
 /**
- * Crear la cuenta del negocio, entrar con ella, pasar los datos de este equipo a la nube o recuperar la contraseña.
- * Al terminar, este equipo queda trabajando con la nube.
+ * Iniciar sesión con la cuenta del negocio, crear la cuenta, elegir el negocio, crear otro negocio,
+ * pasar los datos de este equipo a la nube o recuperar la contraseña. Al terminar, este equipo trabaja con la nube.
+ * [entry]: es la primera pantalla de la app (equipo nuevo o sesión cerrada).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
+fun CloudAccountScreen(initial: CloudMode, entry: Boolean = false, onLan: (() -> Unit)? = null, onClose: () -> Unit) {
     val app = LocalAppState.current
     val graph = app.graph
     val scope = rememberSafeScope()
     var mode by remember { mutableStateOf(initial) }
     val s = app.settingsNow
-    var email by remember { mutableStateOf(graph.cloudEmail.orEmpty()) }
+    var email by remember { mutableStateOf(graph.lastAccountEmail) }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf(if (initial == CloudMode.MIGRATE) app.repo.users.value.firstOrNull { it.role == com.vitrinapos.data.Roles.ADMIN }?.name.orEmpty() else "") }
     var business by remember { mutableStateOf(if (initial == CloudMode.MIGRATE) s.businessName else "") }
@@ -130,6 +159,7 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
     var step by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmReplace by remember { mutableStateOf(false) }
+    var choices by remember { mutableStateOf<List<BusinessChoice>>(emptyList()) }
     // Recuperar contraseña
     var codeSent by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
@@ -137,7 +167,10 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
     // La cuenta tiene una contraseña temporal (la puso el panel de Vitrina POS): se cambia al entrar.
     var mustChange by remember { mutableStateOf<String?>(null) }
 
-    val hasLocalData = app.repo.products.value.isNotEmpty() || app.repo.db.saleQueries.selectRecent(1).executeAsList().isNotEmpty()
+    val hasLocalData = !entry && (app.repo.products.value.isNotEmpty() || app.repo.db.saleQueries.selectRecent(1).executeAsList().isNotEmpty())
+    val needsBusinessForm = mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE || mode == CloudMode.NEW_BUSINESS
+
+    fun go(to: CloudMode) { mode = to; tried = false; error = null }
 
     fun run(block: suspend () -> Unit) {
         if (busy) return
@@ -149,14 +182,24 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
         }
     }
 
+    suspend fun done(message: String) = withContext(kotlinx.coroutines.Dispatchers.Main) { app.toast(message); onClose() }
+
+    /** Autoriza este equipo en el negocio elegido y recibe sus datos. */
+    suspend fun enter(businessId: Long?) {
+        step = "Recibiendo los datos de la nube…"
+        val creds = graph.cloudLogin(email, password, businessId)
+        if (creds.mustChangePassword) mustChange = password else done("Listo: entraste a ${creds.businessName}")
+    }
+
     val emailError = if (tried && !EMAIL.matches(email.trim())) "Escribe un correo válido" else null
-    val passError = if (tried && mode != CloudMode.LOGIN) passwordProblem(password) else if (tried && password.isBlank()) "Escribe la contraseña" else null
+    val passError = if (tried && (mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE)) passwordProblem(password) else if (tried && password.isBlank()) "Escribe la contraseña" else null
     val pinError = when {
         !tried -> null
         pin.length < 4 -> "El PIN lleva de 4 a 6 números"
         pin != pin2 -> "Los dos PIN no coinciden"
         else -> null
     }
+    val nameError = if (tried) com.vitrinapos.data.userNameProblem(name)?.let { if (name.isBlank()) "Escribe tu nombre" else it } else null
 
     fun signupRequest() = SignupRequest(email.trim(), password, name.trim(), business.trim(), type?.name ?: "", pin, graph.deviceName, app.platform.platformName)
 
@@ -168,19 +211,31 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
                 if (hasLocalData && !confirmReplace) { confirmReplace = true; return }
                 run {
                     step = "Entrando…"
-                    val creds = graph.cloudLogin(email, password)
-                    if (creds.mustChangePassword) mustChange = password else withContext(kotlinx.coroutines.Dispatchers.Main) { app.toast("Listo: este equipo trabaja con la nube"); onClose() }
+                    // Un servidor anterior a la 1.14 no tiene la lista de negocios: se entra al único que hay.
+                    val list = try { CloudClient.businesses(graph.cloudUrl, email, password) }
+                        catch (e: HttpStatusException) { if (e.code == 404) listOf(BusinessChoice(0, "", "", "", 0)) else throw e }
+                    if (list.size == 1 && list.first().id == 0L) { enter(null); return@run }
+                    when {
+                        list.isEmpty() -> throw IllegalStateException("Esta cuenta todavía no tiene negocios")
+                        list.size == 1 -> enter(list.first().id)
+                        else -> { choices = list; withContext(kotlinx.coroutines.Dispatchers.Main) { go(CloudMode.CHOOSE) } }
+                    }
                 }
             }
-            CloudMode.SIGNUP, CloudMode.MIGRATE -> {
-                if (emailError != null || passwordProblem(password) != null || name.isBlank() || business.isBlank() || type == null || pinError != null) return
+            CloudMode.CHOOSE -> {}
+            CloudMode.SIGNUP, CloudMode.MIGRATE, CloudMode.NEW_BUSINESS -> {
+                val pwdOk = if (mode == CloudMode.NEW_BUSINESS) password.isNotBlank() else passwordProblem(password) == null
+                if (emailError != null || !pwdOk || nameError != null || business.isBlank() || type == null || pinError != null) return
                 if (mode == CloudMode.SIGNUP && hasLocalData && !confirmReplace) { confirmReplace = true; return }
                 run {
-                    if (mode == CloudMode.MIGRATE) graph.migrateToCloud(signupRequest()) { step = it }
-                    else { step = "Creando la cuenta…"; graph.cloudSignup(signupRequest()) }
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        app.toast(if (mode == CloudMode.MIGRATE) "Tus datos ya están en la nube" else "Cuenta creada: este equipo trabaja con la nube")
-                        onClose()
+                    when (mode) {
+                        CloudMode.MIGRATE -> { graph.migrateToCloud(signupRequest()) { step = it }; done("Tus datos ya están en la nube") }
+                        CloudMode.NEW_BUSINESS -> {
+                            step = "Creando el negocio…"
+                            graph.cloudNewBusiness(NewBusinessRequest(email.trim(), password, business.trim(), type?.name ?: "", name.trim(), pin))
+                            done("Negocio creado: este equipo trabaja en ${business.trim()}")
+                        }
+                        else -> { step = "Creando la cuenta…"; graph.cloudSignup(signupRequest()); done("Cuenta creada: este equipo trabaja con la nube") }
                     }
                 }
             }
@@ -204,42 +259,85 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentAlignment = Alignment.TopCenter) {
+    fun back() {
+        when {
+            mode == CloudMode.NEW_BUSINESS -> go(CloudMode.CHOOSE)
+            mode == CloudMode.FORGOT || mode == CloudMode.CHOOSE -> go(CloudMode.LOGIN)
+            entry && mode == CloudMode.SIGNUP -> go(CloudMode.LOGIN)
+            else -> onClose()
+        }
+    }
+
+    EntryFrame {
         Column(
-            Modifier.widthIn(max = 560.dp).verticalScroll(rememberScrollState()).padding(22.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { if (mode == CloudMode.FORGOT) { mode = CloudMode.LOGIN; error = null } else onClose() }, enabled = !busy) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver")
+            if (!(entry && mode == CloudMode.LOGIN)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { back() }, enabled = !busy) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Volver") }
                 }
-            }
+            } else Spacer(Modifier.height(20.dp))
             Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                Icon(
+                    when (mode) { CloudMode.CHOOSE, CloudMode.NEW_BUSINESS -> Icons.Rounded.Business; CloudMode.LOGIN -> if (entry) Icons.Rounded.Storefront else Icons.Rounded.Cloud; else -> Icons.Rounded.Cloud },
+                    null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp),
+                )
             }
             Text(
                 when (mode) {
-                    CloudMode.LOGIN -> "Entrar con la cuenta del negocio"
-                    CloudMode.SIGNUP -> "Crear la cuenta en la nube"
+                    CloudMode.LOGIN -> if (entry) "Iniciar sesión" else "Entrar con la cuenta del negocio"
+                    CloudMode.SIGNUP -> "Crear la cuenta de tu negocio"
                     CloudMode.MIGRATE -> "Pasar mis datos a la nube"
                     CloudMode.FORGOT -> "Recuperar la contraseña"
+                    CloudMode.CHOOSE -> "¿Con qué negocio vas a trabajar?"
+                    CloudMode.NEW_BUSINESS -> "Otro negocio con tu cuenta"
                 },
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
                 when (mode) {
-                    CloudMode.LOGIN -> "Con el correo y la contraseña del dueño. Este equipo queda autorizado y recibe los datos del negocio."
+                    CloudMode.LOGIN -> when {
+                        entry && graph.signedOut -> "Cerraste la sesión de la cuenta en este equipo. Tus datos siguen guardados en la nube."
+                        entry -> "Entra con el correo y la contraseña de tu negocio."
+                        else -> "Con el correo y la contraseña del dueño. Este equipo queda autorizado y recibe los datos del negocio."
+                    }
                     CloudMode.SIGNUP -> "Tus datos se guardan en la nube y cada equipo entra con la cuenta del negocio. Si se va el internet, sigues vendiendo."
                     CloudMode.MIGRATE -> "Se crea la cuenta y se suben los productos, ventas, clientes, usuarios y fotos de este equipo. Los usuarios entran con el mismo PIN."
                     CloudMode.FORGOT -> if (codeSent) "Te enviamos un código de 6 números a ${email.trim()}. Vence en 30 minutos." else "Te enviaremos un código al correo de la cuenta."
+                    CloudMode.CHOOSE -> "Tu correo administra varios negocios. Elige uno; para cambiar después, cierra la sesión de la cuenta."
+                    CloudMode.NEW_BUSINESS -> "Se crea con la misma cuenta (${email.trim()}), con su propia prueba gratis. Tú serás su administrador."
                 },
                 color = AppTheme.extra.muted,
             )
+            if (entry && mode == CloudMode.LOGIN && graph.signedOut) Text(
+                "✓ Sesión cerrada. Para volver, entra de nuevo: los datos se descargan solos.",
+                color = AppTheme.extra.ok, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AppTheme.extra.okSoft).padding(12.dp),
+            )
 
-            if (mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE) {
-                TextInput(name, { name = it.take(40) }, "Tu nombre *", error = if (tried && name.isBlank()) "Escribe tu nombre" else null)
+            if (mode == CloudMode.CHOOSE) {
+                choices.forEach { b ->
+                    AppCard(onClick = { if (!busy) run { enter(b.id) } }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Storefront, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(b.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                                Text("Plan ${b.planName} · ${b.devices} ${if (b.devices == 1) "equipo" else "equipos"}", fontSize = 13.sp, color = AppTheme.extra.muted)
+                            }
+                            Icon(Icons.Rounded.ChevronRight, null, tint = AppTheme.extra.muted)
+                        }
+                    }
+                }
+            }
+
+            if (needsBusinessForm) {
+                if (mode != CloudMode.NEW_BUSINESS) TextInput(name, { name = it.take(40) }, "Tu nombre *", error = nameError)
                 TextInput(business, { business = it.take(60) }, "Nombre del negocio *", error = if (tried && business.isBlank()) "Escribe el nombre del negocio" else null)
-                if (mode == CloudMode.SIGNUP || type == null) {
+                if (mode != CloudMode.MIGRATE || type == null) {
                     Text("Tipo de negocio *", fontWeight = FontWeight.SemiBold, color = if (tried && type == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         BusinessType.entries.forEach { t ->
@@ -252,14 +350,15 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
                         }
                     }
                 }
+                if (mode == CloudMode.NEW_BUSINESS) TextInput(name, { name = it.take(40) }, "Tu nombre como administrador *", error = nameError)
             }
-            if (mode != CloudMode.FORGOT || !codeSent) {
+            if ((mode == CloudMode.LOGIN || mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE || mode == CloudMode.FORGOT) && !(mode == CloudMode.FORGOT && codeSent)) {
                 TextInput(email, { email = it.trim().take(80) }, "Correo *", keyboard = KeyboardType.Email, error = emailError)
             }
             if (mode == CloudMode.LOGIN || mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE) {
                 PasswordInput(password, { password = it }, if (mode == CloudMode.LOGIN) "Contraseña *" else "Contraseña (8+, letras y números) *", passError)
             }
-            if (mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE) {
+            if (needsBusinessForm) {
                 TextInput(pin, { pin = it.filter(Char::isDigit).take(6) }, if (mode == CloudMode.MIGRATE) "PIN del administrador *" else "Tu PIN para la app (4 a 6 números) *",
                     keyboard = KeyboardType.NumberPassword, visual = PasswordVisualTransformation(), error = pinError)
                 TextInput(pin2, { pin2 = it.filter(Char::isDigit).take(6) }, "Repite el PIN *", keyboard = KeyboardType.NumberPassword, visual = PasswordVisualTransformation())
@@ -275,7 +374,10 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
                 Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp)).background(AppTheme.extra.dangerSoft).padding(12.dp))
             }
-            Button(onClick = { submit() }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) {
+            if (mode == CloudMode.CHOOSE && busy) Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)); Text(step ?: "Un momento…")
+            }
+            if (mode != CloudMode.CHOOSE) Button(onClick = { submit() }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(Modifier.width(10.dp))
@@ -285,22 +387,34 @@ fun CloudAccountScreen(initial: CloudMode, onClose: () -> Unit) {
                         CloudMode.LOGIN -> "Entrar"
                         CloudMode.SIGNUP -> "Crear cuenta"
                         CloudMode.MIGRATE -> "Crear cuenta y subir mis datos"
+                        CloudMode.NEW_BUSINESS -> "Crear negocio"
                         CloudMode.FORGOT -> if (codeSent) "Cambiar contraseña" else "Enviar código"
+                        CloudMode.CHOOSE -> ""
                     },
                     fontSize = 16.sp,
                 )
             }
             when (mode) {
                 CloudMode.LOGIN -> {
-                    TextButton(onClick = { mode = CloudMode.FORGOT; tried = false; error = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Olvidé mi contraseña") }
-                    if (initial != CloudMode.MIGRATE) TextButton(onClick = { mode = CloudMode.SIGNUP; tried = false; error = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("¿No tienes cuenta? Crear una") }
+                    TextButton(onClick = { go(CloudMode.FORGOT) }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Olvidé mi contraseña") }
+                    if (entry) {
+                        HorizontalDivider(color = AppTheme.extra.line)
+                        OutlinedButton(onClick = { go(CloudMode.SIGNUP) }, Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(16.dp), enabled = !busy) {
+                            Text("¿Negocio nuevo? Crear cuenta gratis")
+                        }
+                        Text("Prueba gratis. Funciona en celular, Windows y Mac.", fontSize = 12.sp, color = AppTheme.extra.muted)
+                        if (onLan != null) TextButton(onClick = onLan, Modifier.fillMaxWidth(), enabled = !busy) {
+                            Text("Conectar a un equipo principal de la red local", fontSize = 12.sp, color = AppTheme.extra.muted)
+                        }
+                    } else if (initial != CloudMode.MIGRATE) TextButton(onClick = { go(CloudMode.SIGNUP) }, Modifier.fillMaxWidth(), enabled = !busy) { Text("¿No tienes cuenta? Crear una") }
                 }
-                CloudMode.SIGNUP -> TextButton(onClick = { mode = CloudMode.LOGIN; tried = false; error = null }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Ya tengo cuenta: entrar") }
+                CloudMode.SIGNUP -> TextButton(onClick = { go(CloudMode.LOGIN) }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Ya tengo cuenta: entrar") }
+                CloudMode.CHOOSE -> TextButton(onClick = { go(CloudMode.NEW_BUSINESS) }, Modifier.fillMaxWidth(), enabled = !busy) { Text("Crear otro negocio con esta cuenta") }
                 CloudMode.FORGOT -> if (codeSent) TextButton(onClick = { codeSent = false; code = "" }, Modifier.fillMaxWidth(), enabled = !busy) { Text("No me llegó: enviar otro") }
-                CloudMode.MIGRATE -> {}
+                else -> {}
             }
-            if (mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE) {
-                Text("Empiezas con una prueba gratis. Para la facturación electrónica (e-CF) desde la nube, espera la próxima versión.", fontSize = 12.sp, color = AppTheme.extra.muted)
+            if (mode == CloudMode.SIGNUP || mode == CloudMode.MIGRATE || mode == CloudMode.NEW_BUSINESS) {
+                Text("Empiezas con una prueba gratis. Para la facturación electrónica (e-CF) desde la nube, espera una próxima versión.", fontSize = 12.sp, color = AppTheme.extra.muted)
             }
         }
     }
@@ -526,4 +640,97 @@ fun PlanBanner() {
     }
     Text(text, color = fg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(bg).padding(12.dp))
+}
+
+/** Negocio, sucursal y cuenta de este equipo (arriba de "¿Quién va a usar la app?"). */
+@Composable
+fun AccountBar() {
+    val app = LocalAppState.current
+    val cloud = app.graph.cloud ?: return
+    val st by cloud.status.collectAsState()
+    val meta by app.repo.meta.collectAsState()
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(if (st.state == LinkState.OFFLINE) Icons.Rounded.CloudOff else Icons.Rounded.Cloud, null,
+            tint = if (st.state == LinkState.OFFLINE) AppTheme.extra.warn else AppTheme.extra.ok, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(meta["cloud.businessName"] ?: app.settings.businessName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(app.graph.cloudEmail.orEmpty(), fontSize = 12.sp, color = AppTheme.extra.muted, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 170.dp))
+    }
+}
+
+/** Botón rojo "Cerrar sesión de la cuenta" (solo en equipos que trabajan con la nube). */
+@Composable
+fun CloseAccountButton(modifier: Modifier = Modifier.fillMaxWidth(), outlined: Boolean = true) {
+    val app = LocalAppState.current
+    if (app.graph.cloud == null) return
+    if (outlined) OutlinedButton(
+        onClick = { app.askCloseAccount = true }, modifier = modifier.height(50.dp), shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+    ) {
+        Icon(Icons.AutoMirrored.Rounded.Logout, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp))
+        Text("Cerrar sesión de la cuenta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+    } else TextButton(onClick = { app.askCloseAccount = true }, modifier = modifier) {
+        Icon(Icons.AutoMirrored.Rounded.Logout, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp))
+        Text("Cerrar sesión de la cuenta", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+/**
+ * "Cerrar sesión de la cuenta": explica que los datos siguen en la nube y, si hay ventas sin enviar,
+ * no deja cerrar hasta enviarlas.
+ */
+@Composable
+fun CloseAccountDialog() {
+    val app = LocalAppState.current
+    if (!app.askCloseAccount) return
+    val scope = rememberSafeScope()
+    var pending by remember { mutableStateOf(app.graph.unsentSales()) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun close() { app.askCloseAccount = false }
+    AlertDialog(
+        onDismissRequest = { if (!busy) close() },
+        title = { Text(if (pending > 0) "Primero hay que enviar $pending ${if (pending == 1L) "venta" else "ventas"}" else "¿Cerrar la sesión de la cuenta?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (pending > 0) Text(
+                    "Este equipo tiene $pending ${if (pending == 1L) "venta hecha" else "ventas hechas"} sin internet que todavía no llegan a la nube. " +
+                        "Conéctate a internet para enviarlas; si cierras ahora se perderían.",
+                    color = AppTheme.extra.warn, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(AppTheme.extra.warnSoft).padding(12.dp),
+                ) else {
+                    Text("• Tus datos NO se borran: siguen guardados en la nube.")
+                    Text("• Se quita la copia de este equipo, para que nadie más los vea aquí.")
+                    Text("• Al volver a entrar con tu correo, todo se descarga de nuevo solo.")
+                    Text("• Así también puedes entrar a otro negocio en este equipo.")
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            if (pending > 0) TextButton(enabled = !busy, onClick = {
+                busy = true; error = null
+                scope.launch {
+                    pending = withContext(app.platform.io) { app.graph.sendPendingNow() }
+                    busy = false
+                    if (pending > 0) error = "Todavía no hay conexión con la nube. Revisa el internet e intenta otra vez."
+                }
+            }) { Text("Enviar ahora") }
+            else TextButton(enabled = !busy, onClick = {
+                busy = true; error = null
+                scope.launch {
+                    runCatching { withContext(app.platform.io) { app.graph.signOutAccount() } }
+                        .onSuccess { app.signedOutReset(); close() }
+                        .onFailure { error = cloudError(it); pending = app.graph.unsentSales() }
+                    busy = false
+                }
+            }) { Text("Cerrar sesión", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = { close() }) { Text("Cancelar") } },
+    )
 }

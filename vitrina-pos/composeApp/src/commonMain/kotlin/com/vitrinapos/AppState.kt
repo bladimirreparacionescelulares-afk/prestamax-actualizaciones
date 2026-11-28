@@ -214,6 +214,19 @@ class AppState(val graph: AppGraph, val scope: CoroutineScope) {
         return needed.isEmpty() || needed.any { can(it) }
     }
 
+    /** Se pidió "Cerrar sesión de la cuenta" (muestra el aviso). */
+    var askCloseAccount by mutableStateOf(false)
+
+    /** Después de cerrar la sesión de la cuenta: la app vuelve a empezar desde "Iniciar sesión". */
+    fun signedOutReset() {
+        clearCart()
+        stack.clear()
+        tab = Screen.Home
+        lockedUserId = null
+        unsaved = null
+    }
+
+    /** "Cambiar de usuario": vuelve a "¿Quién va a usar la app?". La cuenta sigue iniciada. */
     fun logout() {
         graph.cloud?.logoutUser()
         lockedUserId = null

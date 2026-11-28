@@ -8,6 +8,7 @@ import com.vitrinapos.net.CloudClient
 import com.vitrinapos.net.Crypto
 import com.vitrinapos.net.DeviceCredentials
 import com.vitrinapos.net.LoginRequest
+import com.vitrinapos.net.NewBusinessRequest
 import com.vitrinapos.net.OwnerLoginRequest
 import com.vitrinapos.net.SignupRequest
 import com.vitrinapos.net.PairRequest
@@ -163,6 +164,7 @@ class AppGraph(val platform: Platform) {
         old.currentUser.value = null
         old.close()
         repo = Repository(platform)
+        signedOut = false
         startCloud()
         cloud?.pull()
     }
@@ -175,11 +177,57 @@ class AppGraph(val platform: Platform) {
     }
 
     /** Entra con la cuenta del negocio: este equipo se autoriza y recibe los datos de la nube. */
-    suspend fun cloudLogin(email: String, password: String, url: String = cloudUrl): DeviceCredentials {
+    suspend fun cloudLogin(email: String, password: String, businessId: Long? = null, url: String = cloudUrl): DeviceCredentials {
         checkCanJoin()
-        val creds = CloudClient.login(url, LoginRequest(email.trim(), password, deviceName, platform.platformName))
+        val creds = CloudClient.login(url, LoginRequest(email.trim(), password, deviceName, platform.platformName, businessId))
         join(creds, email.trim().lowercase(), url)
         return creds
+    }
+
+    /** Otro negocio con la misma cuenta; este equipo queda trabajando en él. */
+    suspend fun cloudNewBusiness(r: NewBusinessRequest, url: String = cloudUrl) {
+        checkCanJoin()
+        val creds = CloudClient.newBusiness(url, r.copy(deviceName = r.deviceName.ifBlank { deviceName }, platform = platform.platformName))
+        join(creds, r.email.trim().lowercase(), url)
+    }
+
+    /** Ventas hechas sin conexión que todavía no llegan a la nube. */
+    fun unsentSales(): Long = repo.db.syncQueries.outboxCount().executeAsOne()
+
+    /** Intenta enviar ya las ventas pendientes. Devuelve cuántas quedan. */
+    suspend fun sendPendingNow(): Long {
+        runCatching { cloud?.flushOutbox() }
+        return unsentSales()
+    }
+
+    /** La sesión de la cuenta se acaba de cerrar en este equipo (para el aviso en "Iniciar sesión"). */
+    var signedOut by mutableStateOf(false)
+
+    /** Correo de la última cuenta que se usó en este equipo (se queda escrito en "Iniciar sesión"). */
+    val lastAccountEmail: String
+        get() = cloudEmail?.takeIf { it.isNotBlank() } ?: runCatching { File(platform.dataDir, LAST_ACCOUNT).readText().trim() }.getOrDefault("")
+
+    /**
+     * "Cerrar sesión de la cuenta". Los datos siguen en la nube: aquí solo se quita la copia de este equipo
+     * (para que nadie más los vea y para poder entrar a otro negocio). Si hay ventas sin enviar, no se cierra.
+     */
+    suspend fun signOutAccount() {
+        if (sendPendingNow() > 0)
+            throw IllegalStateException("Este equipo tiene ventas hechas sin internet que todavía no llegan a la nube. Conéctate a internet para enviarlas.")
+        val email = cloudEmail.orEmpty()
+        // El equipo se da de baja en la nube (deja de contar en el plan). Sin internet se cierra igual;
+        // el dueño lo puede quitar después en Trabajo en red → Equipos.
+        runCatching { cloud?.leave() }
+        cloud?.logoutUser()
+        stopNetwork()
+        repo.currentUser.value = null
+        repo.close()
+        val db = platform.databaseFile
+        listOf("", "-wal", "-shm", "-journal").forEach { File(db.path + it).delete() }
+        File(platform.dataDir, "images").deleteRecursively()
+        runCatching { File(platform.dataDir, LAST_ACCOUNT).writeText(email) }
+        repo = Repository(platform)
+        signedOut = true
     }
 
     /**
@@ -332,5 +380,6 @@ class AppGraph(val platform: Platform) {
         const val CERT_ENTRY = "certificado.cifrado"
         const val ENC_MAGIC = "VPOS-CIFRADO-1"
         const val DB_ENTRY = "vitrina.db"
+        const val LAST_ACCOUNT = "ultima-cuenta.txt"
     }
 }

@@ -73,6 +73,34 @@ class CloudEndToEndTest {
     }
 
     @Test
+    fun variosNegociosYCerrarSesionDeLaCuenta(): Unit = runBlocking {
+        val first = CloudClient.signup(url, SignupRequest("multi@tienda.com", "Clave2026", "Bladimir", "Repuestos Sánchez", "PHONES", "1234", "Caja 1", "Android"))
+        assertEquals(listOf("Repuestos Sánchez"), CloudClient.businesses(url, "multi@tienda.com", "Clave2026").map { it.name })
+        // Contraseña mala: no muestra los negocios.
+        val bad = runCatching { CloudClient.businesses(url, "multi@tienda.com", "otra-2026") }.exceptionOrNull()
+        assertTrue(bad is HttpStatusException && bad.code == 401)
+        // Otro negocio con la misma cuenta: con su administrador y este equipo autorizado.
+        val second = CloudClient.newBusiness(url, com.vitrinapos.net.NewBusinessRequest("multi@tienda.com", "Clave2026", "Colmado La Esquina", "COLMADO", "Bladimir", "5678", "PC", "Windows"))
+        assertEquals("Colmado La Esquina", second.businessName)
+        val list = CloudClient.businesses(url, "multi@tienda.com", "Clave2026")
+        assertEquals(setOf("Repuestos Sánchez", "Colmado La Esquina"), list.map { it.name }.toSet())
+        assertTrue(list.all { it.planName.isNotBlank() && it.devices == 1 })
+        // Un equipo nuevo entra eligiendo el segundo negocio y recibe sus datos (no los del primero).
+        val creds = CloudClient.login(url, LoginRequest("multi@tienda.com", "Clave2026", "Celular", "Android", second.businessId))
+        val (d, cd) = device(creds)
+        cd.pull()
+        assertEquals("Colmado La Esquina", d.db.settingQueries.selectAll().executeAsList().first { it.key == "businessName" }.content.trim('"'))
+        assertEquals("Bladimir", d.db.appUserQueries.selectAll().executeAsList().single().name)
+        // "Cerrar sesión de la cuenta": el equipo se da de baja y ya no cuenta en el plan.
+        cd.leave()
+        val after = CloudClient.businesses(url, "multi@tienda.com", "Clave2026").first { it.id == second.businessId }
+        assertEquals(1, after.devices)
+        val denied = runCatching { CloudClient(d, url, creds.deviceId, creds.deviceSecret).ensureDeviceToken() }.exceptionOrNull()
+        assertTrue(denied is HttpStatusException && denied.code == 401)
+        assertTrue(first.deviceId.isNotBlank())
+    }
+
+    @Test
     fun dosEquiposVentaSinConexionYMigracion(): Unit = runBlocking {
         val creds = CloudClient.signup(url, SignupRequest("dueno@tienda.com", "Clave2026", "Bladimir", "Mi Tienda", "PHONES", "1234", "Caja 1", "Android"))
         val (a, ca) = device(creds)

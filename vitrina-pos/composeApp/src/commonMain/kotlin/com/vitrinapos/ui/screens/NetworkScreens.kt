@@ -573,7 +573,11 @@ internal fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppU
         title = { Text(if (existing == null) (if (firstUser) "Administrador" else "Nuevo usuario") else "Editar usuario") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextInput(name, { name = it.take(40) }, "Nombre o identificación")
+                // El nombre se ve en pantalla: con solo números parecería un PIN.
+                val nameChanged = name.trim() != existing?.name
+                TextInput(name, { name = it.take(40) }, "Nombre de la persona",
+                    error = if (nameChanged && name.isNotBlank()) com.vitrinapos.data.userNameProblem(name) else null)
+                Text("El PIN es privado: nunca se muestra en la app ni en los tickets.", fontSize = 12.sp, color = AppTheme.extra.muted)
                 if (!firstUser && !lastAdmin) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         Roles.all.forEachIndexed { i, r ->
@@ -602,7 +606,7 @@ internal fun UserDialog(existing: AppUser?, firstUser: Boolean, users: List<AppU
         },
         confirmButton = {
             TextButton(
-                enabled = name.isNotBlank() && pinOk && !pinTaken,
+                enabled = name.isNotBlank() && (name.trim() == existing?.name || com.vitrinapos.data.userNameProblem(name) == null) && pinOk && !pinTaken,
                 onClick = {
                     scope.launch {
                         val id = app.repo.saveUser(existing?.id, name, pin.ifBlank { null }, if (lastAdmin) Roles.ADMIN else role, active || lastAdmin)
