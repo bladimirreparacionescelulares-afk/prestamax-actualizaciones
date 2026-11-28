@@ -211,6 +211,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: entregas
+          pattern: VitrinaPOS-*
           merge-multiple: true
       - name: Crear la entrega en GitHub
         env:
